@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -11,16 +12,25 @@ from app.config import get_settings
 from app.database import close_db, init_db
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup/shutdown."""
-    # Startup
-    await init_db()
+    # Startup - try to connect to database but don't fail if unavailable
+    try:
+        await init_db()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.warning(f"Database unavailable at startup: {e}")
+        logger.warning("App will run without database - configure DATABASE_URL in .env")
     yield
     # Shutdown
-    await close_db()
+    try:
+        await close_db()
+    except Exception:
+        pass
 
 
 app = FastAPI(
