@@ -10,6 +10,7 @@ from app import __version__
 from app.api import api_router
 from app.config import get_settings
 from app.database import close_db, init_db
+from app.services.status_monitor import status_monitor
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -18,15 +19,32 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup/shutdown."""
+    db_available = False
+
     # Startup - try to connect to database but don't fail if unavailable
     try:
         await init_db()
         logger.info("Database initialized successfully")
+        db_available = True
     except Exception as e:
         logger.warning(f"Database unavailable at startup: {e}")
         logger.warning("App will run without database - configure DATABASE_URL in .env")
+
+    # Start camera status monitor if database is available
+    if db_available:
+        try:
+            await status_monitor.start()
+        except Exception as e:
+            logger.warning(f"Failed to start status monitor: {e}")
+
     yield
+
     # Shutdown
+    try:
+        await status_monitor.stop()
+    except Exception:
+        pass
+
     try:
         await close_db()
     except Exception:

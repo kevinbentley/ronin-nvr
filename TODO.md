@@ -42,32 +42,32 @@ A multi-phase implementation plan for building a Network Video Recorder system.
 
 ## Phase 2: Camera Management API
 **Branch**: `phase-2-camera-api`
-**Status**: Not Started
+**Status**: COMPLETE
 **Depends on**: Phase 1
 
 ### Tasks
-- [ ] Create Pydantic schemas for Camera CRUD operations
-- [ ] Implement camera API endpoints:
-  - [ ] `GET /api/cameras` - List all cameras
-  - [ ] `GET /api/cameras/{id}` - Get camera details
-  - [ ] `POST /api/cameras` - Add new camera
-  - [ ] `PUT /api/cameras/{id}` - Update camera
-  - [ ] `DELETE /api/cameras/{id}` - Remove camera
-- [ ] Add RTSP URL validation and parsing
-- [ ] Implement `POST /api/cameras/{id}/test` endpoint using FFprobe
-- [ ] Add camera status polling background task (check every 60s)
-- [ ] Store camera credentials (plain text initially, encrypt in Phase 7)
-- [ ] Write API tests for all endpoints
+- [x] Create Pydantic schemas for Camera CRUD operations
+- [x] Implement camera API endpoints:
+  - [x] `GET /api/cameras` - List all cameras
+  - [x] `GET /api/cameras/{id}` - Get camera details
+  - [x] `POST /api/cameras` - Add new camera
+  - [x] `PUT /api/cameras/{id}` - Update camera
+  - [x] `DELETE /api/cameras/{id}` - Remove camera
+- [x] Add RTSP URL validation and parsing
+- [x] Implement `POST /api/cameras/{id}/test` endpoint using FFprobe
+- [x] Add camera status polling background task (check every 60s)
+- [x] Store camera credentials (plain text initially, encrypt in Phase 7)
+- [x] Write API tests for all endpoints
 
 ### Validation Criteria
-- [ ] Can add a camera via POST request
-- [ ] Test connection returns stream info (codec, resolution, fps)
-- [ ] Camera list shows correct status (online/offline)
-- [ ] All API tests pass
+- [x] Can add a camera via POST request
+- [x] Test connection returns stream info (codec, resolution, fps)
+- [x] Camera list shows correct status (online/offline)
+- [x] All API tests pass (26/26 passed)
 
 ### Merge Checklist
-- [ ] All validation criteria met
-- [ ] Code reviewed
+- [x] All validation criteria met
+- [x] Code reviewed
 - [ ] Merge `phase-2-camera-api` into `master`
 - [ ] Tag release: `v2.0`
 
