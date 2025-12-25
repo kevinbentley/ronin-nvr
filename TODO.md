@@ -68,8 +68,8 @@ A multi-phase implementation plan for building a Network Video Recorder system.
 ### Merge Checklist
 - [x] All validation criteria met
 - [x] Code reviewed
-- [ ] Merge `phase-2-camera-api` into `master`
-- [ ] Tag release: `v2.0`
+- [x] Merge `phase-2-camera-api` into `master`
+- [x] Tag release: `v2.0`
 
 ---
 
