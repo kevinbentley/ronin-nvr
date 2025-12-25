@@ -24,6 +24,10 @@ Recording Commands:
     rec-status <id>             Get recording status for camera
     rec-status-all              Get recording status for all cameras
 
+Storage Commands:
+    storage-stats               Get storage statistics
+    storage-cleanup             Run retention cleanup
+
 Add/Update Options:
     --host <host>               Camera IP or hostname
     --port <port>               RTSP port (default: 554)
@@ -48,6 +52,8 @@ Examples:
     ${SCRIPT_NAME} rec-stop 1
     ${SCRIPT_NAME} rec-status 1
     ${SCRIPT_NAME} rec-status-all
+    ${SCRIPT_NAME} storage-stats
+    ${SCRIPT_NAME} storage-cleanup
 EOF
 }
 
@@ -191,6 +197,14 @@ get_all_recording_status() {
     curl -s "${API_BASE}/cameras/recording/status" | json_format
 }
 
+get_storage_stats() {
+    curl -s "${API_BASE}/storage/stats" | json_format
+}
+
+run_storage_cleanup() {
+    curl -s -X POST "${API_BASE}/storage/cleanup" | json_format
+}
+
 main() {
     if [[ $# -lt 1 ]]; then
         usage
@@ -264,6 +278,12 @@ main() {
             ;;
         rec-status-all)
             get_all_recording_status
+            ;;
+        storage-stats)
+            get_storage_stats
+            ;;
+        storage-cleanup)
+            run_storage_cleanup
             ;;
         -h|--help|help)
             usage

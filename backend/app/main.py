@@ -11,6 +11,7 @@ from app.api import api_router
 from app.config import get_settings
 from app.database import close_db, init_db
 from app.services.recorder import recording_manager
+from app.services.retention import retention_monitor
 from app.services.status_monitor import status_monitor
 
 settings = get_settings()
@@ -38,12 +39,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.warning(f"Failed to start status monitor: {e}")
 
+    # Start retention monitor
+    try:
+        await retention_monitor.start()
+    except Exception as e:
+        logger.warning(f"Failed to start retention monitor: {e}")
+
     yield
 
     # Shutdown
     try:
         await recording_manager.stop_all()
         logger.info("All recordings stopped")
+    except Exception:
+        pass
+
+    try:
+        await retention_monitor.stop()
     except Exception:
         pass
 

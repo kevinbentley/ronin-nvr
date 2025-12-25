@@ -33,8 +33,11 @@ class Settings(BaseSettings):
 
     # Recording defaults
     segment_duration_minutes: int = 15
+
+    # Retention settings
     retention_days: Optional[int] = 30
     retention_max_gb: Optional[float] = None
+    retention_check_interval_minutes: int = 60
 
 
 @lru_cache
