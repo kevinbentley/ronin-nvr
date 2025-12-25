@@ -1,0 +1,136 @@
+.playback-page {
+  display: flex;
+  height: 100%;
+  background: #121212;
+}
+
+.playback-page.loading,
+.playback-page.empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-spinner {
+  color: #888;
+  font-size: 16px;
+}
+
+.no-recordings {
+  text-align: center;
+  color: #666;
+}
+
+.no-recordings h2 {
+  margin-bottom: 8px;
+  color: #888;
+}
+
+.playback-sidebar {
+  width: 280px;
+  background: #1a1a1a;
+  border-right: 1px solid #333;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.sidebar-section {
+  margin-bottom: 24px;
+}
+
+.sidebar-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.camera-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #2a2a2a;
+  color: #fff;
+  font-size: 14px;
+}
+
+.camera-select:focus {
+  outline: none;
+  border-color: #1976d2;
+}
+
+.clip-info {
+  background: #2a2a2a;
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.clip-info p {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+  color: #aaa;
+}
+
+.clip-info p:last-child {
+  margin-bottom: 0;
+}
+
+.clip-info strong {
+  color: #ddd;
+}
+
+.download-button {
+  width: 100%;
+  padding: 10px;
+  background: #1976d2;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.download-button:hover {
+  background: #1565c0;
+}
+
+.playback-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.error-banner {
+  padding: 12px;
+  background: rgba(229, 57, 53, 0.2);
+  border-bottom: 1px solid #e53935;
+  color: #ef9a9a;
+  text-align: center;
+}
+
+.player-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  min-height: 0;
+}
+
+.no-selection {
+  color: #666;
+  font-size: 14px;
+}
+
+.timeline-container {
+  height: 120px;
+  background: #1a1a1a;
+  border-top: 1px solid #333;
+  padding: 16px;
+}

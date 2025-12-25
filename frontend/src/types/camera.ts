@@ -75,3 +75,36 @@ export interface CameraStorageStats {
 }
 
 export type GridLayout = '1x1' | '2x2' | '3x3' | '4x4';
+
+// Playback types
+export interface RecordingFile {
+  id: string;
+  camera_name: string;
+  date: string;
+  start_time: string;
+  duration_seconds: number | null;
+  size_bytes: number;
+  filename: string;
+}
+
+export interface DayRecordings {
+  camera_name: string;
+  date: string;
+  files: RecordingFile[];
+  total_duration_seconds: number;
+  total_size_bytes: number;
+  start_time: string | null;
+  end_time: string | null;
+}
+
+export interface ExportRequest {
+  camera_name: string;
+  start_time: string;
+  end_time: string;
+}
+
+export interface ExportResponse {
+  success: boolean;
+  message: string;
+  download_url?: string;
+}

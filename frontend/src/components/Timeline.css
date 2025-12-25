@@ -1,0 +1,70 @@
+.timeline {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.timeline-header {
+  display: flex;
+  height: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.hour-marker {
+  flex: 1;
+  position: relative;
+}
+
+.hour-label {
+  position: absolute;
+  left: 0;
+  font-size: 10px;
+  color: #666;
+  transform: translateX(-50%);
+}
+
+.timeline-track {
+  flex: 1;
+  position: relative;
+  background: #2a2a2a;
+  border-radius: 4px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+
+.recording-block {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  background: #4caf50;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 4px;
+}
+
+.recording-block:hover {
+  background: #66bb6a;
+  transform: scaleY(1.1);
+}
+
+.recording-block.selected {
+  background: #1976d2;
+  box-shadow: 0 0 0 2px #fff;
+  z-index: 1;
+}
+
+.timeline-hours {
+  display: flex;
+  height: 8px;
+}
+
+.hour-tick {
+  flex: 1;
+  border-left: 1px solid #333;
+}
+
+.hour-tick:last-child {
+  border-right: 1px solid #333;
+}

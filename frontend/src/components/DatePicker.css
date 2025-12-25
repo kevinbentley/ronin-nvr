@@ -1,0 +1,74 @@
+.date-picker {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.date-picker.empty {
+  color: #666;
+  text-align: center;
+  padding: 20px;
+}
+
+.date-picker.empty p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.month-group {
+  margin-bottom: 16px;
+}
+
+.month-group:last-child {
+  margin-bottom: 0;
+}
+
+.month-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #333;
+}
+
+.dates-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.date-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  background: #2a2a2a;
+  color: #aaa;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.date-button:hover {
+  background: #3a3a3a;
+  border-color: #444;
+  color: #fff;
+}
+
+.date-button.selected {
+  background: #1976d2;
+  border-color: #1976d2;
+  color: #fff;
+}
+
+.day-name {
+  font-size: 10px;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.day-number {
+  font-size: 14px;
+  font-weight: 600;
+}

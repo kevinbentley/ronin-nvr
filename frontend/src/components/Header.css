@@ -13,6 +13,12 @@
   flex: 1;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
 .header-center {
   display: flex;
   justify-content: center;
@@ -27,6 +33,33 @@
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+  color: #fff;
+}
+
+.header-nav {
+  display: flex;
+  gap: 4px;
+}
+
+.nav-button {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #888;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.nav-button:hover {
+  background: #2a2a2a;
+  color: #fff;
+}
+
+.nav-button.active {
+  background: #333;
   color: #fff;
 }
 
