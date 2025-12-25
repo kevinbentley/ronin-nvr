@@ -35,8 +35,8 @@ A multi-phase implementation plan for building a Network Video Recorder system.
 ### Merge Checklist
 - [x] All validation criteria met
 - [x] Code reviewed
-- [ ] Merge `phase-1-foundation` into `master`
-- [ ] Tag release: `v1.0`
+- [x] Merge `phase-1-foundation` into `master`
+- [x] Tag release: `v1.0`
 
 ---
 
