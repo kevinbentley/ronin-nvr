@@ -39,7 +39,7 @@ class ApiClient {
   // Camera CRUD
   async listCameras(): Promise<Camera[]> {
     const response = await this.client.get('/cameras');
-    return response.data;
+    return response.data.cameras;
   }
 
   async getCamera(id: number): Promise<Camera> {
