@@ -7,6 +7,12 @@ from app.schemas.camera import (
     CameraTestResult,
     CameraUpdate,
 )
+from app.schemas.recording import (
+    RecordingActionResponse,
+    RecordingListResponse,
+    RecordingSegmentResponse,
+    RecordingStatusResponse,
+)
 
 __all__ = [
     "CameraCreate",
@@ -14,4 +20,8 @@ __all__ = [
     "CameraResponse",
     "CameraListResponse",
     "CameraTestResult",
+    "RecordingStatusResponse",
+    "RecordingActionResponse",
+    "RecordingSegmentResponse",
+    "RecordingListResponse",
 ]

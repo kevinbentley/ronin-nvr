@@ -18,6 +18,12 @@ Commands:
     delete <id>                 Delete a camera
     test <id>                   Test camera connection
 
+Recording Commands:
+    rec-start <id>              Start recording for camera
+    rec-stop <id>               Stop recording for camera
+    rec-status <id>             Get recording status for camera
+    rec-status-all              Get recording status for all cameras
+
 Add/Update Options:
     --host <host>               Camera IP or hostname
     --port <port>               RTSP port (default: 554)
@@ -38,6 +44,10 @@ Examples:
     ${SCRIPT_NAME} test 1
     ${SCRIPT_NAME} update 1 --recording false
     ${SCRIPT_NAME} delete 1
+    ${SCRIPT_NAME} rec-start 1
+    ${SCRIPT_NAME} rec-stop 1
+    ${SCRIPT_NAME} rec-status 1
+    ${SCRIPT_NAME} rec-status-all
 EOF
 }
 
@@ -162,6 +172,25 @@ test_camera() {
     curl -s -X POST "${API_BASE}/cameras/${id}/test" | json_format
 }
 
+start_recording() {
+    local id="$1"
+    curl -s -X POST "${API_BASE}/cameras/${id}/recording/start" | json_format
+}
+
+stop_recording() {
+    local id="$1"
+    curl -s -X POST "${API_BASE}/cameras/${id}/recording/stop" | json_format
+}
+
+get_recording_status() {
+    local id="$1"
+    curl -s "${API_BASE}/cameras/${id}/recording/status" | json_format
+}
+
+get_all_recording_status() {
+    curl -s "${API_BASE}/cameras/recording/status" | json_format
+}
+
 main() {
     if [[ $# -lt 1 ]]; then
         usage
@@ -211,6 +240,30 @@ main() {
                 exit 1
             fi
             test_camera "$1"
+            ;;
+        rec-start)
+            if [[ $# -lt 1 ]]; then
+                echo "Error: rec-start requires camera ID"
+                exit 1
+            fi
+            start_recording "$1"
+            ;;
+        rec-stop)
+            if [[ $# -lt 1 ]]; then
+                echo "Error: rec-stop requires camera ID"
+                exit 1
+            fi
+            stop_recording "$1"
+            ;;
+        rec-status)
+            if [[ $# -lt 1 ]]; then
+                echo "Error: rec-status requires camera ID"
+                exit 1
+            fi
+            get_recording_status "$1"
+            ;;
+        rec-status-all)
+            get_all_recording_status
             ;;
         -h|--help|help)
             usage

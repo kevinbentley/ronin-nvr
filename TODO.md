@@ -75,32 +75,32 @@ A multi-phase implementation plan for building a Network Video Recorder system.
 
 ## Phase 3: Video Recording Engine
 **Branch**: `phase-3-recording`
-**Status**: Not Started
+**Status**: COMPLETE
 **Depends on**: Phase 2
 
 ### Tasks
-- [ ] Create FFmpeg wrapper service for RTSP capture
-- [ ] Implement transmuxing (copy codec to MP4, no re-encoding)
-- [ ] Add 15-minute file segmentation using FFmpeg segment muxer
-- [ ] Create directory structure: `/{StorageRoot}/{CameraName}/{YYYY-MM-DD}/{HH-MM-SS}.mp4`
-- [ ] Store recording metadata in database (file path, start/end time, size)
-- [ ] Implement recording control API:
-  - [ ] `POST /api/cameras/{id}/recording/start`
-  - [ ] `POST /api/cameras/{id}/recording/stop`
-  - [ ] `GET /api/cameras/{id}/recording/status`
-- [ ] Add automatic reconnection on stream failure (with backoff)
-- [ ] Write tests with mock RTSP stream
+- [x] Create FFmpeg wrapper service for RTSP capture
+- [x] Implement transmuxing (copy codec to MP4, no re-encoding)
+- [x] Add 15-minute file segmentation using FFmpeg segment muxer
+- [x] Create directory structure: `/{StorageRoot}/{CameraName}/{YYYY-MM-DD}/{HH-MM-SS}.mp4`
+- [x] Store recording metadata in database (file path, start/end time, size)
+- [x] Implement recording control API:
+  - [x] `POST /api/cameras/{id}/recording/start`
+  - [x] `POST /api/cameras/{id}/recording/stop`
+  - [x] `GET /api/cameras/{id}/recording/status`
+- [x] Add automatic reconnection on stream failure (with backoff)
+- [x] Write tests with mock RTSP stream
 
 ### Validation Criteria
-- [ ] Single camera records to correct directory structure
-- [ ] Files are exactly 15-minute segments (except last segment)
-- [ ] Recording survives stream interruption and auto-reconnects
-- [ ] Recording metadata stored in database
-- [ ] MP4 files playable without transcoding
+- [x] Single camera records to correct directory structure
+- [x] Files are exactly 15-minute segments (except last segment)
+- [x] Recording survives stream interruption and auto-reconnects
+- [x] Recording metadata stored in database
+- [x] MP4 files playable without transcoding (transmux only)
 
 ### Merge Checklist
-- [ ] All validation criteria met
-- [ ] Code reviewed
+- [x] All validation criteria met
+- [x] Code reviewed
 - [ ] Merge `phase-3-recording` into `master`
 - [ ] Tag release: `v3.0`
 

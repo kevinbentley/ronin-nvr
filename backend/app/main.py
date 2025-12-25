@@ -10,6 +10,7 @@ from app import __version__
 from app.api import api_router
 from app.config import get_settings
 from app.database import close_db, init_db
+from app.services.recorder import recording_manager
 from app.services.status_monitor import status_monitor
 
 settings = get_settings()
@@ -40,6 +41,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     # Shutdown
+    try:
+        await recording_manager.stop_all()
+        logger.info("All recordings stopped")
+    except Exception:
+        pass
+
     try:
         await status_monitor.stop()
     except Exception:
