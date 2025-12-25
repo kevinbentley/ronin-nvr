@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api import api_router
@@ -12,6 +13,7 @@ from app.config import get_settings
 from app.database import close_db, init_db
 from app.services.recorder import recording_manager
 from app.services.retention import retention_monitor
+from app.services.streaming import streaming_manager
 from app.services.status_monitor import status_monitor
 
 settings = get_settings()
@@ -55,6 +57,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         pass
 
     try:
+        await streaming_manager.stop_all()
+        logger.info("All streams stopped")
+    except Exception:
+        pass
+
+    try:
         await retention_monitor.stop()
     except Exception:
         pass
@@ -74,6 +82,15 @@ app = FastAPI(
     title=settings.app_name,
     version=__version__,
     lifespan=lifespan,
+)
+
+# Add CORS middleware for frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Include API routes

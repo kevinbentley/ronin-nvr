@@ -1,0 +1,54 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #121212;
+  color: #fff;
+}
+
+.app.loading {
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-spinner {
+  color: #888;
+  font-size: 16px;
+}
+
+.app-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(229, 57, 53, 0.2);
+  border-bottom: 1px solid #e53935;
+  color: #ef9a9a;
+}
+
+.error-banner button {
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid #e53935;
+  border-radius: 4px;
+  color: #e53935;
+  cursor: pointer;
+}
+
+.error-banner button:hover {
+  background: rgba(229, 57, 53, 0.2);
+}

@@ -1,0 +1,26 @@
+.camera-grid {
+  display: grid;
+  gap: 8px;
+  height: 100%;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.grid-cell {
+  min-height: 0;
+  min-width: 0;
+}
+
+.grid-cell.empty {
+  background: #1a1a1a;
+  border-radius: 8px;
+}
+
+.empty-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #444;
+  font-size: 14px;
+}

@@ -1,0 +1,147 @@
+.camera-sidebar {
+  width: 240px;
+  background: #1a1a1a;
+  border-right: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #333;
+}
+
+.sidebar-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.camera-count {
+  background: #333;
+  color: #aaa;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.no-cameras {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: #666;
+}
+
+.no-cameras p {
+  margin: 0;
+}
+
+.no-cameras .hint {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.camera-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.camera-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid #2a2a2a;
+  transition: background 0.2s;
+}
+
+.camera-item:hover {
+  background: #2a2a2a;
+}
+
+.camera-info {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.status-indicator.online {
+  background: #4caf50;
+  box-shadow: 0 0 4px #4caf50;
+}
+
+.status-indicator.offline {
+  background: #e53935;
+}
+
+.status-indicator.unknown {
+  background: #ff9800;
+}
+
+.camera-item .camera-name {
+  font-size: 13px;
+  color: #ddd;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.camera-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.rec-button {
+  padding: 4px 10px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #2a2a2a;
+  color: #aaa;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.rec-button:hover:not(:disabled) {
+  background: #e53935;
+  border-color: #e53935;
+  color: #fff;
+}
+
+.rec-button.recording {
+  background: #e53935;
+  border-color: #e53935;
+  color: #fff;
+  animation: pulse 1.5s infinite;
+}
+
+.rec-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
