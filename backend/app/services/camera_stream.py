@@ -148,9 +148,11 @@ class CameraStream:
             ffmpeg_path,
             "-hide_banner",
             "-loglevel", "warning",
-            # Input
+            # Input options - handle broken timestamps from cameras
             "-rtsp_transport", self.camera_transport,
-            "-fflags", "+genpts+discardcorrupt",
+            "-fflags", "+genpts+discardcorrupt+igndts",
+            "-flags", "low_delay",
+            "-rtsp_flags", "prefer_tcp",
             "-i", self.rtsp_url,
         ]
 
@@ -159,10 +161,13 @@ class CameraStream:
             "-c:v", "copy",
             "-c:a", "aac",
             "-ar", "44100",
+            # Fix timestamp issues for HLS
+            "-avoid_negative_ts", "make_zero",
+            "-fflags", "+genpts",
             "-f", "hls",
             "-hls_time", "2",
             "-hls_list_size", "10",
-            "-hls_flags", "delete_segments+append_list",
+            "-hls_flags", "delete_segments+append_list+omit_endlist",
             "-hls_segment_filename", str(self.hls_directory / "segment%03d.ts"),
             str(self.playlist_path),
         ])
@@ -172,6 +177,8 @@ class CameraStream:
             recording_pattern = self._get_recording_pattern()
             cmd.extend([
                 "-c", "copy",
+                "-avoid_negative_ts", "make_zero",
+                "-fflags", "+genpts",
                 "-f", "segment",
                 "-segment_time", str(self.segment_duration),
                 "-segment_format", "mp4",
