@@ -152,7 +152,6 @@ class CameraStream:
             "-rtsp_transport", self.camera_transport,
             "-fflags", "+genpts+discardcorrupt+igndts",
             "-flags", "low_delay",
-            "-rtsp_flags", "prefer_tcp",
             "-i", self.rtsp_url,
         ]
 
@@ -211,8 +210,14 @@ class CameraStream:
 
     async def _start_ffmpeg(self) -> None:
         """Start the FFmpeg process."""
-        cmd = self._build_ffmpeg_command()
+        try:
+            cmd = self._build_ffmpeg_command()
+        except Exception as e:
+            logger.error(f"Failed to build FFmpeg command for '{self.camera_name}': {e}")
+            raise
+
         logger.info(f"Starting stream for '{self.camera_name}' (recording={self._recording_enabled})")
+        logger.info(f"RTSP URL: {self.rtsp_url}")
         logger.info(f"FFmpeg command: {' '.join(cmd)}")
 
         self._process = await asyncio.create_subprocess_exec(
