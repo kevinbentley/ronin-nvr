@@ -1,5 +1,8 @@
 """Camera management API endpoints."""
 
+import asyncio
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +17,7 @@ from app.schemas import (
     CameraUpdate,
 )
 from app.services.camera import CameraService, test_camera_connection
-from app.services.streaming import streaming_manager
+from app.services.camera_stream import stream_manager
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -107,6 +110,10 @@ async def delete_camera(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Camera with id {camera_id} not found",
         )
+
+    # Stop stream if running
+    await stream_manager.stop_stream(camera_id)
+
     await service.delete(camera)
 
 
@@ -135,14 +142,15 @@ async def test_camera(
     return result
 
 
-# HLS Streaming endpoints
+# Streaming and Recording endpoints (unified)
 
 @router.post("/{camera_id}/stream/start")
 async def start_stream(
     camera_id: int,
+    recording: bool = True,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Start HLS stream for a camera."""
+    """Start streaming (and optionally recording) for a camera."""
     service = CameraService(db)
     camera = await service.get_by_id(camera_id)
     if not camera:
@@ -151,7 +159,7 @@ async def start_stream(
             detail=f"Camera with id {camera_id} not found",
         )
 
-    success = streaming_manager.start_stream(camera)
+    success = await stream_manager.start_stream(camera, recording_enabled=recording)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -161,6 +169,7 @@ async def start_stream(
     return {
         "camera_id": camera_id,
         "streaming": True,
+        "recording": recording,
         "playlist_url": f"/api/cameras/{camera_id}/stream/hls/playlist.m3u8",
     }
 
@@ -170,7 +179,7 @@ async def stop_stream(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Stop HLS stream for a camera."""
+    """Stop streaming for a camera."""
     service = CameraService(db)
     camera = await service.get_by_id(camera_id)
     if not camera:
@@ -179,8 +188,66 @@ async def stop_stream(
             detail=f"Camera with id {camera_id} not found",
         )
 
-    streaming_manager.stop_stream(camera_id)
-    return {"camera_id": camera_id, "streaming": False}
+    await stream_manager.stop_stream(camera_id)
+    return {"camera_id": camera_id, "streaming": False, "recording": False}
+
+
+@router.post("/{camera_id}/stream/restart")
+async def restart_stream(
+    camera_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Restart streaming for a camera."""
+    service = CameraService(db)
+    camera = await service.get_by_id(camera_id)
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera with id {camera_id} not found",
+        )
+
+    success = await stream_manager.restart_stream(camera_id)
+    if not success:
+        # Camera wasn't streaming, start it fresh
+        success = await stream_manager.start_stream(camera, recording_enabled=True)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to restart stream",
+        )
+
+    return {
+        "camera_id": camera_id,
+        "streaming": True,
+        "playlist_url": f"/api/cameras/{camera_id}/stream/hls/playlist.m3u8",
+    }
+
+
+@router.get("/{camera_id}/stream/status")
+async def get_stream_status(
+    camera_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get streaming status for a camera."""
+    service = CameraService(db)
+    camera = await service.get_by_id(camera_id)
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera with id {camera_id} not found",
+        )
+
+    status_info = stream_manager.get_status(camera_id)
+    if not status_info:
+        return {
+            "camera_id": camera_id,
+            "streaming": False,
+            "recording": False,
+            "state": "stopped",
+        }
+
+    return status_info
 
 
 @router.get("/{camera_id}/stream/hls/playlist.m3u8")
@@ -189,9 +256,6 @@ async def get_hls_playlist(
     db: AsyncSession = Depends(get_db),
 ) -> FileResponse:
     """Get HLS playlist for a camera stream."""
-    import asyncio
-    from pathlib import Path
-
     service = CameraService(db)
     camera = await service.get_by_id(camera_id)
     if not camera:
@@ -201,21 +265,21 @@ async def get_hls_playlist(
         )
 
     # Auto-start stream if not running
-    if camera_id not in streaming_manager.streams or not streaming_manager.streams[camera_id].is_running:
-        success = streaming_manager.start_stream(camera)
+    if not stream_manager.is_running(camera_id):
+        success = await stream_manager.start_stream(camera, recording_enabled=True)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to start stream - check camera connection",
             )
         # Wait briefly for FFmpeg to generate playlist
-        for _ in range(15):  # Wait up to 3 seconds
+        for _ in range(20):  # Wait up to 4 seconds
             await asyncio.sleep(0.2)
-            playlist_path = streaming_manager.get_playlist_path(camera_id)
+            playlist_path = stream_manager.get_playlist_path(camera_id)
             if playlist_path and Path(playlist_path).exists():
                 break
 
-    playlist_path = streaming_manager.get_playlist_path(camera_id)
+    playlist_path = stream_manager.get_playlist_path(camera_id)
     if not playlist_path or not Path(playlist_path).exists():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -238,15 +302,13 @@ async def get_hls_segment(
     segment: str,
 ) -> FileResponse:
     """Get HLS segment file."""
-    from pathlib import Path
-
     if not segment.endswith(".ts"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid segment name",
         )
 
-    segment_path = streaming_manager.get_segment_path(camera_id, segment)
+    segment_path = stream_manager.get_segment_path(camera_id, segment)
     if not segment_path or not Path(segment_path).exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -261,3 +323,85 @@ async def get_hls_segment(
             "Access-Control-Allow-Origin": "*",
         },
     )
+
+
+# Legacy recording endpoints (now use unified stream)
+
+@router.post("/{camera_id}/recording/start")
+async def start_recording(
+    camera_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Start recording for a camera (starts stream with recording enabled)."""
+    service = CameraService(db)
+    camera = await service.get_by_id(camera_id)
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera with id {camera_id} not found",
+        )
+
+    success = await stream_manager.start_stream(camera, recording_enabled=True)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to start recording",
+        )
+
+    return {
+        "camera_id": camera_id,
+        "is_recording": True,
+        "streaming": True,
+    }
+
+
+@router.post("/{camera_id}/recording/stop")
+async def stop_recording(
+    camera_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Stop recording for a camera (stops the stream entirely)."""
+    service = CameraService(db)
+    camera = await service.get_by_id(camera_id)
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera with id {camera_id} not found",
+        )
+
+    await stream_manager.stop_stream(camera_id)
+    return {
+        "camera_id": camera_id,
+        "is_recording": False,
+        "streaming": False,
+    }
+
+
+@router.get("/{camera_id}/recording/status")
+async def get_recording_status(
+    camera_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get recording status for a camera."""
+    service = CameraService(db)
+    camera = await service.get_by_id(camera_id)
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera with id {camera_id} not found",
+        )
+
+    status_info = stream_manager.get_status(camera_id)
+    if not status_info:
+        return {
+            "camera_id": camera_id,
+            "is_recording": False,
+        }
+
+    return {
+        "camera_id": camera_id,
+        "is_recording": status_info.get("is_recording", False),
+        "state": status_info.get("state", "stopped"),
+        "start_time": status_info.get("start_time"),
+        "recording_directory": status_info.get("recording_directory"),
+    }

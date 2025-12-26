@@ -1,5 +1,5 @@
-
-his document contains critical information about working with this codebase. Follow these guidelines precisely.
+# Overview
+This document contains critical information about working with this codebase. Follow these guidelines precisely.
 
 This project will use Python Tk for any GUI. All controls, buttons, etc. will use an event driven architecture, so when a button is pressed, the UI remains responsive while the process executes.
 
@@ -8,6 +8,9 @@ Standalone command line tools such as those that process or generate data files 
 When writing a project plan, always create a TODO.md with the tasks and phases. Mark things as complete in the readme as the process runs.
 
 Each time a major feature or phase is developed, make sure to thoroughly test it, then commit it to a local git repo (do not push).
+
+## Safety
+When deleting files, make sure to stash or commit them to the repository first, so they can be recovered if something goes awry.
 
 ## Core Development Rules for Python
 
@@ -282,7 +285,7 @@ Each time a major feature or phase is developed, make sure to thoroughly test it
    ```
 
 7. Portability
-   - Test on target platforms
+   - Target Linux and MacOS platforms
    - Use POSIX-compatible constructs when possible
    - Document bash-specific features used
-   - Avoid GNU-specific options without fallbacks
+   - Document and maintain a SYSTEM.md file that tracks dependencies including things like CMake, gcc versions, packages like ffmpg, etc.
