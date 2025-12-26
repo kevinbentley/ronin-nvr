@@ -2,7 +2,7 @@
  * HLS video player component using hls.js with auto-reconnection.
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { api } from '../services/api';
 import './VideoPlayer.css';
@@ -13,10 +13,12 @@ interface VideoPlayerProps {
   cameraName: string;
   status: 'online' | 'offline' | 'unknown';
   isRecording?: boolean;
-  onError?: (error: string) => void;
 }
 
 type ConnectionState = 'connecting' | 'connected' | 'error' | 'reconnecting';
+
+const MAX_AUTO_RETRIES = 5;
+const RETRY_DELAY_MS = 3000;
 
 export function VideoPlayer({
   src,
@@ -24,33 +26,48 @@ export function VideoPlayer({
   cameraName,
   status,
   isRecording = false,
-  onError,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const retryCountRef = useRef(0);
+  const stallCheckerRef = useRef<number | null>(null);
+  const connectionStateRef = useRef<ConnectionState>('connecting');
+  const mountedRef = useRef(true);
 
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
-  const [error, setError] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const MAX_AUTO_RETRIES = 5;
-  const RETRY_DELAY_MS = 3000;
+  // Keep ref in sync with state
+  useEffect(() => {
+    connectionStateRef.current = connectionState;
+  }, [connectionState]);
 
-  const destroyHls = useCallback(() => {
-    if (hlsRef.current) {
-      hlsRef.current.destroy();
-      hlsRef.current = null;
+  // Track mounted state
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const cleanup = () => {
+    if (stallCheckerRef.current) {
+      clearInterval(stallCheckerRef.current);
+      stallCheckerRef.current = null;
     }
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
-  }, []);
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+  };
 
-  const restartStream = useCallback(async () => {
+  const restartBackendStream = async () => {
     try {
-      // Stop and restart the stream on the backend
       await api.stopStream(cameraId).catch(() => {});
       await new Promise((resolve) => setTimeout(resolve, 500));
       await api.startStream(cameraId);
@@ -59,27 +76,38 @@ export function VideoPlayer({
       console.error('Failed to restart stream:', err);
       return false;
     }
-  }, [cameraId]);
+  };
 
-  const initializeHls = useCallback(() => {
+  const initializePlayer = async (isRetry: boolean = false) => {
     const video = videoRef.current;
-    if (!video || status !== 'online') return;
+    if (!video || !mountedRef.current) return;
 
-    destroyHls();
+    cleanup();
+
+    if (!mountedRef.current) return;
     setConnectionState('connecting');
-    setError(null);
+    setErrorMessage(null);
+
+    if (isRetry) {
+      await restartBackendStream();
+      if (!mountedRef.current) return;
+    }
 
     if (!Hls.isSupported()) {
-      // Native HLS support (Safari)
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = src;
         video.addEventListener('loadedmetadata', () => {
-          setConnectionState('connected');
+          if (mountedRef.current) {
+            setConnectionState('connected');
+            retryCountRef.current = 0;
+          }
           video.play().catch((e) => console.warn('Autoplay blocked:', e));
         });
         video.addEventListener('error', () => {
-          setConnectionState('error');
-          setError('Playback error');
+          if (mountedRef.current) {
+            setConnectionState('error');
+            setErrorMessage('Playback error');
+          }
         });
       }
       return;
@@ -116,20 +144,19 @@ export function VideoPlayer({
     hls.attachMedia(video);
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      if (!mountedRef.current) return;
       setConnectionState('connected');
-      setError(null);
+      setErrorMessage(null);
       retryCountRef.current = 0;
       video.play().catch((e) => console.warn('Autoplay blocked:', e));
     });
 
     hls.on(Hls.Events.ERROR, (_, data) => {
+      if (!mountedRef.current) return;
       console.warn('HLS error:', data.type, data.details, data.fatal);
 
       if (data.fatal) {
-        setError(`Stream error: ${data.details}`);
-        onError?.(`Stream error: ${data.details}`);
-
-        // Try built-in recovery first
+        // Try built-in recovery first for media errors
         if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
           console.log('Attempting media error recovery...');
           hls.recoverMediaError();
@@ -140,64 +167,65 @@ export function VideoPlayer({
         if (retryCountRef.current < MAX_AUTO_RETRIES) {
           retryCountRef.current++;
           setConnectionState('reconnecting');
-          setError(`Reconnecting... (${retryCountRef.current}/${MAX_AUTO_RETRIES})`);
+          setErrorMessage(`Reconnecting... (${retryCountRef.current}/${MAX_AUTO_RETRIES})`);
 
-          reconnectTimeoutRef.current = window.setTimeout(async () => {
-            console.log(`Auto-reconnect attempt ${retryCountRef.current}`);
-            await restartStream();
-            initializeHls();
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            if (mountedRef.current) {
+              console.log(`Auto-reconnect attempt ${retryCountRef.current}`);
+              initializePlayer(true);
+            }
           }, RETRY_DELAY_MS);
         } else {
           setConnectionState('error');
-          setError('Connection lost. Click to reconnect.');
+          setErrorMessage('Connection lost. Click to reconnect.');
         }
       }
     });
 
-    // Monitor for stalls
+    // Monitor for video stalls
     let lastTime = 0;
     let stallCount = 0;
-    const stallChecker = setInterval(() => {
-      if (video.currentTime === lastTime && !video.paused && connectionState === 'connected') {
+    stallCheckerRef.current = window.setInterval(() => {
+      if (!mountedRef.current || !hlsRef.current) return;
+
+      if (video.currentTime === lastTime && !video.paused && connectionStateRef.current === 'connected') {
         stallCount++;
         if (stallCount >= 5) {
           console.warn('Video stalled, attempting recovery');
           stallCount = 0;
-          if (hlsRef.current) {
-            hlsRef.current.startLoad();
-          }
+          hlsRef.current?.startLoad();
         }
       } else {
         stallCount = 0;
       }
       lastTime = video.currentTime;
     }, 1000);
+  };
 
-    return () => {
-      clearInterval(stallChecker);
-    };
-  }, [src, status, onError, destroyHls, restartStream]);
-
+  // Initialize on mount and when src/status changes
   useEffect(() => {
     if (status !== 'online') {
-      destroyHls();
+      cleanup();
       setConnectionState('connecting');
+      setErrorMessage(null);
       return;
     }
 
-    const cleanup = initializeHls();
-    return () => {
-      cleanup?.();
-      destroyHls();
-    };
-  }, [src, status, initializeHls, destroyHls]);
+    retryCountRef.current = 0;
+    initializePlayer(false);
 
-  const handleManualReconnect = async () => {
+    return () => {
+      cleanup();
+    };
+    // Only reinitialize when src or status actually changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, status, cameraId]);
+
+  const handleManualReconnect = () => {
     retryCountRef.current = 0;
     setConnectionState('reconnecting');
-    setError('Reconnecting...');
-    await restartStream();
-    initializeHls();
+    setErrorMessage('Reconnecting...');
+    initializePlayer(true);
   };
 
   const getStatusClass = () => {
@@ -207,8 +235,7 @@ export function VideoPlayer({
     return 'status-connecting';
   };
 
-  const showReconnectButton = connectionState === 'error' ||
-    (connectionState === 'reconnecting' && retryCountRef.current >= MAX_AUTO_RETRIES);
+  const showReconnectButton = connectionState === 'error';
 
   return (
     <div className="video-player">
@@ -236,12 +263,12 @@ export function VideoPlayer({
             )}
             {connectionState === 'reconnecting' && (
               <div className="video-overlay">
-                <span className="loading-text">{error || 'Reconnecting...'}</span>
+                <span className="loading-text">{errorMessage || 'Reconnecting...'}</span>
               </div>
             )}
             {showReconnectButton && (
               <div className="video-overlay error-overlay" onClick={handleManualReconnect}>
-                <span className="error-text">{error}</span>
+                <span className="error-text">{errorMessage}</span>
                 <button className="reconnect-button">Reconnect</button>
               </div>
             )}
