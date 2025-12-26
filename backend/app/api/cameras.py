@@ -21,6 +21,16 @@ from app.services.camera_stream import stream_manager
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
+# Per-camera locks to prevent concurrent stream start operations
+_stream_start_locks: dict[int, asyncio.Lock] = {}
+
+
+def _get_stream_lock(camera_id: int) -> asyncio.Lock:
+    """Get or create a lock for a camera's stream operations."""
+    if camera_id not in _stream_start_locks:
+        _stream_start_locks[camera_id] = asyncio.Lock()
+    return _stream_start_locks[camera_id]
+
 
 @router.get("", response_model=CameraListResponse)
 async def list_cameras(db: AsyncSession = Depends(get_db)) -> CameraListResponse:
@@ -47,6 +57,41 @@ async def get_all_recording_status() -> list[dict]:
         }
         for s in statuses
     ]
+
+
+@router.get("/streams/health")
+async def get_streams_health() -> dict:
+    """Get health status of all camera streams.
+
+    Provides a summary of stream states for monitoring and debugging.
+    """
+    statuses = stream_manager.get_all_status()
+
+    healthy = sum(1 for s in statuses if s["state"] == "running")
+    reconnecting = sum(1 for s in statuses if s["state"] == "reconnecting")
+    errored = sum(1 for s in statuses if s["state"] == "error")
+    stopped = sum(1 for s in statuses if s["state"] == "stopped")
+
+    return {
+        "total_streams": len(statuses),
+        "healthy": healthy,
+        "reconnecting": reconnecting,
+        "errored": errored,
+        "stopped": stopped,
+        "streams": [
+            {
+                "camera_id": s["camera_id"],
+                "camera_name": s["camera_name"],
+                "state": s["state"],
+                "is_running": s["is_running"],
+                "is_recording": s["is_recording"],
+                "error_message": s.get("error_message"),
+                "reconnect_attempts": s.get("reconnect_attempts", 0),
+                "start_time": s.get("start_time"),
+            }
+            for s in statuses
+        ],
+    }
 
 
 @router.get("/{camera_id}", response_model=CameraResponse)
@@ -280,20 +325,22 @@ async def get_hls_playlist(
             detail=f"Camera with id {camera_id} not found",
         )
 
-    # Auto-start stream if not running
-    if not stream_manager.is_running(camera_id):
-        success = await stream_manager.start_stream(camera, recording_enabled=True)
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Failed to start stream - check camera connection",
-            )
-        # Wait briefly for FFmpeg to generate playlist
-        for _ in range(20):  # Wait up to 4 seconds
-            await asyncio.sleep(0.2)
-            playlist_path = stream_manager.get_playlist_path(camera_id)
-            if playlist_path and Path(playlist_path).exists():
-                break
+    # Use per-camera lock to prevent race conditions on concurrent requests
+    async with _get_stream_lock(camera_id):
+        # Auto-start stream if not running
+        if not stream_manager.is_running(camera_id):
+            success = await stream_manager.start_stream(camera, recording_enabled=True)
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Failed to start stream - check camera connection",
+                )
+            # Wait briefly for FFmpeg to generate playlist
+            for _ in range(20):  # Wait up to 4 seconds
+                await asyncio.sleep(0.2)
+                playlist_path = stream_manager.get_playlist_path(camera_id)
+                if playlist_path and Path(playlist_path).exists():
+                    break
 
     playlist_path = stream_manager.get_playlist_path(camera_id)
     if not playlist_path or not Path(playlist_path).exists():
