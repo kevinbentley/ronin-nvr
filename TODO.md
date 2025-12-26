@@ -246,11 +246,20 @@ A multi-phase implementation plan for building a Network Video Recorder system.
 - [ ] Document deployment process in README.md
 
 ### Known Issues / Technical Debt
-- [ ] **HLS endpoints have no authentication** - Video players (HLS.js) cannot send
-      Authorization headers when fetching playlist/segment files. Current workaround
-      is to leave these endpoints public. Future fix: Add URL-based token authentication
-      (e.g., `/stream/hls/playlist.m3u8?token=<signed-hash>`) that validates a
-      time-limited signed token in the query string.
+- [ ] **Video streaming endpoints have no authentication** - Video players (HLS.js,
+      native `<video>` elements) cannot send Authorization headers when fetching
+      media files. Affected endpoints:
+      - `GET /api/cameras/{id}/stream/hls/playlist.m3u8` (live HLS playlist)
+      - `GET /api/cameras/{id}/stream/hls/{segment}.ts` (live HLS segments)
+      - `GET /api/playback/recordings/{id}/stream` (recorded video playback)
+      - `GET /api/playback/recordings/{id}/download` (recording download)
+      - `GET /api/playback/exports/{export_id}` (exported clip download)
+
+      Current workaround: Leave these endpoints public. The user is already
+      authenticated to access the page containing the player.
+
+      Future fix: Add URL-based token authentication that validates a time-limited
+      signed token in the query string (e.g., `?token=<signed-hash>`).
 
 ### Validation Criteria
 - [x] Cannot access any API without valid token (except HLS endpoints - see Known Issues)

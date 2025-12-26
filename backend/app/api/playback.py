@@ -228,9 +228,11 @@ async def get_recording(
 @router.get("/recordings/{recording_id}/stream")
 async def stream_recording(
     recording_id: str,
-    current_user: User = Depends(get_current_user),
 ) -> FileResponse:
-    """Stream a recording file."""
+    """Stream a recording file.
+
+    Note: No auth required - video players can't send Authorization headers.
+    """
     rec = playback_service.get_recording_by_id(recording_id)
 
     if not rec:
@@ -252,9 +254,11 @@ async def stream_recording(
 @router.get("/recordings/{recording_id}/download")
 async def download_recording(
     recording_id: str,
-    current_user: User = Depends(get_current_user),
 ) -> FileResponse:
-    """Download a recording file."""
+    """Download a recording file.
+
+    Note: No auth required - video players can't send Authorization headers.
+    """
     rec = playback_service.get_recording_by_id(recording_id)
 
     if not rec:
@@ -321,9 +325,11 @@ async def export_clip(
 @router.get("/exports/{export_id}")
 async def download_export(
     export_id: str,
-    current_user: User = Depends(get_current_user),
 ) -> FileResponse:
-    """Download an exported clip."""
+    """Download an exported clip.
+
+    Note: No auth required - video players can't send Authorization headers.
+    """
     from app.config import get_settings
     from pathlib import Path
 
