@@ -46,7 +46,17 @@ class CameraStream:
         storage_root: Optional[Path] = None,
         segment_duration_minutes: int = 15,
     ):
-        self.camera = camera
+        # Extract camera data upfront to avoid SQLAlchemy detached session issues
+        self.camera_id = camera.id
+        self.camera_name = camera.name
+        self.camera_host = camera.host
+        self.camera_port = camera.port
+        self.camera_path = camera.path
+        self.camera_username = camera.username
+        self.camera_password = camera.password
+        self.camera_transport = camera.transport
+        self._rtsp_url = camera.rtsp_url
+
         self.storage_root = storage_root or Path(settings.storage_root)
         self.segment_duration = segment_duration_minutes * 60
 
@@ -81,7 +91,7 @@ class CameraStream:
         """Filesystem-safe camera name."""
         return "".join(
             c if c.isalnum() or c in ("-", "_") else "_"
-            for c in self.camera.name
+            for c in self.camera_name
         )
 
     @property
@@ -92,12 +102,17 @@ class CameraStream:
     @property
     def hls_directory(self) -> Path:
         """Directory for HLS segments."""
-        return self.storage_root / ".streams" / str(self.camera.id)
+        return self.storage_root / ".streams" / str(self.camera_id)
 
     @property
     def playlist_path(self) -> Path:
         """Path to HLS playlist."""
         return self.hls_directory / "playlist.m3u8"
+
+    @property
+    def rtsp_url(self) -> str:
+        """Get RTSP URL."""
+        return self._rtsp_url
 
     def _get_recording_pattern(self) -> str:
         """Get MP4 segment filename pattern."""
@@ -132,9 +147,9 @@ class CameraStream:
             "-hide_banner",
             "-loglevel", "warning",
             # Input
-            "-rtsp_transport", self.camera.transport,
+            "-rtsp_transport", self.camera_transport,
             "-fflags", "+genpts+discardcorrupt",
-            "-i", self.camera.rtsp_url,
+            "-i", self.rtsp_url,
         ]
 
         # Output 1: HLS for live streaming
@@ -168,7 +183,7 @@ class CameraStream:
     async def start(self, recording_enabled: bool = True) -> bool:
         """Start the camera stream."""
         if self._state == StreamState.RUNNING:
-            logger.warning(f"Camera '{self.camera.name}' stream already running")
+            logger.warning(f"Camera '{self.camera_name}' stream already running")
             return True
 
         self._recording_enabled = recording_enabled
@@ -180,7 +195,7 @@ class CameraStream:
             await self._start_ffmpeg()
             return True
         except Exception as e:
-            logger.error(f"Failed to start stream for '{self.camera.name}': {e}")
+            logger.error(f"Failed to start stream for '{self.camera_name}': {e}")
             self._state = StreamState.ERROR
             self._error_message = str(e)
             return False
@@ -188,7 +203,7 @@ class CameraStream:
     async def _start_ffmpeg(self) -> None:
         """Start the FFmpeg process."""
         cmd = self._build_ffmpeg_command()
-        logger.info(f"Starting stream for '{self.camera.name}' (recording={self._recording_enabled})")
+        logger.info(f"Starting stream for '{self.camera_name}' (recording={self._recording_enabled})")
         logger.debug(f"FFmpeg command: {' '.join(cmd)}")
 
         self._process = await asyncio.create_subprocess_exec(
@@ -217,13 +232,13 @@ class CameraStream:
             exit_code = self._process.returncode
             if exit_code != 0:
                 error_msg = stderr.decode().strip() if stderr else f"Exit code {exit_code}"
-                logger.warning(f"FFmpeg stopped for '{self.camera.name}': {error_msg}")
+                logger.warning(f"FFmpeg stopped for '{self.camera_name}': {error_msg}")
                 await self._handle_disconnect()
 
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.exception(f"Error monitoring FFmpeg for '{self.camera.name}'")
+            logger.exception(f"Error monitoring FFmpeg for '{self.camera_name}'")
             self._error_message = str(e)
             await self._handle_disconnect()
 
@@ -235,7 +250,7 @@ class CameraStream:
         self._reconnect_attempts += 1
 
         if self._reconnect_attempts > self._max_reconnect_attempts:
-            logger.error(f"Max reconnect attempts reached for '{self.camera.name}'")
+            logger.error(f"Max reconnect attempts reached for '{self.camera_name}'")
             self._state = StreamState.ERROR
             self._error_message = "Max reconnection attempts exceeded"
             return
@@ -244,7 +259,7 @@ class CameraStream:
         delay = min(self._reconnect_delay * self._reconnect_attempts, 60)
 
         logger.info(
-            f"Reconnecting to '{self.camera.name}' in {delay}s "
+            f"Reconnecting to '{self.camera_name}' in {delay}s "
             f"(attempt {self._reconnect_attempts}/{self._max_reconnect_attempts})"
         )
 
@@ -256,9 +271,9 @@ class CameraStream:
         try:
             await self._start_ffmpeg()
             self._reconnect_attempts = 0
-            logger.info(f"Reconnected to '{self.camera.name}'")
+            logger.info(f"Reconnected to '{self.camera_name}'")
         except Exception as e:
-            logger.error(f"Reconnection failed for '{self.camera.name}': {e}")
+            logger.error(f"Reconnection failed for '{self.camera_name}': {e}")
             await self._handle_disconnect()
 
     async def stop(self) -> None:
@@ -266,7 +281,7 @@ class CameraStream:
         if self._state == StreamState.STOPPED:
             return
 
-        logger.info(f"Stopping stream for '{self.camera.name}'")
+        logger.info(f"Stopping stream for '{self.camera_name}'")
         self._state = StreamState.STOPPED
 
         if self._monitor_task:
@@ -314,8 +329,8 @@ class CameraStream:
     def get_status(self) -> dict:
         """Get stream status."""
         return {
-            "camera_id": self.camera.id,
-            "camera_name": self.camera.name,
+            "camera_id": self.camera_id,
+            "camera_name": self.camera_name,
             "state": self._state.value,
             "is_running": self.is_running,
             "is_recording": self.is_recording,
