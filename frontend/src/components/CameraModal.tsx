@@ -79,22 +79,42 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, andTest: boolean = false) => {
     e.preventDefault();
     setError(null);
     setSaving(true);
+    setTestResult(null);
 
     try {
+      let savedCamera: Camera;
       if (isEditing && camera) {
-        await api.updateCamera(camera.id, formData);
+        savedCamera = await api.updateCamera(camera.id, formData);
       } else {
-        await api.createCamera(formData);
+        savedCamera = await api.createCamera(formData);
       }
-      onSave();
-      onClose();
+
+      if (andTest) {
+        // Test the newly saved camera
+        setTesting(true);
+        try {
+          const result = await api.testCamera(savedCamera.id);
+          setTestResult(result);
+          onSave(); // Refresh camera list to show updated status
+        } catch (err) {
+          setTestResult({
+            success: false,
+            message: err instanceof Error ? err.message : 'Test failed',
+          });
+        } finally {
+          setTesting(false);
+          setSaving(false);
+        }
+      } else {
+        onSave();
+        onClose();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save camera');
-    } finally {
       setSaving(false);
     }
   };
@@ -112,8 +132,8 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay">
+      <div className="modal-content">
         <div className="modal-header">
           <h2>{isEditing ? 'Edit Camera' : 'Add Camera'}</h2>
           <button className="close-button" onClick={onClose}>
@@ -245,7 +265,7 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
                   type="button"
                   className="btn-test"
                   onClick={handleTest}
-                  disabled={testing}
+                  disabled={testing || saving}
                 >
                   {testing ? 'Testing...' : 'Test Connection'}
                 </button>
@@ -262,7 +282,15 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
             <button type="button" className="btn-cancel" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn-save" disabled={saving}>
+            <button
+              type="button"
+              className="btn-test"
+              onClick={(e) => handleSubmit(e, true)}
+              disabled={saving || testing}
+            >
+              {saving || testing ? 'Testing...' : 'Save & Test'}
+            </button>
+            <button type="submit" className="btn-save" disabled={saving || testing}>
               {saving ? 'Saving...' : 'Save'}
             </button>
           </div>
