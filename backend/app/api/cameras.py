@@ -33,6 +33,22 @@ async def list_cameras(db: AsyncSession = Depends(get_db)) -> CameraListResponse
     )
 
 
+@router.get("/recording/status")
+async def get_all_recording_status() -> list[dict]:
+    """Get recording status for all cameras."""
+    statuses = stream_manager.get_all_status()
+    return [
+        {
+            "camera_id": s["camera_id"],
+            "camera_name": s["camera_name"],
+            "is_recording": s["is_recording"],
+            "state": s["state"],
+            "start_time": s.get("start_time"),
+        }
+        for s in statuses
+    ]
+
+
 @router.get("/{camera_id}", response_model=CameraResponse)
 async def get_camera(
     camera_id: int,
