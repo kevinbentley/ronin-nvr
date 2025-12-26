@@ -30,6 +30,30 @@
   font-size: 12px;
 }
 
+.sidebar-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #333;
+}
+
+.sidebar-action-btn {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #2a2a2a;
+  color: #aaa;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sidebar-action-btn:hover {
+  background: #3a3a3a;
+  color: #fff;
+}
+
 .no-cameras {
   display: flex;
   flex-direction: column;
@@ -62,26 +86,29 @@
   align-items: center;
   padding: 10px 16px;
   border-bottom: 1px solid #2a2a2a;
-  transition: background 0.2s;
+  transition: background 0.2s, opacity 0.2s;
 }
 
 .camera-item:hover {
   background: #2a2a2a;
 }
 
+.camera-item.hidden-camera {
+  opacity: 0.5;
+}
+
 .camera-info {
   display: flex;
   align-items: center;
   flex: 1;
-  cursor: pointer;
   min-width: 0;
+  gap: 8px;
 }
 
 .status-indicator {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-right: 10px;
   flex-shrink: 0;
 }
 
@@ -104,6 +131,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+}
+
+.recording-badge {
+  font-size: 9px;
+  font-weight: 600;
+  color: #e53935;
+  background: rgba(229, 57, 53, 0.2);
+  padding: 2px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  animation: pulse 1.5s infinite;
 }
 
 .camera-actions {
@@ -112,7 +151,7 @@
   margin-left: 8px;
 }
 
-.rec-button {
+.visibility-button {
   padding: 4px 10px;
   border: 1px solid #444;
   border-radius: 4px;
@@ -123,22 +162,22 @@
   transition: all 0.2s;
 }
 
-.rec-button:hover:not(:disabled) {
-  background: #e53935;
-  border-color: #e53935;
+.visibility-button:hover {
+  background: #3a3a3a;
   color: #fff;
 }
 
-.rec-button.recording {
-  background: #e53935;
-  border-color: #e53935;
-  color: #fff;
-  animation: pulse 1.5s infinite;
+.visibility-button.visible {
+  border-color: #444;
 }
 
-.rec-button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+.visibility-button.hidden {
+  border-color: #1976d2;
+  color: #1976d2;
+}
+
+.visibility-button.hidden:hover {
+  background: rgba(25, 118, 210, 0.2);
 }
 
 @keyframes pulse {

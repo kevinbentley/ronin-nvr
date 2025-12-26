@@ -295,11 +295,14 @@ TBD
 
 ## Contributing
 
-TBD
+Kevin Bentley
+Claude Code
 
 ---
 
 ## Future Features
-
-- Archive to remote server
+- Make cameras selectable for the display grid, so you can choose which to see
+- Archive files to remote server
 - User authentication / management
+- List box display of recorded videos
+- Distributed stream handling (Need to determine how many streams a reasonably fast computer can handle)

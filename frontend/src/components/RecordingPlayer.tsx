@@ -17,6 +17,8 @@ export function RecordingPlayer({ src, title }: RecordingPlayerProps) {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(true);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -26,17 +28,23 @@ export function RecordingPlayer({ src, title }: RecordingPlayerProps) {
     const handleDurationChange = () => setDuration(video.duration);
     const handlePlay = () => setIsPlaying(true);
     const handlePause = () => setIsPlaying(false);
+    const handleCanPlay = () => setIsLoaded(true);
+    const handleError = () => setError('Failed to load video');
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('durationchange', handleDurationChange);
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
+    video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('error', handleError);
 
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('durationchange', handleDurationChange);
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
+      video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('error', handleError);
     };
   }, []);
 
@@ -44,6 +52,8 @@ export function RecordingPlayer({ src, title }: RecordingPlayerProps) {
   useEffect(() => {
     const video = videoRef.current;
     if (video) {
+      setIsLoaded(false);
+      setError(null);
       video.load();
       setCurrentTime(0);
       setIsPlaying(false);
@@ -57,7 +67,10 @@ export function RecordingPlayer({ src, title }: RecordingPlayerProps) {
     if (isPlaying) {
       video.pause();
     } else {
-      video.play();
+      video.play().catch((err) => {
+        console.error('Play failed:', err);
+        setError('Failed to play video');
+      });
     }
   };
 
@@ -115,14 +128,38 @@ export function RecordingPlayer({ src, title }: RecordingPlayerProps) {
     <div className="recording-player">
       {title && <div className="player-title">{title}</div>}
 
-      <video
-        ref={videoRef}
-        src={src}
-        className="player-video"
-        muted={isMuted}
-        playsInline
-        onClick={togglePlay}
-      />
+      <div className="video-wrapper">
+        <video
+          ref={videoRef}
+          src={src}
+          className="player-video"
+          muted={isMuted}
+          playsInline
+          preload="metadata"
+          onClick={togglePlay}
+        />
+
+        {/* Large play button overlay */}
+        {!isPlaying && isLoaded && (
+          <button className="play-overlay" onClick={togglePlay}>
+            <span className="play-icon">▶</span>
+          </button>
+        )}
+
+        {/* Loading state */}
+        {!isLoaded && !error && (
+          <div className="video-loading">
+            <span>Loading...</span>
+          </div>
+        )}
+
+        {/* Error state */}
+        {error && (
+          <div className="video-error">
+            <span>{error}</span>
+          </div>
+        )}
+      </div>
 
       <div className="player-controls">
         <button className="control-button play-button" onClick={togglePlay}>

@@ -2,17 +2,16 @@
  * RoninNVR main application component.
  */
 
-import { useState, useEffect } from 'react';
-import { Header } from './components/Header';
+import { useState, useEffect, useCallback } from 'react';
+import { Header, type Page } from './components/Header';
 import { CameraGrid } from './components/CameraGrid';
 import { CameraSidebar } from './components/CameraSidebar';
-import { CameraModal } from './components/CameraModal';
 import { PlaybackPage } from './pages/PlaybackPage';
+import { StatusPage } from './pages/StatusPage';
+import { SetupPage } from './pages/SetupPage';
 import { useCameras } from './hooks/useCameras';
-import type { Camera, GridLayout } from './types/camera';
+import type { GridLayout } from './types/camera';
 import './App.css';
-
-type Page = 'live' | 'playback';
 
 function App() {
   const { cameras, recordingStatus, loading, error, refresh } = useCameras();
@@ -21,31 +20,48 @@ function App() {
     const saved = localStorage.getItem('gridLayout');
     return (saved as GridLayout) || '2x2';
   });
-  const [showModal, setShowModal] = useState(false);
-  const [editingCamera, setEditingCamera] = useState<Camera | undefined>();
+  const [hiddenCameraIds, setHiddenCameraIds] = useState<Set<number>>(() => {
+    const saved = localStorage.getItem('hiddenCameras');
+    if (saved) {
+      try {
+        return new Set(JSON.parse(saved));
+      } catch {
+        return new Set();
+      }
+    }
+    return new Set();
+  });
 
   useEffect(() => {
     localStorage.setItem('gridLayout', layout);
   }, [layout]);
 
-  const handleAddCamera = () => {
-    setEditingCamera(undefined);
-    setShowModal(true);
-  };
+  useEffect(() => {
+    localStorage.setItem('hiddenCameras', JSON.stringify([...hiddenCameraIds]));
+  }, [hiddenCameraIds]);
 
-  const handleEditCamera = (camera: Camera) => {
-    setEditingCamera(camera);
-    setShowModal(true);
-  };
+  const handleToggleVisibility = useCallback((cameraId: number) => {
+    setHiddenCameraIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(cameraId)) {
+        next.delete(cameraId);
+      } else {
+        next.add(cameraId);
+      }
+      return next;
+    });
+  }, []);
 
-  const handleCloseModal = () => {
-    setShowModal(false);
-    setEditingCamera(undefined);
-  };
+  const handleShowAll = useCallback(() => {
+    setHiddenCameraIds(new Set());
+  }, []);
 
-  const handleSaveCamera = () => {
-    refresh();
-  };
+  const handleHideAll = useCallback(() => {
+    setHiddenCameraIds(new Set(cameras.map((c) => c.id)));
+  }, [cameras]);
+
+  // Filter visible cameras for the grid
+  const visibleCameras = cameras.filter((c) => !hiddenCameraIds.has(c.id));
 
   if (loading && currentPage === 'live') {
     return (
@@ -55,51 +71,65 @@ function App() {
     );
   }
 
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'live':
+        return (
+          <div className="app-content">
+            <CameraSidebar
+              cameras={cameras}
+              recordingStatus={recordingStatus}
+              hiddenCameraIds={hiddenCameraIds}
+              onToggleVisibility={handleToggleVisibility}
+              onShowAll={handleShowAll}
+              onHideAll={handleHideAll}
+            />
+            <main className="main-content">
+              {error && (
+                <div className="error-banner">
+                  {error}
+                  <button onClick={refresh}>Retry</button>
+                </div>
+              )}
+              <CameraGrid
+                cameras={visibleCameras}
+                recordingStatus={recordingStatus}
+                layout={layout}
+              />
+            </main>
+          </div>
+        );
+      case 'playback':
+        return <PlaybackPage />;
+      case 'status':
+        return (
+          <StatusPage
+            cameras={cameras}
+            recordingStatus={recordingStatus}
+          />
+        );
+      case 'setup':
+        return (
+          <SetupPage
+            cameras={cameras}
+            recordingStatus={recordingStatus}
+            onRefresh={refresh}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="app">
       <Header
         layout={layout}
         onLayoutChange={setLayout}
-        onAddCamera={handleAddCamera}
         currentPage={currentPage}
         onPageChange={setCurrentPage}
       />
-
-      {currentPage === 'live' ? (
-        <div className="app-content">
-          <CameraSidebar
-            cameras={cameras}
-            recordingStatus={recordingStatus}
-            onEditCamera={handleEditCamera}
-            onRefresh={refresh}
-          />
-
-          <main className="main-content">
-            {error && (
-              <div className="error-banner">
-                {error}
-                <button onClick={refresh}>Retry</button>
-              </div>
-            )}
-
-            <CameraGrid
-              cameras={cameras}
-              recordingStatus={recordingStatus}
-              layout={layout}
-            />
-          </main>
-        </div>
-      ) : (
-        <PlaybackPage />
-      )}
-
-      {showModal && (
-        <CameraModal
-          camera={editingCamera}
-          onClose={handleCloseModal}
-          onSave={handleSaveCamera}
-        />
-      )}
+      {renderPage()}
     </div>
   );
 }

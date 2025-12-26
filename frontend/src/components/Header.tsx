@@ -6,12 +6,11 @@ import { LayoutSelector } from './LayoutSelector';
 import type { GridLayout } from '../types/camera';
 import './Header.css';
 
-type Page = 'live' | 'playback';
+export type Page = 'live' | 'playback' | 'status' | 'setup';
 
 interface HeaderProps {
   layout: GridLayout;
   onLayoutChange: (layout: GridLayout) => void;
-  onAddCamera: () => void;
   currentPage: Page;
   onPageChange: (page: Page) => void;
 }
@@ -19,7 +18,6 @@ interface HeaderProps {
 export function Header({
   layout,
   onLayoutChange,
-  onAddCamera,
   currentPage,
   onPageChange,
 }: HeaderProps) {
@@ -40,6 +38,18 @@ export function Header({
           >
             Playback
           </button>
+          <button
+            className={`nav-button ${currentPage === 'status' ? 'active' : ''}`}
+            onClick={() => onPageChange('status')}
+          >
+            Status
+          </button>
+          <button
+            className={`nav-button ${currentPage === 'setup' ? 'active' : ''}`}
+            onClick={() => onPageChange('setup')}
+          >
+            Setup
+          </button>
         </nav>
       </div>
 
@@ -50,11 +60,7 @@ export function Header({
       </div>
 
       <div className="header-right">
-        {currentPage === 'live' && (
-          <button className="add-camera-button" onClick={onAddCamera}>
-            + Add Camera
-          </button>
-        )}
+        {/* Reserved for future actions */}
       </div>
     </header>
   );

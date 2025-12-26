@@ -1,38 +1,27 @@
 /**
- * Sidebar showing camera list with controls.
+ * Sidebar showing camera list with show/hide controls.
  */
 
-import { api } from '../services/api';
 import type { Camera, RecordingStatus } from '../types/camera';
 import './CameraSidebar.css';
 
 interface CameraSidebarProps {
   cameras: Camera[];
   recordingStatus: Map<number, RecordingStatus>;
-  onEditCamera: (camera: Camera) => void;
-  onRefresh: () => void;
+  hiddenCameraIds: Set<number>;
+  onToggleVisibility: (cameraId: number) => void;
+  onShowAll: () => void;
+  onHideAll: () => void;
 }
 
 export function CameraSidebar({
   cameras,
   recordingStatus,
-  onEditCamera,
-  onRefresh,
+  hiddenCameraIds,
+  onToggleVisibility,
+  onShowAll,
+  onHideAll,
 }: CameraSidebarProps) {
-  const handleToggleRecording = async (camera: Camera) => {
-    const status = recordingStatus.get(camera.id);
-    try {
-      if (status?.is_recording) {
-        await api.stopRecording(camera.id);
-      } else {
-        await api.startRecording(camera.id);
-      }
-      onRefresh();
-    } catch (err) {
-      console.error('Failed to toggle recording:', err);
-    }
-  };
-
   if (cameras.length === 0) {
     return (
       <aside className="camera-sidebar">
@@ -41,47 +30,51 @@ export function CameraSidebar({
         </div>
         <div className="no-cameras">
           <p>No cameras configured</p>
-          <p className="hint">Click "Add Camera" to get started</p>
+          <p className="hint">Go to Setup to add cameras</p>
         </div>
       </aside>
     );
   }
 
+  const visibleCount = cameras.length - hiddenCameraIds.size;
+
   return (
     <aside className="camera-sidebar">
       <div className="sidebar-header">
         <h3>Cameras</h3>
-        <span className="camera-count">{cameras.length}</span>
+        <span className="camera-count">{visibleCount}/{cameras.length}</span>
+      </div>
+
+      <div className="sidebar-actions">
+        <button className="sidebar-action-btn" onClick={onShowAll}>
+          Show All
+        </button>
+        <button className="sidebar-action-btn" onClick={onHideAll}>
+          Hide All
+        </button>
       </div>
 
       <ul className="camera-list">
         {cameras.map((camera) => {
+          const isHidden = hiddenCameraIds.has(camera.id);
           const status = recordingStatus.get(camera.id);
           return (
-            <li key={camera.id} className="camera-item">
-              <div className="camera-info" onClick={() => onEditCamera(camera)}>
+            <li key={camera.id} className={`camera-item ${isHidden ? 'hidden-camera' : ''}`}>
+              <div className="camera-info">
                 <span className={`status-indicator ${camera.status}`} />
                 <span className="camera-name">{camera.name}</span>
+                {status?.is_recording && (
+                  <span className="recording-badge" title="Recording">REC</span>
+                )}
               </div>
               <div className="camera-actions">
-                {status?.is_recording ? (
-                  <button
-                    className="rec-button recording"
-                    onClick={() => handleToggleRecording(camera)}
-                    title="Stop Recording"
-                  >
-                    Stop
-                  </button>
-                ) : (
-                  <button
-                    className="rec-button"
-                    onClick={() => handleToggleRecording(camera)}
-                    title="Start Recording"
-                    disabled={camera.status !== 'online'}
-                  >
-                    Rec
-                  </button>
-                )}
+                <button
+                  className={`visibility-button ${isHidden ? 'hidden' : 'visible'}`}
+                  onClick={() => onToggleVisibility(camera.id)}
+                  title={isHidden ? 'Show in grid' : 'Hide from grid'}
+                >
+                  {isHidden ? 'Show' : 'Hide'}
+                </button>
               </div>
             </li>
           );
