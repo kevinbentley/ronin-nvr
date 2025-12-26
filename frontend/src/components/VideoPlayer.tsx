@@ -66,11 +66,15 @@ export function VideoPlayer({
     }
   };
 
-  const restartBackendStream = async () => {
+  const restartBackendStream = async (forceRestart: boolean = false) => {
     try {
-      await api.stopStream(cameraId).catch(() => {});
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      await api.startStream(cameraId);
+      // Only stop/restart the backend stream if explicitly requested (manual reconnect)
+      // For auto-retry, just let HLS.js reload - the backend stream is likely still running
+      if (forceRestart) {
+        await api.stopStream(cameraId).catch(() => {});
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await api.startStream(cameraId);
+      }
       return true;
     } catch (err) {
       console.error('Failed to restart stream:', err);
@@ -78,7 +82,7 @@ export function VideoPlayer({
     }
   };
 
-  const initializePlayer = async (isRetry: boolean = false) => {
+  const initializePlayer = async (isRetry: boolean = false, forceRestart: boolean = false) => {
     const video = videoRef.current;
     if (!video || !mountedRef.current) return;
 
@@ -89,7 +93,8 @@ export function VideoPlayer({
     setErrorMessage(null);
 
     if (isRetry) {
-      await restartBackendStream();
+      // Only force restart backend stream on manual reconnect, not auto-retry
+      await restartBackendStream(forceRestart);
       if (!mountedRef.current) return;
     }
 
@@ -225,7 +230,8 @@ export function VideoPlayer({
     retryCountRef.current = 0;
     setConnectionState('reconnecting');
     setErrorMessage('Reconnecting...');
-    initializePlayer(true);
+    // Force restart the backend stream on manual reconnect
+    initializePlayer(true, true);
   };
 
   const getStatusClass = () => {

@@ -2,9 +2,9 @@
  * Modal for adding/editing cameras.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
-import type { Camera, CameraCreate, CameraTestResult } from '../types/camera';
+import type { Camera, CameraCreate, CameraUpdate, CameraTestResult } from '../types/camera';
 import './CameraModal.css';
 
 interface CameraModalProps {
@@ -12,6 +12,9 @@ interface CameraModalProps {
   onClose: () => void;
   onSave: () => void;
 }
+
+// Placeholder shown when a password exists but hasn't been modified
+const PASSWORD_PLACEHOLDER = '••••••••';
 
 export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
   const [formData, setFormData] = useState<CameraCreate>({
@@ -29,20 +32,29 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Track if password was modified during editing
+  const [passwordModified, setPasswordModified] = useState(false);
+  const hasExistingPassword = useRef(false);
+
   const isEditing = !!camera;
 
   useEffect(() => {
     if (camera) {
+      // Check if camera likely has a password (username exists)
+      // Backend doesn't return password for security, so we infer from username
+      hasExistingPassword.current = !!camera.username;
+
       setFormData({
         name: camera.name,
         host: camera.host,
         port: camera.port,
         path: camera.path,
         username: camera.username || '',
-        password: camera.password || '',
+        password: '', // Don't populate - backend doesn't return it
         transport: camera.transport,
         recording_enabled: camera.recording_enabled,
       });
+      setPasswordModified(false);
     }
   }, [camera]);
 
@@ -50,6 +62,12 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value, type } = e.target;
+
+    // Track if password field was modified
+    if (name === 'password') {
+      setPasswordModified(true);
+    }
+
     setFormData((prev) => ({
       ...prev,
       [name]:
@@ -88,7 +106,21 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
     try {
       let savedCamera: Camera;
       if (isEditing && camera) {
-        savedCamera = await api.updateCamera(camera.id, formData);
+        // Build update payload - only include password if it was modified
+        const updateData: CameraUpdate = {
+          name: formData.name,
+          host: formData.host,
+          port: formData.port,
+          path: formData.path,
+          username: formData.username,
+          transport: formData.transport,
+          recording_enabled: formData.recording_enabled,
+        };
+        // Only include password if user actually changed it
+        if (passwordModified && formData.password) {
+          updateData.password = formData.password;
+        }
+        savedCamera = await api.updateCamera(camera.id, updateData);
       } else {
         savedCamera = await api.createCamera(formData);
       }
@@ -214,7 +246,15 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
                 type="password"
                 value={formData.password}
                 onChange={handleChange}
+                placeholder={
+                  isEditing && hasExistingPassword.current && !passwordModified
+                    ? PASSWORD_PLACEHOLDER
+                    : ''
+                }
               />
+              {isEditing && hasExistingPassword.current && !passwordModified && (
+                <small className="field-hint">Leave empty to keep current password</small>
+              )}
             </div>
           </div>
 

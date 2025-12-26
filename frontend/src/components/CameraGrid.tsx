@@ -1,7 +1,8 @@
 /**
- * Camera grid component with configurable layout.
+ * Camera grid component with configurable layout and zoom functionality.
  */
 
+import { useState, useEffect, useCallback } from 'react';
 import { VideoPlayer } from './VideoPlayer';
 import { api } from '../services/api';
 import type { Camera, RecordingStatus, GridLayout } from '../types/camera';
@@ -21,12 +22,70 @@ const layoutConfig: Record<GridLayout, { columns: number; rows: number }> = {
 };
 
 export function CameraGrid({ cameras, recordingStatus, layout }: CameraGridProps) {
+  const [zoomedCameraId, setZoomedCameraId] = useState<number | null>(null);
+
   const { columns, rows } = layoutConfig[layout];
   const maxCameras = columns * rows;
   const displayCameras = cameras.slice(0, maxCameras);
 
   // Fill empty slots
   const emptySlots = maxCameras - displayCameras.length;
+
+  // Handle Escape key to exit zoom
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape' && zoomedCameraId !== null) {
+      setZoomedCameraId(null);
+    }
+  }, [zoomedCameraId]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  const handleCameraClick = (cameraId: number) => {
+    if (zoomedCameraId === cameraId) {
+      // Already zoomed on this camera, exit zoom
+      setZoomedCameraId(null);
+    } else {
+      // Zoom to this camera
+      setZoomedCameraId(cameraId);
+    }
+  };
+
+  // If a camera is zoomed, show only that camera full-screen
+  if (zoomedCameraId !== null) {
+    const zoomedCamera = cameras.find((c) => c.id === zoomedCameraId);
+    if (zoomedCamera) {
+      const status = recordingStatus.get(zoomedCamera.id);
+      return (
+        <div className="camera-grid zoomed">
+          <div
+            className="grid-cell zoomed-cell"
+            onClick={() => setZoomedCameraId(null)}
+          >
+            <VideoPlayer
+              src={api.getStreamUrl(zoomedCamera.id)}
+              cameraId={zoomedCamera.id}
+              cameraName={zoomedCamera.name}
+              status={zoomedCamera.status}
+              isRecording={status?.is_recording}
+            />
+            <button
+              className="zoom-exit-button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setZoomedCameraId(null);
+              }}
+              title="Exit zoom (Esc)"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+      );
+    }
+  }
 
   return (
     <div
@@ -39,7 +98,12 @@ export function CameraGrid({ cameras, recordingStatus, layout }: CameraGridProps
       {displayCameras.map((camera) => {
         const status = recordingStatus.get(camera.id);
         return (
-          <div key={camera.id} className="grid-cell">
+          <div
+            key={camera.id}
+            className="grid-cell clickable"
+            onClick={() => handleCameraClick(camera.id)}
+            title="Click to zoom"
+          >
             <VideoPlayer
               src={api.getStreamUrl(camera.id)}
               cameraId={camera.id}

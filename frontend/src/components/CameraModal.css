@@ -216,3 +216,11 @@ form {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.field-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+}

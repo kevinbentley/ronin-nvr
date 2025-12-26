@@ -175,6 +175,7 @@ class CameraStream:
         ]
 
         # Output 1: HLS for live streaming
+        # Use start_at_zero and reset_timestamps for cleaner segments
         cmd.extend([
             "-c:v", "copy",
             "-c:a", "aac",
@@ -183,6 +184,7 @@ class CameraStream:
             "-hls_time", "2",
             "-hls_list_size", "10",
             "-hls_flags", "delete_segments+append_list+omit_endlist",
+            "-start_at_zero",
             "-hls_segment_filename", str(self.hls_directory / "segment%03d.ts"),
             str(self.playlist_path),
         ])

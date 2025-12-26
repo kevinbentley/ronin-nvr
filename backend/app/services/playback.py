@@ -30,10 +30,12 @@ class RecordingFile:
 
     @property
     def id(self) -> str:
-        """Generate unique ID from path."""
-        # Use relative path from storage root as ID
+        """Generate unique ID from path.
+
+        Uses '::' as separator since it won't appear in camera names or filenames.
+        """
         rel_path = self.path.relative_to(Path(settings.storage_root))
-        return str(rel_path).replace("/", "_").replace("\\", "_")
+        return str(rel_path).replace("/", "::").replace("\\", "::")
 
     @property
     def filename(self) -> str:
@@ -152,8 +154,8 @@ class PlaybackService:
 
     def get_recording_by_id(self, recording_id: str) -> Optional[RecordingFile]:
         """Get a recording file by its ID."""
-        # Convert ID back to path
-        rel_path = recording_id.replace("_", "/")
+        # Convert ID back to path (uses '::' as separator)
+        rel_path = recording_id.replace("::", "/")
         full_path = self.storage_root / rel_path
 
         if not full_path.exists() or not full_path.is_file():
