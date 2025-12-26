@@ -282,14 +282,16 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
             <button type="button" className="btn-cancel" onClick={onClose}>
               Cancel
             </button>
-            <button
-              type="button"
-              className="btn-test"
-              onClick={(e) => handleSubmit(e, true)}
-              disabled={saving || testing}
-            >
-              {saving || testing ? 'Testing...' : 'Save & Test'}
-            </button>
+            {!isEditing && (
+              <button
+                type="button"
+                className="btn-test"
+                onClick={(e) => handleSubmit(e, true)}
+                disabled={saving || testing}
+              >
+                {saving || testing ? 'Testing...' : 'Save & Test'}
+              </button>
+            )}
             <button type="submit" className="btn-save" disabled={saving || testing}>
               {saving ? 'Saving...' : 'Save'}
             </button>
