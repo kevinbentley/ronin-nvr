@@ -2,5 +2,6 @@
 
 from app.models.camera import Camera
 from app.models.recording import Recording
+from app.models.user import User
 
-__all__ = ["Camera", "Recording"]
+__all__ = ["Camera", "Recording", "User"]

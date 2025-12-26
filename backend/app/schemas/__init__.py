@@ -1,5 +1,11 @@
 """Pydantic schemas for request/response validation."""
 
+from app.schemas.auth import (
+    LoginRequest,
+    TokenResponse,
+    UserCreate,
+    UserResponse,
+)
 from app.schemas.camera import (
     CameraCreate,
     CameraListResponse,
@@ -15,6 +21,10 @@ from app.schemas.recording import (
 )
 
 __all__ = [
+    "LoginRequest",
+    "TokenResponse",
+    "UserCreate",
+    "UserResponse",
     "CameraCreate",
     "CameraUpdate",
     "CameraResponse",

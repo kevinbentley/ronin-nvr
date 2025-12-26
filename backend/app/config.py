@@ -39,6 +39,20 @@ class Settings(BaseSettings):
     retention_max_gb: Optional[float] = None
     retention_check_interval_minutes: int = 60
 
+    # JWT Authentication
+    jwt_secret_key: str = "CHANGE_ME_IN_PRODUCTION"
+    jwt_algorithm: str = "HS256"
+    jwt_expiration_minutes: int = 60 * 24  # 24 hours
+
+    # Encryption for camera credentials
+    encryption_key: str = ""  # Fernet key, generate with Fernet.generate_key()
+
+    # Default admin user (created on first startup if no users exist)
+    default_admin_password: Optional[str] = None  # If not set, generates random
+
+    # CORS (comma-separated origins for production)
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+
 
 @lru_cache
 def get_settings() -> Settings:

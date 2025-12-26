@@ -3,9 +3,11 @@
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from app.dependencies import get_admin_user, get_current_user
+from app.models.user import User
 from app.services.retention import retention_service
 
 router = APIRouter(prefix="/storage", tags=["storage"])
@@ -44,7 +46,9 @@ class RetentionResult(BaseModel):
 
 
 @router.get("/stats", response_model=StorageStatsResponse)
-async def get_storage_stats() -> StorageStatsResponse:
+async def get_storage_stats(
+    current_user: User = Depends(get_current_user),
+) -> StorageStatsResponse:
     """Get storage statistics."""
     stats = retention_service.get_stats()
 
@@ -70,7 +74,9 @@ async def get_storage_stats() -> StorageStatsResponse:
 
 
 @router.post("/cleanup", response_model=RetentionResult)
-async def run_retention_cleanup() -> RetentionResult:
+async def run_retention_cleanup(
+    admin_user: User = Depends(get_admin_user),
+) -> RetentionResult:
     """Manually trigger retention cleanup."""
     result = retention_service.enforce_retention()
     return RetentionResult(**result)

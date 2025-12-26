@@ -3,17 +3,20 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Header, type Page } from './components/Header';
 import { CameraGrid } from './components/CameraGrid';
 import { CameraSidebar } from './components/CameraSidebar';
 import { PlaybackPage } from './pages/PlaybackPage';
 import { StatusPage } from './pages/StatusPage';
 import { SetupPage } from './pages/SetupPage';
+import { LoginPage } from './pages/LoginPage';
 import { useCameras } from './hooks/useCameras';
 import type { GridLayout } from './types/camera';
 import './App.css';
 
-function App() {
+function AppContent() {
+  const { isAuthenticated, isLoading: authLoading, user, logout } = useAuth();
   const { cameras, recordingStatus, loading, error, refresh } = useCameras();
   const [currentPage, setCurrentPage] = useState<Page>('live');
   const [layout, setLayout] = useState<GridLayout>(() => {
@@ -62,6 +65,20 @@ function App() {
 
   // Filter visible cameras for the grid
   const visibleCameras = cameras.filter((c) => !hiddenCameraIds.has(c.id));
+
+  // Show loading spinner while checking auth
+  if (authLoading) {
+    return (
+      <div className="app loading">
+        <div className="loading-spinner">Loading...</div>
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
 
   if (loading && currentPage === 'live') {
     return (
@@ -128,9 +145,19 @@ function App() {
         onLayoutChange={setLayout}
         currentPage={currentPage}
         onPageChange={setCurrentPage}
+        user={user}
+        onLogout={logout}
       />
       {renderPage()}
     </div>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 

@@ -4,12 +4,16 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies import get_admin_user, get_current_user
 from app.models.camera import CameraStatus
+from app.models.user import User
 from app.schemas import (
     CameraCreate,
     CameraListResponse,
@@ -19,6 +23,8 @@ from app.schemas import (
 )
 from app.services.camera import CameraService, test_camera_connection
 from app.services.camera_stream import stream_manager
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -34,7 +40,10 @@ def _get_stream_lock(camera_id: int) -> asyncio.Lock:
 
 
 @router.get("", response_model=CameraListResponse)
-async def list_cameras(db: AsyncSession = Depends(get_db)) -> CameraListResponse:
+async def list_cameras(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CameraListResponse:
     """Get all cameras."""
     service = CameraService(db)
     cameras = await service.get_all()
@@ -45,7 +54,9 @@ async def list_cameras(db: AsyncSession = Depends(get_db)) -> CameraListResponse
 
 
 @router.get("/recording/status")
-async def get_all_recording_status() -> list[dict]:
+async def get_all_recording_status(
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
     """Get recording status for all cameras."""
     statuses = stream_manager.get_all_status()
     return [
@@ -61,7 +72,9 @@ async def get_all_recording_status() -> list[dict]:
 
 
 @router.get("/streams/health")
-async def get_streams_health() -> dict:
+async def get_streams_health(
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """Get health status of all camera streams.
 
     Provides a summary of stream states for monitoring and debugging.
@@ -99,6 +112,7 @@ async def get_streams_health() -> dict:
 async def get_stream_debug(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Get detailed debug information for a camera stream.
 
@@ -161,6 +175,7 @@ async def get_stream_debug(
 async def get_camera(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> CameraResponse:
     """Get a specific camera by ID."""
     service = CameraService(db)
@@ -174,9 +189,12 @@ async def get_camera(
 
 
 @router.post("", response_model=CameraResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("20/minute")
 async def create_camera(
+    request: Request,
     camera_data: CameraCreate,
     db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(get_admin_user),
 ) -> CameraResponse:
     """Create a new camera."""
     service = CameraService(db)
@@ -198,6 +216,7 @@ async def update_camera(
     camera_id: int,
     camera_data: CameraUpdate,
     db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(get_admin_user),
 ) -> CameraResponse:
     """Update an existing camera."""
     service = CameraService(db)
@@ -225,6 +244,7 @@ async def update_camera(
 async def delete_camera(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(get_admin_user),
 ) -> None:
     """Delete a camera."""
     service = CameraService(db)
@@ -245,6 +265,7 @@ async def delete_camera(
 async def test_camera(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> CameraTestResult:
     """Test camera RTSP connection."""
     service = CameraService(db)
@@ -273,6 +294,7 @@ async def start_stream(
     camera_id: int,
     recording: bool = True,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Start streaming (and optionally recording) for a camera."""
     service = CameraService(db)
@@ -302,6 +324,7 @@ async def start_stream(
 async def stop_stream(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Stop streaming for a camera."""
     service = CameraService(db)
@@ -320,6 +343,7 @@ async def stop_stream(
 async def restart_stream(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Restart streaming for a camera."""
     service = CameraService(db)
@@ -352,6 +376,7 @@ async def restart_stream(
 async def get_stream_status(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Get streaming status for a camera."""
     service = CameraService(db)
@@ -378,6 +403,7 @@ async def get_stream_status(
 async def get_hls_playlist(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> FileResponse:
     """Get HLS playlist for a camera stream."""
     service = CameraService(db)
@@ -426,6 +452,7 @@ async def get_hls_playlist(
 async def get_hls_segment(
     camera_id: int,
     segment: str,
+    current_user: User = Depends(get_current_user),
 ) -> FileResponse:
     """Get HLS segment file."""
     if not segment.endswith(".ts"):
@@ -457,6 +484,7 @@ async def get_hls_segment(
 async def start_recording(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Start recording for a camera (starts stream with recording enabled)."""
     service = CameraService(db)
@@ -485,6 +513,7 @@ async def start_recording(
 async def stop_recording(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Stop recording for a camera (stops the stream entirely)."""
     service = CameraService(db)
@@ -507,6 +536,7 @@ async def stop_recording(
 async def get_recording_status(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Get recording status for a camera."""
     service = CameraService(db)

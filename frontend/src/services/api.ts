@@ -2,7 +2,7 @@
  * API client for RoninNVR backend.
  */
 
-import axios, { type AxiosInstance } from 'axios';
+import axios, { type AxiosInstance, type AxiosError } from 'axios';
 import type {
   Camera,
   CameraCreate,
@@ -17,6 +17,35 @@ import type {
 } from '../types/camera';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api';
+const TOKEN_KEY = 'auth_token';
+
+// Auth types
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
+export interface User {
+  id: number;
+  username: string;
+  is_admin: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+// Event for auth state changes
+type AuthChangeCallback = (isAuthenticated: boolean) => void;
+let authChangeCallback: AuthChangeCallback | null = null;
+
+export function setAuthChangeCallback(callback: AuthChangeCallback): void {
+  authChangeCallback = callback;
+}
 
 class ApiClient {
   private client: AxiosInstance;
@@ -28,6 +57,61 @@ class ApiClient {
         'Content-Type': 'application/json',
       },
     });
+
+    // Request interceptor: add auth token
+    this.client.interceptors.request.use((config) => {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+      return config;
+    });
+
+    // Response interceptor: handle 401 errors
+    this.client.interceptors.response.use(
+      (response) => response,
+      (error: AxiosError) => {
+        if (error.response?.status === 401) {
+          // Token expired or invalid - clear it and notify
+          localStorage.removeItem(TOKEN_KEY);
+          if (authChangeCallback) {
+            authChangeCallback(false);
+          }
+        }
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  // Auth methods
+  async login(credentials: LoginRequest): Promise<TokenResponse> {
+    const response = await this.client.post('/auth/login', credentials);
+    const data: TokenResponse = response.data;
+    localStorage.setItem(TOKEN_KEY, data.access_token);
+    if (authChangeCallback) {
+      authChangeCallback(true);
+    }
+    return data;
+  }
+
+  logout(): void {
+    localStorage.removeItem(TOKEN_KEY);
+    if (authChangeCallback) {
+      authChangeCallback(false);
+    }
+  }
+
+  async getMe(): Promise<User> {
+    const response = await this.client.get('/auth/me');
+    return response.data;
+  }
+
+  isAuthenticated(): boolean {
+    return !!localStorage.getItem(TOKEN_KEY);
+  }
+
+  getToken(): string | null {
+    return localStorage.getItem(TOKEN_KEY);
   }
 
   // Health check

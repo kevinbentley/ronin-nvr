@@ -4,19 +4,67 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from app import __version__
 from app.api import api_router
 from app.config import get_settings
-from app.database import close_db, init_db
+from app.database import close_db, get_db, init_db
 from app.services.camera_stream import stream_manager
 from app.services.retention import retention_monitor
 from app.services.status_monitor import status_monitor
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
+
+async def create_default_admin() -> None:
+    """Create default admin user if no users exist."""
+    from app.database import AsyncSessionLocal
+    from app.schemas.auth import UserCreate
+    from app.services.auth import AuthService
+    from app.services.encryption import generate_random_password
+
+    async with AsyncSessionLocal() as db:
+        auth_service = AuthService(db)
+        user_count = await auth_service.get_user_count()
+
+        if user_count == 0:
+            # Generate or use configured password
+            password = settings.default_admin_password or generate_random_password()
+
+            user_data = UserCreate(
+                username="admin",
+                password=password,
+                is_admin=True,
+            )
+            await auth_service.create_user(user_data)
+
+            logger.info("=" * 60)
+            logger.info("Default admin user created:")
+            logger.info(f"  Username: admin")
+            if not settings.default_admin_password:
+                logger.info(f"  Password: {password}")
+                logger.info("  (Set DEFAULT_ADMIN_PASSWORD in .env to specify password)")
+            else:
+                logger.info("  Password: (from DEFAULT_ADMIN_PASSWORD)")
+            logger.info("=" * 60)
+
+
+def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """Handle rate limit exceeded errors."""
+    return JSONResponse(
+        status_code=429,
+        content={"detail": f"Rate limit exceeded: {exc.detail}"},
+    )
 
 
 @asynccontextmanager
@@ -39,6 +87,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await status_monitor.start()
         except Exception as e:
             logger.warning(f"Failed to start status monitor: {e}")
+
+        # Create default admin user if no users exist
+        try:
+            await create_default_admin()
+        except Exception as e:
+            logger.warning(f"Failed to create default admin: {e}")
 
     # Start retention monitor
     try:
@@ -77,12 +131,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add rate limiter to app state and exception handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
 # Add CORS middleware for frontend
-# Note: Allow all origins in development for HLS streaming
+# Parse origins from comma-separated config string
+cors_origins = [origin.strip() for origin in settings.cors_origins.split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=cors_origins,
+    allow_credentials=True,  # Required for Authorization headers
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],

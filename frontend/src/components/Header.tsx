@@ -4,6 +4,7 @@
 
 import { LayoutSelector } from './LayoutSelector';
 import type { GridLayout } from '../types/camera';
+import type { User } from '../services/api';
 import './Header.css';
 
 export type Page = 'live' | 'playback' | 'status' | 'setup';
@@ -13,6 +14,8 @@ interface HeaderProps {
   onLayoutChange: (layout: GridLayout) => void;
   currentPage: Page;
   onPageChange: (page: Page) => void;
+  user: User | null;
+  onLogout: () => void;
 }
 
 export function Header({
@@ -20,6 +23,8 @@ export function Header({
   onLayoutChange,
   currentPage,
   onPageChange,
+  user,
+  onLogout,
 }: HeaderProps) {
   return (
     <header className="app-header">
@@ -60,7 +65,17 @@ export function Header({
       </div>
 
       <div className="header-right">
-        {/* Reserved for future actions */}
+        {user && (
+          <div className="user-info">
+            <span className="username">
+              {user.username}
+              {user.is_admin && <span className="admin-badge">Admin</span>}
+            </span>
+            <button className="logout-button" onClick={onLogout}>
+              Logout
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

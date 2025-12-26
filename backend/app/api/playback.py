@@ -3,11 +3,17 @@
 from datetime import date, datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
+from app.dependencies import get_current_user
+from app.models.user import User
 from app.services.playback import playback_service
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/playback", tags=["playback"])
 
@@ -66,14 +72,19 @@ class ExportResponse(BaseModel):
 
 
 @router.get("/cameras", response_model=CamerasWithRecordingsResponse)
-async def get_cameras_with_recordings() -> CamerasWithRecordingsResponse:
+async def get_cameras_with_recordings(
+    current_user: User = Depends(get_current_user),
+) -> CamerasWithRecordingsResponse:
     """Get list of cameras that have recordings."""
     cameras = playback_service.get_cameras_with_recordings()
     return CamerasWithRecordingsResponse(cameras=cameras)
 
 
 @router.get("/cameras/{camera_name}/dates", response_model=AvailableDatesResponse)
-async def get_available_dates(camera_name: str) -> AvailableDatesResponse:
+async def get_available_dates(
+    camera_name: str,
+    current_user: User = Depends(get_current_user),
+) -> AvailableDatesResponse:
     """Get available recording dates for a camera."""
     dates = playback_service.get_available_dates(camera_name)
     return AvailableDatesResponse(
@@ -86,6 +97,7 @@ async def get_available_dates(camera_name: str) -> AvailableDatesResponse:
 async def get_day_recordings(
     camera_name: str,
     date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    current_user: User = Depends(get_current_user),
 ) -> DayRecordingsResponse:
     """Get all recordings for a camera on a specific date."""
     try:
@@ -135,6 +147,7 @@ async def list_recordings(
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """List recordings with optional filters."""
     # Parse dates
@@ -191,7 +204,10 @@ async def list_recordings(
 
 
 @router.get("/recordings/{recording_id}")
-async def get_recording(recording_id: str) -> RecordingFileResponse:
+async def get_recording(
+    recording_id: str,
+    current_user: User = Depends(get_current_user),
+) -> RecordingFileResponse:
     """Get details of a specific recording."""
     rec = playback_service.get_recording_by_id(recording_id)
 
@@ -213,7 +229,10 @@ async def get_recording(recording_id: str) -> RecordingFileResponse:
 
 
 @router.get("/recordings/{recording_id}/stream")
-async def stream_recording(recording_id: str) -> FileResponse:
+async def stream_recording(
+    recording_id: str,
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
     """Stream a recording file."""
     rec = playback_service.get_recording_by_id(recording_id)
 
@@ -234,7 +253,10 @@ async def stream_recording(recording_id: str) -> FileResponse:
 
 
 @router.get("/recordings/{recording_id}/download")
-async def download_recording(recording_id: str) -> FileResponse:
+async def download_recording(
+    recording_id: str,
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
     """Download a recording file."""
     rec = playback_service.get_recording_by_id(recording_id)
 
@@ -255,16 +277,21 @@ async def download_recording(recording_id: str) -> FileResponse:
 
 
 @router.post("/export", response_model=ExportResponse)
-async def export_clip(request: ExportRequest) -> ExportResponse:
+@limiter.limit("5/minute")
+async def export_clip(
+    request: Request,
+    export_request: ExportRequest,
+    current_user: User = Depends(get_current_user),
+) -> ExportResponse:
     """Export a time range as a single video file."""
-    if request.end_time <= request.start_time:
+    if export_request.end_time <= export_request.start_time:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="end_time must be after start_time",
         )
 
     # Limit export duration to 1 hour
-    duration = (request.end_time - request.start_time).total_seconds()
+    duration = (export_request.end_time - export_request.start_time).total_seconds()
     if duration > 3600:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -272,9 +299,9 @@ async def export_clip(request: ExportRequest) -> ExportResponse:
         )
 
     output_path = playback_service.export_clip(
-        camera_name=request.camera_name,
-        start_time=request.start_time,
-        end_time=request.end_time,
+        camera_name=export_request.camera_name,
+        start_time=export_request.start_time,
+        end_time=export_request.end_time,
     )
 
     if not output_path:
@@ -295,7 +322,10 @@ async def export_clip(request: ExportRequest) -> ExportResponse:
 
 
 @router.get("/exports/{export_id}")
-async def download_export(export_id: str) -> FileResponse:
+async def download_export(
+    export_id: str,
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
     """Download an exported clip."""
     from app.config import get_settings
     from pathlib import Path
