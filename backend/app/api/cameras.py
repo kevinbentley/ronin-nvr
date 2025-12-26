@@ -1,6 +1,7 @@
 """Camera management API endpoints."""
 
 import asyncio
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -91,6 +92,68 @@ async def get_streams_health() -> dict:
             }
             for s in statuses
         ],
+    }
+
+
+@router.get("/streams/debug/{camera_id}")
+async def get_stream_debug(
+    camera_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get detailed debug information for a camera stream.
+
+    Use this to diagnose streaming issues.
+    """
+    service = CameraService(db)
+    camera = await service.get_by_id(camera_id)
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera with id {camera_id} not found",
+        )
+
+    stream_status = stream_manager.get_status(camera_id)
+
+    # Check if HLS files exist
+    from app.services.camera_stream import CameraStream
+    from pathlib import Path
+
+    hls_info = {}
+    if stream_status:
+        stream = stream_manager._streams.get(camera_id)
+        if stream:
+            hls_dir = stream.hls_directory
+            playlist = stream.playlist_path
+            hls_info = {
+                "hls_directory": str(hls_dir),
+                "hls_directory_exists": hls_dir.exists(),
+                "playlist_path": str(playlist),
+                "playlist_exists": playlist.exists(),
+                "segments": [],
+            }
+            if hls_dir.exists():
+                segments = sorted(hls_dir.glob("*.ts"))
+                hls_info["segments"] = [
+                    {
+                        "name": s.name,
+                        "size_bytes": s.stat().st_size,
+                        "age_seconds": round(
+                            (datetime.now().timestamp() - s.stat().st_mtime), 1
+                        ),
+                    }
+                    for s in segments[-10:]  # Last 10 segments
+                ]
+
+    return {
+        "camera": {
+            "id": camera.id,
+            "name": camera.name,
+            "rtsp_url": camera.rtsp_url,
+            "transport": camera.transport,
+        },
+        "stream_status": stream_status or {"state": "not_started"},
+        "hls": hls_info,
+        "ffmpeg_output": stream_status.get("ffmpeg_output", []) if stream_status else [],
     }
 
 

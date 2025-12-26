@@ -69,6 +69,8 @@ class CameraStream:
         self._reconnect_delay = 5
         self._recording_enabled = True
         self._monitor_task: Optional[asyncio.Task] = None
+        self._stderr_task: Optional[asyncio.Task] = None
+        self._last_stderr_lines: list[str] = []
 
     @property
     def state(self) -> StreamState:
@@ -204,7 +206,7 @@ class CameraStream:
         """Start the FFmpeg process."""
         cmd = self._build_ffmpeg_command()
         logger.info(f"Starting stream for '{self.camera_name}' (recording={self._recording_enabled})")
-        logger.debug(f"FFmpeg command: {' '.join(cmd)}")
+        logger.info(f"FFmpeg command: {' '.join(cmd)}")
 
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -214,9 +216,40 @@ class CameraStream:
 
         self._state = StreamState.RUNNING
         self._start_time = datetime.now()
+        self._last_stderr_lines: list[str] = []
 
-        # Start monitoring task
+        # Start monitoring tasks
         self._monitor_task = asyncio.create_task(self._monitor_process())
+        self._stderr_task = asyncio.create_task(self._read_stderr())
+
+    async def _read_stderr(self) -> None:
+        """Read FFmpeg stderr in real-time for debugging."""
+        if not self._process or not self._process.stderr:
+            return
+
+        try:
+            while True:
+                line = await self._process.stderr.readline()
+                if not line:
+                    break
+                decoded = line.decode().strip()
+                if decoded:
+                    # Keep last 20 lines for diagnostics
+                    self._last_stderr_lines.append(decoded)
+                    if len(self._last_stderr_lines) > 20:
+                        self._last_stderr_lines.pop(0)
+                    # Log important messages
+                    if any(kw in decoded.lower() for kw in [
+                        'error', 'failed', 'refused', 'timeout', 'invalid',
+                        'unauthorized', '401', '403', '404', 'connection'
+                    ]):
+                        logger.warning(f"FFmpeg [{self.camera_name}]: {decoded}")
+                    else:
+                        logger.debug(f"FFmpeg [{self.camera_name}]: {decoded}")
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.debug(f"Stderr reader ended for '{self.camera_name}': {e}")
 
     async def _monitor_process(self) -> None:
         """Monitor FFmpeg process and handle failures."""
@@ -224,15 +257,17 @@ class CameraStream:
             return
 
         try:
-            stdout, stderr = await self._process.communicate()
+            # Wait for process to exit
+            await self._process.wait()
 
             if self._state == StreamState.STOPPED:
                 return
 
             exit_code = self._process.returncode
             if exit_code != 0:
-                error_msg = stderr.decode().strip() if stderr else f"Exit code {exit_code}"
-                logger.warning(f"FFmpeg stopped for '{self.camera_name}': {error_msg}")
+                error_msg = "\n".join(self._last_stderr_lines[-5:]) if self._last_stderr_lines else f"Exit code {exit_code}"
+                logger.warning(f"FFmpeg stopped for '{self.camera_name}' (exit={exit_code}): {error_msg}")
+                self._error_message = error_msg
                 await self._handle_disconnect()
 
         except asyncio.CancelledError:
@@ -284,13 +319,16 @@ class CameraStream:
         logger.info(f"Stopping stream for '{self.camera_name}'")
         self._state = StreamState.STOPPED
 
-        if self._monitor_task:
-            self._monitor_task.cancel()
-            try:
-                await self._monitor_task
-            except asyncio.CancelledError:
-                pass
-            self._monitor_task = None
+        # Cancel monitoring tasks
+        for task in [self._monitor_task, self._stderr_task]:
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        self._monitor_task = None
+        self._stderr_task = None
 
         if self._process:
             try:
@@ -338,6 +376,7 @@ class CameraStream:
             "start_time": self._start_time.isoformat() if self._start_time else None,
             "recording_directory": str(self.recording_directory),
             "reconnect_attempts": self._reconnect_attempts,
+            "ffmpeg_output": self._last_stderr_lines[-10:] if self._last_stderr_lines else [],
         }
 
 

@@ -450,6 +450,7 @@ class TestGetStatus:
             "start_time",
             "recording_directory",
             "reconnect_attempts",
+            "ffmpeg_output",
         }
         assert set(status.keys()) == expected_fields
 
