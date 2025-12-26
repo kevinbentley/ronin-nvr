@@ -189,6 +189,9 @@ async def get_hls_playlist(
     db: AsyncSession = Depends(get_db),
 ) -> FileResponse:
     """Get HLS playlist for a camera stream."""
+    import asyncio
+    from pathlib import Path
+
     service = CameraService(db)
     camera = await service.get_by_id(camera_id)
     if not camera:
@@ -199,20 +202,24 @@ async def get_hls_playlist(
 
     # Auto-start stream if not running
     if camera_id not in streaming_manager.streams or not streaming_manager.streams[camera_id].is_running:
-        streaming_manager.start_stream(camera)
+        success = streaming_manager.start_stream(camera)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to start stream - check camera connection",
+            )
         # Wait briefly for FFmpeg to generate playlist
-        import asyncio
-        for _ in range(10):  # Wait up to 2 seconds
+        for _ in range(15):  # Wait up to 3 seconds
             await asyncio.sleep(0.2)
             playlist_path = streaming_manager.get_playlist_path(camera_id)
-            if playlist_path:
+            if playlist_path and Path(playlist_path).exists():
                 break
 
     playlist_path = streaming_manager.get_playlist_path(camera_id)
-    if not playlist_path:
+    if not playlist_path or not Path(playlist_path).exists():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Stream not ready",
+            detail="Stream not ready - waiting for camera response",
         )
 
     return FileResponse(
@@ -231,6 +238,8 @@ async def get_hls_segment(
     segment: str,
 ) -> FileResponse:
     """Get HLS segment file."""
+    from pathlib import Path
+
     if not segment.endswith(".ts"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -238,7 +247,7 @@ async def get_hls_segment(
         )
 
     segment_path = streaming_manager.get_segment_path(camera_id, segment)
-    if not segment_path:
+    if not segment_path or not Path(segment_path).exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Segment not found",
