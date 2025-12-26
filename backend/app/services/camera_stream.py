@@ -123,8 +123,13 @@ class CameraStream:
         output_dir.mkdir(parents=True, exist_ok=True)
         return str(output_dir / "%H-%M-%S.mp4")
 
-    def _build_ffmpeg_command(self) -> list[str]:
-        """Build FFmpeg command with dual output."""
+    def _build_ffmpeg_command(self, clean_hls: bool = True) -> list[str]:
+        """Build FFmpeg command with dual output.
+
+        Args:
+            clean_hls: Whether to clean old HLS segments. Set False on reconnect
+                      to avoid 503 errors while FFmpeg restarts.
+        """
         ffmpeg_path = shutil.which("ffmpeg")
         if not ffmpeg_path:
             raise RuntimeError("FFmpeg not found in PATH")
@@ -132,17 +137,18 @@ class CameraStream:
         # Ensure HLS directory exists
         self.hls_directory.mkdir(parents=True, exist_ok=True)
 
-        # Clean old HLS segments
-        for f in self.hls_directory.glob("*.ts"):
-            try:
-                f.unlink()
-            except OSError:
-                pass
-        if self.playlist_path.exists():
-            try:
-                self.playlist_path.unlink()
-            except OSError:
-                pass
+        # Clean old HLS segments only on fresh start (not reconnect)
+        if clean_hls:
+            for f in self.hls_directory.glob("*.ts"):
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
+            if self.playlist_path.exists():
+                try:
+                    self.playlist_path.unlink()
+                except OSError:
+                    pass
 
         cmd = [
             ffmpeg_path,
@@ -153,6 +159,9 @@ class CameraStream:
             "-fflags", "+genpts+discardcorrupt+igndts",
             "-flags", "low_delay",
             "-i", self.rtsp_url,
+            # Global output options for timestamp issues
+            "-max_muxing_queue_size", "1024",
+            "-avoid_negative_ts", "make_zero",
         ]
 
         # Output 1: HLS for live streaming
@@ -160,9 +169,6 @@ class CameraStream:
             "-c:v", "copy",
             "-c:a", "aac",
             "-ar", "44100",
-            # Fix timestamp issues for HLS
-            "-avoid_negative_ts", "make_zero",
-            "-fflags", "+genpts",
             "-f", "hls",
             "-hls_time", "2",
             "-hls_list_size", "10",
@@ -176,8 +182,6 @@ class CameraStream:
             recording_pattern = self._get_recording_pattern()
             cmd.extend([
                 "-c", "copy",
-                "-avoid_negative_ts", "make_zero",
-                "-fflags", "+genpts",
                 "-f", "segment",
                 "-segment_time", str(self.segment_duration),
                 "-segment_format", "mp4",
@@ -208,17 +212,22 @@ class CameraStream:
             self._error_message = str(e)
             return False
 
-    async def _start_ffmpeg(self) -> None:
-        """Start the FFmpeg process."""
+    async def _start_ffmpeg(self, is_reconnect: bool = False) -> None:
+        """Start the FFmpeg process.
+
+        Args:
+            is_reconnect: If True, don't clean HLS segments to avoid 503 errors.
+        """
         try:
-            cmd = self._build_ffmpeg_command()
+            cmd = self._build_ffmpeg_command(clean_hls=not is_reconnect)
         except Exception as e:
             logger.error(f"Failed to build FFmpeg command for '{self.camera_name}': {e}")
             raise
 
-        logger.info(f"Starting stream for '{self.camera_name}' (recording={self._recording_enabled})")
+        action = "Reconnecting" if is_reconnect else "Starting"
+        logger.info(f"{action} stream for '{self.camera_name}' (recording={self._recording_enabled})")
         logger.info(f"RTSP URL: {self.rtsp_url}")
-        logger.info(f"FFmpeg command: {' '.join(cmd)}")
+        logger.debug(f"FFmpeg command: {' '.join(cmd)}")
 
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -316,7 +325,7 @@ class CameraStream:
             return
 
         try:
-            await self._start_ffmpeg()
+            await self._start_ffmpeg(is_reconnect=True)
             self._reconnect_attempts = 0
             logger.info(f"Reconnected to '{self.camera_name}'")
         except Exception as e:

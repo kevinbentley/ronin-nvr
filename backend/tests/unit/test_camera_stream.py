@@ -408,7 +408,7 @@ class TestReconnection:
         stream._reconnect_attempts = 3
         stream._reconnect_delay = 0.01
 
-        async def mock_start():
+        async def mock_start(is_reconnect: bool = False):
             stream._state = StreamState.RUNNING
 
         with patch.object(stream, "_start_ffmpeg", side_effect=mock_start):
