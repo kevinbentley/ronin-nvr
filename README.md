@@ -295,8 +295,8 @@ TBD
 
 ## Contributing
 
-Kevin Bentley
-Claude Code
+- Kevin Bentley
+- Claude Code
 
 ---
 
@@ -306,3 +306,6 @@ Claude Code
 - User authentication / management
 - List box display of recorded videos
 - Distributed stream handling (Need to determine how many streams a reasonably fast computer can handle)
+- AI Pipeline
+- Notifications
+- Android app?

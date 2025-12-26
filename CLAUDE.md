@@ -1,7 +1,7 @@
 # Overview
 This document contains critical information about working with this codebase. Follow these guidelines precisely.
 
-This project will use Python Tk for any GUI. All controls, buttons, etc. will use an event driven architecture, so when a button is pressed, the UI remains responsive while the process executes.
+This project will use React for any GUI. All controls, buttons, etc. will use an event driven architecture, so when a button is pressed, the UI remains responsive while the process executes.
 
 Standalone command line tools such as those that process or generate data files should include argument processing, and the usage should be documented in a readme file.
 
