@@ -76,7 +76,7 @@ class HLSStream:
             # HLS options for low latency
             "-f", "hls",
             "-hls_time", "2",  # 2-second segments
-            "-hls_list_size", "5",  # Keep only 5 segments in playlist
+            "-hls_list_size", "10",  # Keep 10 segments in playlist (20s buffer)
             "-hls_flags", "delete_segments+append_list",
             "-hls_segment_filename", str(self.stream_dir / "segment%03d.ts"),
             str(self.playlist_path),

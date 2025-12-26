@@ -39,6 +39,15 @@ export function VideoPlayer({
         maxMaxBufferLength: 30,
         liveSyncDurationCount: 3,
         liveMaxLatencyDurationCount: 6,
+        // Be more forgiving with missing segments (common in live streams)
+        fragLoadPolicy: {
+          default: {
+            maxTimeToFirstByteMs: 10000,
+            maxLoadTimeMs: 20000,
+            timeoutRetry: { maxNumRetry: 2, retryDelayMs: 500, maxRetryDelayMs: 2000 },
+            errorRetry: { maxNumRetry: 3, retryDelayMs: 500, maxRetryDelayMs: 2000 },
+          },
+        },
       });
 
       hlsRef.current = hls;
