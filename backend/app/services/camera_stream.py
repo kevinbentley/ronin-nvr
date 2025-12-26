@@ -181,7 +181,9 @@ class CameraStream:
         if self._recording_enabled:
             recording_pattern = self._get_recording_pattern()
             cmd.extend([
-                "-c", "copy",
+                "-c:v", "copy",
+                "-c:a", "aac",  # Transcode audio - some cameras use pcm_mulaw which MP4 doesn't support
+                "-ar", "44100",
                 "-f", "segment",
                 "-segment_time", str(self.segment_duration),
                 "-segment_format", "mp4",
