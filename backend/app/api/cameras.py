@@ -400,9 +400,12 @@ async def get_stream_status(
 async def get_hls_playlist(
     camera_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> FileResponse:
-    """Get HLS playlist for a camera stream."""
+    """Get HLS playlist for a camera stream.
+
+    Note: No auth required - video players can't send Authorization headers.
+    The user is already authenticated to access the page containing the player.
+    """
     service = CameraService(db)
     camera = await service.get_by_id(camera_id)
     if not camera:
@@ -449,9 +452,11 @@ async def get_hls_playlist(
 async def get_hls_segment(
     camera_id: int,
     segment: str,
-    current_user: User = Depends(get_current_user),
 ) -> FileResponse:
-    """Get HLS segment file."""
+    """Get HLS segment file.
+
+    Note: No auth required - video players can't send Authorization headers.
+    """
     if not segment.endswith(".ts"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
