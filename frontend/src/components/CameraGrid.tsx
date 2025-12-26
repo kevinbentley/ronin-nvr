@@ -42,6 +42,7 @@ export function CameraGrid({ cameras, recordingStatus, layout }: CameraGridProps
           <div key={camera.id} className="grid-cell">
             <VideoPlayer
               src={api.getStreamUrl(camera.id)}
+              cameraId={camera.id}
               cameraName={camera.name}
               status={camera.status}
               isRecording={status?.is_recording}

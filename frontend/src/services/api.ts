@@ -108,6 +108,17 @@ class ApiClient {
     return `${API_BASE}/cameras/${id}/stream/hls/playlist.m3u8`;
   }
 
+  // Stream control
+  async startStream(id: number): Promise<{ camera_id: number; streaming: boolean }> {
+    const response = await this.client.post(`/cameras/${id}/stream/start`);
+    return response.data;
+  }
+
+  async stopStream(id: number): Promise<{ camera_id: number; streaming: boolean }> {
+    const response = await this.client.post(`/cameras/${id}/stream/stop`);
+    return response.data;
+  }
+
   // Playback API
   async getCamerasWithRecordings(): Promise<string[]> {
     const response = await this.client.get('/playback/cameras');
