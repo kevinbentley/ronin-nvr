@@ -222,21 +222,22 @@ A multi-phase implementation plan for building a Network Video Recorder system.
 
 ## Phase 7: Security & Production
 **Branch**: `phase-7-security`
-**Status**: Not Started
+**Status**: IN PROGRESS
 **Depends on**: Phase 6
 
 ### Tasks
-- [ ] Add user authentication:
-  - [ ] User model with hashed passwords
-  - [ ] JWT token generation and validation
-  - [ ] `POST /api/auth/login`
-  - [ ] `POST /api/auth/logout`
-  - [ ] `GET /api/auth/me`
-- [ ] Create login page UI
-- [ ] Protect all API endpoints with auth middleware
-- [ ] Encrypt stored camera credentials (Fernet/AES)
-- [ ] Add API rate limiting (100 requests/minute)
-- [ ] Configure CORS for production
+- [x] Add user authentication:
+  - [x] User model with hashed passwords
+  - [x] JWT token generation and validation
+  - [x] `POST /api/auth/login`
+  - [x] `POST /api/auth/logout` (client-side token discard)
+  - [x] `GET /api/auth/me`
+  - [x] `POST /api/auth/users` (admin only)
+- [x] Create login page UI
+- [x] Protect all API endpoints with auth middleware
+- [x] Encrypt stored camera credentials (Fernet/AES)
+- [x] Add API rate limiting (login, user creation, camera creation, export)
+- [x] Configure CORS for production
 - [ ] Create Docker Compose for deployment:
   - [ ] Backend service
   - [ ] PostgreSQL database
@@ -244,11 +245,18 @@ A multi-phase implementation plan for building a Network Video Recorder system.
 - [ ] Run 48-hour stability test
 - [ ] Document deployment process in README.md
 
+### Known Issues / Technical Debt
+- [ ] **HLS endpoints have no authentication** - Video players (HLS.js) cannot send
+      Authorization headers when fetching playlist/segment files. Current workaround
+      is to leave these endpoints public. Future fix: Add URL-based token authentication
+      (e.g., `/stream/hls/playlist.m3u8?token=<signed-hash>`) that validates a
+      time-limited signed token in the query string.
+
 ### Validation Criteria
-- [ ] Cannot access any API without valid token
-- [ ] Login page works correctly
-- [ ] Camera credentials are encrypted in database
-- [ ] Rate limiting blocks excessive requests
+- [x] Cannot access any API without valid token (except HLS endpoints - see Known Issues)
+- [x] Login page works correctly
+- [x] Camera credentials are encrypted in database
+- [x] Rate limiting blocks excessive requests
 - [ ] Docker Compose deploys successfully
 - [ ] System runs stable for 48+ hours without memory leaks
 
