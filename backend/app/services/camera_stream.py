@@ -107,6 +107,16 @@ class CameraStream:
         return self.storage_root / ".streams" / str(self.camera_id)
 
     @property
+    def log_directory(self) -> Path:
+        """Directory for FFmpeg logs."""
+        return self.storage_root / ".logs"
+
+    @property
+    def ffmpeg_log_path(self) -> Path:
+        """Path to FFmpeg log file for this camera."""
+        return self.log_directory / f"{self.safe_camera_name}_ffmpeg.log"
+
+    @property
     def playlist_path(self) -> Path:
         """Path to HLS playlist."""
         return self.hls_directory / "playlist.m3u8"
@@ -250,18 +260,37 @@ class CameraStream:
         if not self._process or not self._process.stderr:
             return
 
+        # Ensure log directory exists and open log file
+        self.log_directory.mkdir(parents=True, exist_ok=True)
+        log_file = None
+
         try:
+            # Open log file in append mode with timestamp header
+            log_file = open(self.ffmpeg_log_path, "a")
+            log_file.write(f"\n{'='*60}\n")
+            log_file.write(f"FFmpeg started at {datetime.now().isoformat()}\n")
+            log_file.write(f"Camera: {self.camera_name} (ID: {self.camera_id})\n")
+            log_file.write(f"RTSP URL: {self.rtsp_url}\n")
+            log_file.write(f"{'='*60}\n")
+            log_file.flush()
+
             while True:
                 line = await self._process.stderr.readline()
                 if not line:
                     break
                 decoded = line.decode().strip()
                 if decoded:
+                    # Write to log file with timestamp
+                    timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                    log_file.write(f"[{timestamp}] {decoded}\n")
+                    log_file.flush()
+
                     # Keep last 20 lines for diagnostics
                     self._last_stderr_lines.append(decoded)
                     if len(self._last_stderr_lines) > 20:
                         self._last_stderr_lines.pop(0)
-                    # Log important messages
+
+                    # Log important messages to console
                     if any(kw in decoded.lower() for kw in [
                         'error', 'failed', 'refused', 'timeout', 'invalid',
                         'unauthorized', '401', '403', '404', 'connection'
@@ -269,10 +298,22 @@ class CameraStream:
                         logger.warning(f"FFmpeg [{self.camera_name}]: {decoded}")
                     else:
                         logger.debug(f"FFmpeg [{self.camera_name}]: {decoded}")
+
+            # Write exit info
+            if self._process:
+                log_file.write(f"\n[{datetime.now().strftime('%H:%M:%S')}] FFmpeg exited with code: {self._process.returncode}\n")
+                log_file.flush()
+
         except asyncio.CancelledError:
-            pass
+            if log_file:
+                log_file.write(f"\n[{datetime.now().strftime('%H:%M:%S')}] Stream stopped by user\n")
         except Exception as e:
             logger.debug(f"Stderr reader ended for '{self.camera_name}': {e}")
+            if log_file:
+                log_file.write(f"\n[{datetime.now().strftime('%H:%M:%S')}] Stderr reader error: {e}\n")
+        finally:
+            if log_file:
+                log_file.close()
 
     async def _monitor_process(self) -> None:
         """Monitor FFmpeg process and handle failures."""
@@ -400,6 +441,7 @@ class CameraStream:
             "recording_directory": str(self.recording_directory),
             "reconnect_attempts": self._reconnect_attempts,
             "ffmpeg_output": self._last_stderr_lines[-10:] if self._last_stderr_lines else [],
+            "ffmpeg_log_path": str(self.ffmpeg_log_path),
         }
 
 
