@@ -22,10 +22,12 @@ class TestStreamsHealth:
 
     @pytest.mark.asyncio
     async def test_health_empty_returns_zeros(
-        self, client: AsyncClient
+        self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
         """Health endpoint returns zeros when no streams exist."""
-        response = await client.get("/api/cameras/streams/health")
+        response = await client.get(
+            "/api/cameras/streams/health", headers=auth_headers
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -38,7 +40,7 @@ class TestStreamsHealth:
 
     @pytest.mark.asyncio
     async def test_health_counts_running_as_healthy(
-        self, client: AsyncClient, tmp_path: Path
+        self, client: AsyncClient, tmp_path: Path, auth_headers: dict[str, str]
     ) -> None:
         """Running streams are counted as healthy."""
         # Create mock camera and stream
@@ -58,7 +60,9 @@ class TestStreamsHealth:
         stream._recording_enabled = True
         stream_manager._streams[1] = stream
 
-        response = await client.get("/api/cameras/streams/health")
+        response = await client.get(
+            "/api/cameras/streams/health", headers=auth_headers
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -69,7 +73,7 @@ class TestStreamsHealth:
 
     @pytest.mark.asyncio
     async def test_health_counts_reconnecting(
-        self, client: AsyncClient, tmp_path: Path
+        self, client: AsyncClient, tmp_path: Path, auth_headers: dict[str, str]
     ) -> None:
         """Reconnecting streams are counted separately."""
         mock_cam = MagicMock()
@@ -88,7 +92,9 @@ class TestStreamsHealth:
         stream._reconnect_attempts = 3
         stream_manager._streams[1] = stream
 
-        response = await client.get("/api/cameras/streams/health")
+        response = await client.get(
+            "/api/cameras/streams/health", headers=auth_headers
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -99,7 +105,7 @@ class TestStreamsHealth:
 
     @pytest.mark.asyncio
     async def test_health_counts_errored(
-        self, client: AsyncClient, tmp_path: Path
+        self, client: AsyncClient, tmp_path: Path, auth_headers: dict[str, str]
     ) -> None:
         """Errored streams are counted separately."""
         mock_cam = MagicMock()
@@ -118,7 +124,9 @@ class TestStreamsHealth:
         stream._error_message = "Connection refused"
         stream_manager._streams[1] = stream
 
-        response = await client.get("/api/cameras/streams/health")
+        response = await client.get(
+            "/api/cameras/streams/health", headers=auth_headers
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -129,7 +137,7 @@ class TestStreamsHealth:
 
     @pytest.mark.asyncio
     async def test_health_multiple_streams_mixed_states(
-        self, client: AsyncClient, tmp_path: Path
+        self, client: AsyncClient, tmp_path: Path, auth_headers: dict[str, str]
     ) -> None:
         """Health correctly counts multiple streams in different states."""
         # Create streams in different states
@@ -157,7 +165,9 @@ class TestStreamsHealth:
             stream._state = state
             stream_manager._streams[cam_id] = stream
 
-        response = await client.get("/api/cameras/streams/health")
+        response = await client.get(
+            "/api/cameras/streams/health", headers=auth_headers
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -170,7 +180,7 @@ class TestStreamsHealth:
 
     @pytest.mark.asyncio
     async def test_health_stream_details_complete(
-        self, client: AsyncClient, tmp_path: Path
+        self, client: AsyncClient, tmp_path: Path, auth_headers: dict[str, str]
     ) -> None:
         """Health endpoint returns complete stream details."""
         from datetime import datetime
@@ -193,7 +203,9 @@ class TestStreamsHealth:
         stream._reconnect_attempts = 0
         stream_manager._streams[1] = stream
 
-        response = await client.get("/api/cameras/streams/health")
+        response = await client.get(
+            "/api/cameras/streams/health", headers=auth_headers
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -207,3 +219,9 @@ class TestStreamsHealth:
         assert stream_info["error_message"] is None
         assert stream_info["reconnect_attempts"] == 0
         assert stream_info["start_time"] == "2024-01-15T10:30:00"
+
+    @pytest.mark.asyncio
+    async def test_health_unauthorized(self, client: AsyncClient) -> None:
+        """Health endpoint requires authentication."""
+        response = await client.get("/api/cameras/streams/health")
+        assert response.status_code == 401

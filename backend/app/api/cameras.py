@@ -6,14 +6,13 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_admin_user, get_current_user
 from app.models.camera import CameraStatus
 from app.models.user import User
+from app.rate_limiter import limiter
 from app.schemas import (
     CameraCreate,
     CameraListResponse,
@@ -23,8 +22,6 @@ from app.schemas import (
 )
 from app.services.camera import CameraService, test_camera_connection
 from app.services.camera_stream import stream_manager
-
-limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 

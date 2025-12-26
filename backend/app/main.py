@@ -7,23 +7,19 @@ from typing import AsyncGenerator
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 from app import __version__
 from app.api import api_router
 from app.config import get_settings
 from app.database import close_db, get_db, init_db
+from app.rate_limiter import limiter
 from app.services.camera_stream import stream_manager
 from app.services.retention import retention_monitor
 from app.services.status_monitor import status_monitor
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
-
-# Rate limiter
-limiter = Limiter(key_func=get_remote_address)
 
 
 async def create_default_admin() -> None:

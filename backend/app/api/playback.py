@@ -6,14 +6,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from app.dependencies import get_current_user
 from app.models.user import User
+from app.rate_limiter import limiter
 from app.services.playback import playback_service
-
-limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/playback", tags=["playback"])
 

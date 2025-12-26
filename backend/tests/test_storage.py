@@ -12,7 +12,9 @@ from app.services.retention import FileInfo, RetentionService, StorageStats
 
 
 @pytest.mark.asyncio
-async def test_get_storage_stats_empty(client: AsyncClient) -> None:
+async def test_get_storage_stats_empty(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
     """Test getting storage stats when storage is empty."""
     # Create a mock RetentionService with empty storage
     empty_stats = StorageStats(
@@ -25,7 +27,7 @@ async def test_get_storage_stats_empty(client: AsyncClient) -> None:
     with patch("app.api.storage.retention_service") as mock_service:
         mock_service.get_stats.return_value = empty_stats
 
-        response = await client.get("/api/storage/stats")
+        response = await client.get("/api/storage/stats", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json()
@@ -35,8 +37,10 @@ async def test_get_storage_stats_empty(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_cleanup_empty(client: AsyncClient) -> None:
-    """Test running cleanup when storage is empty."""
+async def test_run_cleanup_empty(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    """Test running cleanup when storage is empty (admin only)."""
     with patch("app.api.storage.retention_service") as mock_service:
         mock_service.enforce_retention.return_value = {
             "files_scanned": 0,
@@ -47,12 +51,19 @@ async def test_run_cleanup_empty(client: AsyncClient) -> None:
             "storage_after_gb": 0.0,
         }
 
-        response = await client.post("/api/storage/cleanup")
+        response = await client.post("/api/storage/cleanup", headers=admin_headers)
         assert response.status_code == 200
 
         data = response.json()
         assert data["files_scanned"] == 0
         assert data["files_deleted"] == 0
+
+
+@pytest.mark.asyncio
+async def test_storage_unauthorized(client: AsyncClient) -> None:
+    """Test that storage endpoints require authentication."""
+    response = await client.get("/api/storage/stats")
+    assert response.status_code == 401
 
 
 class TestRetentionService:
@@ -102,7 +113,9 @@ class TestRetentionService:
         ]
 
         service = RetentionService()
-        to_delete = service.get_files_to_delete(files, retention_days=30, max_size_gb=None)
+        to_delete = service.get_files_to_delete(
+            files, retention_days=30, max_size_gb=None
+        )
 
         assert len(to_delete) == 1
         assert to_delete[0].path == Path("/old.mp4")
@@ -112,14 +125,22 @@ class TestRetentionService:
         now = datetime.now()
 
         files = [
-            FileInfo(Path("/file1.mp4"), 500 * 1024 * 1024, now - timedelta(days=3), "cam1"),
-            FileInfo(Path("/file2.mp4"), 500 * 1024 * 1024, now - timedelta(days=2), "cam1"),
-            FileInfo(Path("/file3.mp4"), 500 * 1024 * 1024, now - timedelta(days=1), "cam1"),
+            FileInfo(
+                Path("/file1.mp4"), 500 * 1024 * 1024, now - timedelta(days=3), "cam1"
+            ),
+            FileInfo(
+                Path("/file2.mp4"), 500 * 1024 * 1024, now - timedelta(days=2), "cam1"
+            ),
+            FileInfo(
+                Path("/file3.mp4"), 500 * 1024 * 1024, now - timedelta(days=1), "cam1"
+            ),
         ]
 
         service = RetentionService()
         # 1GB limit, but we have 1.5GB - should delete oldest
-        to_delete = service.get_files_to_delete(files, retention_days=None, max_size_gb=1.0)
+        to_delete = service.get_files_to_delete(
+            files, retention_days=None, max_size_gb=1.0
+        )
 
         assert len(to_delete) == 1
         assert to_delete[0].path == Path("/file1.mp4")
@@ -131,13 +152,19 @@ class TestRetentionService:
 
         files = [
             FileInfo(Path("/old.mp4"), 100 * 1024 * 1024, old_time, "cam1"),
-            FileInfo(Path("/file1.mp4"), 600 * 1024 * 1024, now - timedelta(days=2), "cam1"),
-            FileInfo(Path("/file2.mp4"), 600 * 1024 * 1024, now - timedelta(days=1), "cam1"),
+            FileInfo(
+                Path("/file1.mp4"), 600 * 1024 * 1024, now - timedelta(days=2), "cam1"
+            ),
+            FileInfo(
+                Path("/file2.mp4"), 600 * 1024 * 1024, now - timedelta(days=1), "cam1"
+            ),
         ]
 
         service = RetentionService()
         # Old file deleted by age, then oldest remaining deleted by size
-        to_delete = service.get_files_to_delete(files, retention_days=30, max_size_gb=1.0)
+        to_delete = service.get_files_to_delete(
+            files, retention_days=30, max_size_gb=1.0
+        )
 
         assert len(to_delete) == 2
         paths = [f.path for f in to_delete]

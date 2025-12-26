@@ -12,9 +12,9 @@ from app.services.camera_stream import CameraStream, StreamState, stream_manager
 
 @pytest.fixture
 async def camera_with_hls(
-    client: AsyncClient, tmp_path: Path
+    client: AsyncClient, tmp_path: Path, admin_headers: dict[str, str]
 ) -> tuple[dict, CameraStream]:
-    """Create camera and prepare mock HLS stream."""
+    """Create camera and prepare mock HLS stream (requires admin)."""
     # Create camera via API
     camera_data = {
         "name": "HLS Test Camera",
@@ -22,7 +22,9 @@ async def camera_with_hls(
         "port": 554,
         "path": "/stream",
     }
-    response = await client.post("/api/cameras", json=camera_data)
+    response = await client.post(
+        "/api/cameras", json=camera_data, headers=admin_headers
+    )
     camera = response.json()
 
     # Create mock camera object for stream
@@ -81,13 +83,15 @@ class TestHLSPlaylist:
         self,
         client: AsyncClient,
         camera_with_hls: tuple[dict, CameraStream],
+        auth_headers: dict[str, str],
     ) -> None:
         """GET playlist returns correct content type."""
         camera, stream = camera_with_hls
         camera_id = camera["id"]
 
         response = await client.get(
-            f"/api/cameras/{camera_id}/stream/hls/playlist.m3u8"
+            f"/api/cameras/{camera_id}/stream/hls/playlist.m3u8",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -98,13 +102,15 @@ class TestHLSPlaylist:
         self,
         client: AsyncClient,
         camera_with_hls: tuple[dict, CameraStream],
+        auth_headers: dict[str, str],
     ) -> None:
         """Playlist response has no-cache headers for live streaming."""
         camera, stream = camera_with_hls
         camera_id = camera["id"]
 
         response = await client.get(
-            f"/api/cameras/{camera_id}/stream/hls/playlist.m3u8"
+            f"/api/cameras/{camera_id}/stream/hls/playlist.m3u8",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -116,13 +122,15 @@ class TestHLSPlaylist:
         self,
         client: AsyncClient,
         camera_with_hls: tuple[dict, CameraStream],
+        auth_headers: dict[str, str],
     ) -> None:
         """Playlist response has CORS headers."""
         camera, stream = camera_with_hls
         camera_id = camera["id"]
 
         response = await client.get(
-            f"/api/cameras/{camera_id}/stream/hls/playlist.m3u8"
+            f"/api/cameras/{camera_id}/stream/hls/playlist.m3u8",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -133,13 +141,15 @@ class TestHLSPlaylist:
         self,
         client: AsyncClient,
         camera_with_hls: tuple[dict, CameraStream],
+        auth_headers: dict[str, str],
     ) -> None:
         """Playlist contains segment references."""
         camera, stream = camera_with_hls
         camera_id = camera["id"]
 
         response = await client.get(
-            f"/api/cameras/{camera_id}/stream/hls/playlist.m3u8"
+            f"/api/cameras/{camera_id}/stream/hls/playlist.m3u8",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -149,32 +159,36 @@ class TestHLSPlaylist:
 
     @pytest.mark.asyncio
     async def test_get_playlist_for_nonexistent_camera(
-        self, client: AsyncClient
+        self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
         """GET playlist for missing camera returns 404."""
         response = await client.get(
-            "/api/cameras/99999/stream/hls/playlist.m3u8"
+            "/api/cameras/99999/stream/hls/playlist.m3u8",
+            headers=auth_headers,
         )
         assert response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_get_playlist_when_stream_not_ready(
-        self, client: AsyncClient
+        self, client: AsyncClient, admin_headers: dict[str, str], auth_headers: dict[str, str]
     ) -> None:
         """GET playlist returns 503 when stream isn't ready."""
-        # Create a camera but don't set up stream
+        # Create a camera but don't set up stream (requires admin)
         camera_data = {
             "name": "No Stream Camera",
             "host": "192.168.1.200",
             "port": 554,
             "path": "/stream",
         }
-        response = await client.post("/api/cameras", json=camera_data)
+        response = await client.post(
+            "/api/cameras", json=camera_data, headers=admin_headers
+        )
         camera = response.json()
 
         # Request playlist - stream will try to start but fail (no real camera)
         response = await client.get(
-            f"/api/cameras/{camera['id']}/stream/hls/playlist.m3u8"
+            f"/api/cameras/{camera['id']}/stream/hls/playlist.m3u8",
+            headers=auth_headers,
         )
         # Should be 503 because FFmpeg can't connect
         assert response.status_code in (500, 503)
@@ -188,13 +202,15 @@ class TestHLSSegments:
         self,
         client: AsyncClient,
         camera_with_hls: tuple[dict, CameraStream],
+        auth_headers: dict[str, str],
     ) -> None:
         """GET segment returns video/mp2t content type."""
         camera, stream = camera_with_hls
         camera_id = camera["id"]
 
         response = await client.get(
-            f"/api/cameras/{camera_id}/stream/hls/segment000.ts"
+            f"/api/cameras/{camera_id}/stream/hls/segment000.ts",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -205,13 +221,15 @@ class TestHLSSegments:
         self,
         client: AsyncClient,
         camera_with_hls: tuple[dict, CameraStream],
+        auth_headers: dict[str, str],
     ) -> None:
         """Segment response has cache headers (segments are immutable)."""
         camera, stream = camera_with_hls
         camera_id = camera["id"]
 
         response = await client.get(
-            f"/api/cameras/{camera_id}/stream/hls/segment000.ts"
+            f"/api/cameras/{camera_id}/stream/hls/segment000.ts",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -223,13 +241,15 @@ class TestHLSSegments:
         self,
         client: AsyncClient,
         camera_with_hls: tuple[dict, CameraStream],
+        auth_headers: dict[str, str],
     ) -> None:
         """Segment response has CORS headers."""
         camera, stream = camera_with_hls
         camera_id = camera["id"]
 
         response = await client.get(
-            f"/api/cameras/{camera_id}/stream/hls/segment000.ts"
+            f"/api/cameras/{camera_id}/stream/hls/segment000.ts",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -240,29 +260,34 @@ class TestHLSSegments:
         self,
         client: AsyncClient,
         camera_with_hls: tuple[dict, CameraStream],
+        auth_headers: dict[str, str],
     ) -> None:
         """GET missing segment returns 404."""
         camera, stream = camera_with_hls
         camera_id = camera["id"]
 
         response = await client.get(
-            f"/api/cameras/{camera_id}/stream/hls/segment999.ts"
+            f"/api/cameras/{camera_id}/stream/hls/segment999.ts",
+            headers=auth_headers,
         )
 
         assert response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_get_segment_with_invalid_extension_rejected(
-        self, client: AsyncClient
+        self, client: AsyncClient, admin_headers: dict[str, str], auth_headers: dict[str, str]
     ) -> None:
         """Non-.ts segment requests are rejected."""
-        # First create a camera
+        # First create a camera (requires admin)
         camera_data = {"name": "Segment Test", "host": "192.168.1.1"}
-        response = await client.post("/api/cameras", json=camera_data)
+        response = await client.post(
+            "/api/cameras", json=camera_data, headers=admin_headers
+        )
         camera_id = response.json()["id"]
 
         response = await client.get(
-            f"/api/cameras/{camera_id}/stream/hls/malicious.exe"
+            f"/api/cameras/{camera_id}/stream/hls/malicious.exe",
+            headers=auth_headers,
         )
 
         assert response.status_code == 400
@@ -272,6 +297,7 @@ class TestHLSSegments:
         self,
         client: AsyncClient,
         camera_with_hls: tuple[dict, CameraStream],
+        auth_headers: dict[str, str],
     ) -> None:
         """Can retrieve multiple different segments."""
         camera, stream = camera_with_hls
@@ -279,7 +305,8 @@ class TestHLSSegments:
 
         for i in range(3):
             response = await client.get(
-                f"/api/cameras/{camera_id}/stream/hls/segment{i:03d}.ts"
+                f"/api/cameras/{camera_id}/stream/hls/segment{i:03d}.ts",
+                headers=auth_headers,
             )
             assert response.status_code == 200
             assert len(response.content) > 0
@@ -293,6 +320,7 @@ class TestConcurrentPlaylistRequests:
         self,
         client: AsyncClient,
         camera_with_hls: tuple[dict, CameraStream],
+        auth_headers: dict[str, str],
     ) -> None:
         """Multiple concurrent playlist requests are handled correctly."""
         camera, stream = camera_with_hls
@@ -300,7 +328,10 @@ class TestConcurrentPlaylistRequests:
 
         # Fire multiple concurrent requests
         tasks = [
-            client.get(f"/api/cameras/{camera_id}/stream/hls/playlist.m3u8")
+            client.get(
+                f"/api/cameras/{camera_id}/stream/hls/playlist.m3u8",
+                headers=auth_headers,
+            )
             for _ in range(5)
         ]
 
@@ -317,6 +348,7 @@ class TestConcurrentPlaylistRequests:
         self,
         client: AsyncClient,
         camera_with_hls: tuple[dict, CameraStream],
+        auth_headers: dict[str, str],
     ) -> None:
         """Multiple concurrent segment requests are handled correctly."""
         camera, stream = camera_with_hls
@@ -324,7 +356,10 @@ class TestConcurrentPlaylistRequests:
 
         # Request different segments concurrently
         tasks = [
-            client.get(f"/api/cameras/{camera_id}/stream/hls/segment{i:03d}.ts")
+            client.get(
+                f"/api/cameras/{camera_id}/stream/hls/segment{i:03d}.ts",
+                headers=auth_headers,
+            )
             for i in range(3)
         ]
 

@@ -20,6 +20,18 @@ from app.services.auth import hash_password
 # Use SQLite for testing (in-memory)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
+@pytest.fixture(autouse=True)
+def disable_rate_limiter():
+    """Disable rate limiting during tests."""
+    from app.rate_limiter import limiter
+
+    # Save original state and disable
+    original_enabled = limiter.enabled
+    limiter.enabled = False
+    yield
+    # Restore original state
+    limiter.enabled = original_enabled
+
 
 @pytest.fixture(scope="session")
 def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
