@@ -16,6 +16,14 @@ from app.models.recording import Recording, RecordingStatus
 from app.services.ml.coordinator import MLCoordinator, ml_coordinator
 from app.services.playback import playback_service, RecordingFile
 
+
+def _safe_camera_name(name: str) -> str:
+    """Convert camera name to filesystem-safe version (matches CameraStream)."""
+    return "".join(
+        c if c.isalnum() or c in ("-", "_") else "_"
+        for c in name
+    )
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -166,9 +174,9 @@ class RecordingWatcher:
         logger.info(f"Found {len(new_recordings)} new recordings to process")
 
         async with self.session_factory() as session:
-            # Get camera name -> id mapping
+            # Get safe_camera_name -> camera_id mapping
             result = await session.execute(select(Camera))
-            cameras = {cam.name: cam.id for cam in result.scalars().all()}
+            cameras = {_safe_camera_name(cam.name): cam.id for cam in result.scalars().all()}
 
             for rec_file in new_recordings[:10]:  # Process at most 10 at a time
                 try:
@@ -258,9 +266,9 @@ class RecordingWatcher:
             return 0
 
         async with self.session_factory() as session:
-            # Get camera mapping
+            # Get safe_camera_name -> camera_id mapping
             result = await session.execute(select(Camera))
-            cameras = {cam.name: cam.id for cam in result.scalars().all()}
+            cameras = {_safe_camera_name(cam.name): cam.id for cam in result.scalars().all()}
 
             queued = 0
             for rec_file in new_recordings:
