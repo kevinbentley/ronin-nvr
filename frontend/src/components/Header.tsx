@@ -7,7 +7,7 @@ import type { GridLayout } from '../types/camera';
 import type { User } from '../services/api';
 import './Header.css';
 
-export type Page = 'live' | 'playback' | 'status' | 'setup';
+export type Page = 'live' | 'playback' | 'status' | 'ml' | 'setup';
 
 interface HeaderProps {
   layout: GridLayout;
@@ -48,6 +48,12 @@ export function Header({
             onClick={() => onPageChange('status')}
           >
             Status
+          </button>
+          <button
+            className={`nav-button ${currentPage === 'ml' ? 'active' : ''}`}
+            onClick={() => onPageChange('ml')}
+          >
+            ML
           </button>
           <button
             className={`nav-button ${currentPage === 'setup' ? 'active' : ''}`}

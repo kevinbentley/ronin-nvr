@@ -14,6 +14,11 @@ import type {
   DayRecordings,
   ExportRequest,
   ExportResponse,
+  MLStatus,
+  MLJobListResponse,
+  MLJob,
+  MLDetectionSummary,
+  MLModelListResponse,
 } from '../types/camera';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api';
@@ -253,6 +258,59 @@ class ApiClient {
 
   getExportDownloadUrl(exportId: string): string {
     return `${API_BASE}/playback/exports/${exportId}`;
+  }
+
+  // ML API
+  async getMLStatus(): Promise<MLStatus> {
+    const response = await this.client.get('/ml/status');
+    return response.data;
+  }
+
+  async getMLJobs(params?: {
+    status?: string;
+    recording_id?: number;
+    limit?: number;
+    offset?: number;
+  }): Promise<MLJobListResponse> {
+    const response = await this.client.get('/ml/jobs', { params });
+    return response.data;
+  }
+
+  async getMLJob(jobId: number): Promise<MLJob> {
+    const response = await this.client.get(`/ml/jobs/${jobId}`);
+    return response.data;
+  }
+
+  async createMLJob(recordingId: number, modelName?: string, priority?: number): Promise<MLJob> {
+    const response = await this.client.post('/ml/jobs', {
+      recording_id: recordingId,
+      model_name: modelName,
+      priority: priority ?? 0,
+    });
+    return response.data;
+  }
+
+  async cancelMLJob(jobId: number): Promise<void> {
+    await this.client.delete(`/ml/jobs/${jobId}`);
+  }
+
+  async getMLDetectionSummary(params?: {
+    camera_id?: number;
+    recording_id?: number;
+    group_by?: 'class_name' | 'camera' | 'hour';
+  }): Promise<MLDetectionSummary> {
+    const response = await this.client.get('/ml/detections/summary', { params });
+    return response.data;
+  }
+
+  async getMLModels(): Promise<MLModelListResponse> {
+    const response = await this.client.get('/ml/models');
+    return response.data;
+  }
+
+  getMLEventsUrl(): string {
+    const token = this.getToken();
+    return `${API_BASE}/ml/events${token ? `?token=${token}` : ''}`;
   }
 }
 

@@ -108,3 +108,102 @@ export interface ExportResponse {
   message: string;
   download_url?: string;
 }
+
+// ML Types
+export interface MLJob {
+  id: number;
+  recording_id: number;
+  model_name: string;
+  status: 'pending' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  priority: number;
+  progress_percent: number;
+  frames_processed: number;
+  total_frames: number;
+  detections_count: number;
+  started_at?: string;
+  completed_at?: string;
+  processing_time_seconds?: number;
+  error_message?: string;
+  created_at: string;
+}
+
+export interface MLJobListResponse {
+  jobs: MLJob[];
+  total: number;
+}
+
+export interface MLDetection {
+  id: number;
+  recording_id: number;
+  camera_id: number;
+  class_name: string;
+  confidence: number;
+  timestamp_ms: number;
+  frame_number: number;
+  bbox_x: number;
+  bbox_y: number;
+  bbox_width: number;
+  bbox_height: number;
+  model_name: string;
+  model_version?: string;
+  created_at: string;
+}
+
+export interface MLDetectionListResponse {
+  detections: MLDetection[];
+  total: number;
+}
+
+export interface MLDetectionSummaryItem {
+  label: string;
+  count: number;
+  avg_confidence: number;
+}
+
+export interface MLDetectionSummary {
+  total_detections: number;
+  items: MLDetectionSummaryItem[];
+}
+
+export interface MLModel {
+  id: number;
+  name: string;
+  display_name: string;
+  version: string;
+  file_path: string;
+  model_type: string;
+  class_names: string[];
+  input_size: number[];
+  default_confidence_threshold: number;
+  default_nms_threshold: number;
+  is_enabled: boolean;
+  is_default: boolean;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MLModelListResponse {
+  models: MLModel[];
+}
+
+export interface MLWorkerStatus {
+  id: number;
+  running: boolean;
+  current_job: number | null;
+}
+
+export interface MLQueueStatus {
+  pending: number;
+  active: number;
+  max_size: number;
+  active_jobs: number[];
+}
+
+export interface MLStatus {
+  running: boolean;
+  workers: number;
+  worker_status: MLWorkerStatus[];
+  queue: MLQueueStatus;
+  models_loaded: string[];
+}
