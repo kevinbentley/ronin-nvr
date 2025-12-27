@@ -547,3 +547,72 @@ async def ml_events(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# === Control ===
+
+
+@router.post("/start")
+async def start_ml_system(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Start the ML processing system."""
+    if ml_coordinator.is_running:
+        return {"success": True, "message": "ML system already running"}
+
+    from app.database import async_session_maker
+    from app.services.ml import recording_watcher
+
+    ml_coordinator.set_session_factory(async_session_maker)
+    recording_watcher.set_session_factory(async_session_maker)
+
+    await ml_coordinator.start()
+    await recording_watcher.start()
+
+    return {"success": True, "message": "ML system started"}
+
+
+@router.post("/stop")
+async def stop_ml_system(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Stop the ML processing system."""
+    from app.services.ml import recording_watcher
+
+    await recording_watcher.stop()
+    await ml_coordinator.stop()
+
+    return {"success": True, "message": "ML system stopped"}
+
+
+@router.post("/process-all")
+async def process_all_recordings(
+    camera_name: Optional[str] = Query(None, description="Filter by camera name"),
+    limit: int = Query(100, ge=1, le=1000, description="Max recordings to queue"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Bulk-queue existing recordings for ML processing.
+
+    Scans the filesystem for recordings that haven't been processed yet
+    and queues them for ML analysis.
+    """
+    from app.services.ml import recording_watcher
+
+    if not ml_coordinator.is_running:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ML system is not running. Start it first with POST /api/ml/start",
+        )
+
+    queued = await recording_watcher.process_existing_recordings(
+        camera_name=camera_name,
+        limit=limit,
+    )
+
+    return {
+        "success": True,
+        "queued": queued,
+        "message": f"Queued {queued} recordings for processing",
+    }

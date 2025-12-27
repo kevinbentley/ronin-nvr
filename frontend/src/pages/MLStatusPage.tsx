@@ -20,6 +20,7 @@ export function MLStatusPage() {
   const [models, setModels] = useState<MLModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionInProgress, setActionInProgress] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -80,6 +81,46 @@ export function MLStatusPage() {
     }
   };
 
+  const handleStartML = async () => {
+    try {
+      setActionInProgress(true);
+      setError(null);
+      await api.startMLSystem();
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start ML system');
+    } finally {
+      setActionInProgress(false);
+    }
+  };
+
+  const handleStopML = async () => {
+    try {
+      setActionInProgress(true);
+      setError(null);
+      await api.stopMLSystem();
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to stop ML system');
+    } finally {
+      setActionInProgress(false);
+    }
+  };
+
+  const handleProcessAll = async () => {
+    try {
+      setActionInProgress(true);
+      setError(null);
+      const result = await api.processAllRecordings({ limit: 500 });
+      await loadData();
+      alert(`Queued ${result.queued} recordings for processing`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to queue recordings');
+    } finally {
+      setActionInProgress(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="ml-status-page loading">
@@ -95,9 +136,36 @@ export function MLStatusPage() {
     <div className="ml-status-page">
       <div className="ml-status-header">
         <h2>ML Processing</h2>
-        <button className="refresh-button" onClick={loadData}>
-          Refresh
-        </button>
+        <div className="ml-controls">
+          {mlStatus?.running ? (
+            <button
+              className="control-button stop"
+              onClick={handleStopML}
+              disabled={actionInProgress}
+            >
+              Stop ML
+            </button>
+          ) : (
+            <button
+              className="control-button start"
+              onClick={handleStartML}
+              disabled={actionInProgress}
+            >
+              Start ML
+            </button>
+          )}
+          <button
+            className="control-button process"
+            onClick={handleProcessAll}
+            disabled={actionInProgress || !mlStatus?.running}
+            title={!mlStatus?.running ? 'Start ML system first' : 'Queue all unprocessed recordings'}
+          >
+            Process All
+          </button>
+          <button className="refresh-button" onClick={loadData}>
+            Refresh
+          </button>
+        </div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}

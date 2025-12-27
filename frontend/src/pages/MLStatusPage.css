@@ -24,6 +24,12 @@
   color: #fff;
 }
 
+.ml-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 .ml-status-page .refresh-button {
   padding: 8px 16px;
   background: #3a3a3a;
@@ -37,6 +43,47 @@
 .ml-status-page .refresh-button:hover {
   background: #444;
   color: #fff;
+}
+
+.control-button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.control-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.control-button.start {
+  background: #4caf50;
+  color: #fff;
+}
+
+.control-button.start:hover:not(:disabled) {
+  background: #43a047;
+}
+
+.control-button.stop {
+  background: #f44336;
+  color: #fff;
+}
+
+.control-button.stop:hover:not(:disabled) {
+  background: #e53935;
+}
+
+.control-button.process {
+  background: #2196f3;
+  color: #fff;
+}
+
+.control-button.process:hover:not(:disabled) {
+  background: #1e88e5;
 }
 
 .ml-status-page .error-banner {

@@ -314,6 +314,24 @@ class ApiClient {
     return `${API_BASE}/ml/events${token ? `?token=${token}` : ''}`;
   }
 
+  async startMLSystem(): Promise<{ success: boolean; message: string }> {
+    const response = await this.client.post('/ml/start');
+    return response.data;
+  }
+
+  async stopMLSystem(): Promise<{ success: boolean; message: string }> {
+    const response = await this.client.post('/ml/stop');
+    return response.data;
+  }
+
+  async processAllRecordings(params?: {
+    camera_name?: string;
+    limit?: number;
+  }): Promise<{ success: boolean; queued: number; message: string }> {
+    const response = await this.client.post('/ml/process-all', null, { params });
+    return response.data;
+  }
+
   async getTimelineEvents(params: {
     camera_name: string;
     date: string;
