@@ -10,9 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.models.camera import Camera
 from app.models.detection import Detection
 from app.models.ml_job import JobStatus, MLJob
 from app.models.ml_model import MLModel
+from app.models.recording import Recording
 from app.models.user import User
 from app.schemas.ml import (
     CameraMLSettingsRequest,
@@ -29,6 +31,8 @@ from app.schemas.ml import (
     ModelListResponse,
     ModelResponse,
     QueueStatusResponse,
+    TimelineEvent,
+    TimelineEventsResponse,
     WorkerStatusResponse,
 )
 from app.services.ml import ml_coordinator
@@ -261,6 +265,124 @@ async def delete_detections(
         "success": True,
         "deleted": result.rowcount,
     }
+
+
+@router.get("/detections/timeline", response_model=TimelineEventsResponse)
+async def get_timeline_events(
+    camera_name: str,
+    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    class_filter: Optional[str] = None,
+    min_confidence: float = Query(0.3, ge=0.0, le=1.0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TimelineEventsResponse:
+    """Get detection events for timeline display.
+
+    Returns events for a specific camera and date, optimized for timeline visualization.
+    Events are grouped into time buckets to reduce data volume.
+    """
+    # Get camera by name
+    result = await db.execute(
+        select(Camera).where(Camera.name == camera_name)
+    )
+    camera = result.scalar_one_or_none()
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera '{camera_name}' not found",
+        )
+
+    # Parse date and get recording IDs for that day
+    try:
+        target_date = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid date format. Use YYYY-MM-DD",
+        )
+
+    # Get recordings for this camera on this date
+    start_of_day = datetime.combine(target_date, datetime.min.time())
+    end_of_day = datetime.combine(target_date, datetime.max.time())
+
+    recordings_result = await db.execute(
+        select(Recording.id, Recording.start_time)
+        .where(Recording.camera_id == camera.id)
+        .where(Recording.start_time >= start_of_day)
+        .where(Recording.start_time <= end_of_day)
+    )
+    recordings = recordings_result.all()
+
+    if not recordings:
+        return TimelineEventsResponse(events=[], total=0, class_counts={})
+
+    recording_ids = [r.id for r in recordings]
+    recording_times = {r.id: r.start_time for r in recordings}
+
+    # Query detections for these recordings
+    query = (
+        select(Detection)
+        .where(Detection.recording_id.in_(recording_ids))
+        .where(Detection.confidence >= min_confidence)
+    )
+
+    if class_filter:
+        query = query.where(Detection.class_name == class_filter)
+
+    query = query.order_by(Detection.timestamp_ms)
+
+    result = await db.execute(query)
+    detections = result.scalars().all()
+
+    # Group detections into time buckets (30-second intervals)
+    bucket_size_ms = 30000  # 30 seconds
+    buckets: dict[tuple[int, str], dict] = {}  # (bucket_time, class) -> data
+    class_counts: dict[str, int] = {}
+
+    for det in detections:
+        # Calculate absolute time in day (ms from midnight)
+        recording_start = recording_times.get(det.recording_id)
+        if recording_start:
+            recording_start_ms = (
+                recording_start.hour * 3600000
+                + recording_start.minute * 60000
+                + recording_start.second * 1000
+            )
+            abs_time_ms = recording_start_ms + det.timestamp_ms
+        else:
+            abs_time_ms = det.timestamp_ms
+
+        # Round to bucket
+        bucket_time = (abs_time_ms // bucket_size_ms) * bucket_size_ms
+        bucket_key = (bucket_time, det.class_name)
+
+        if bucket_key not in buckets:
+            buckets[bucket_key] = {
+                "timestamp_ms": bucket_time,
+                "class_name": det.class_name,
+                "confidence": det.confidence,
+                "recording_id": det.recording_id,
+                "count": 0,
+            }
+
+        buckets[bucket_key]["count"] += 1
+        buckets[bucket_key]["confidence"] = max(
+            buckets[bucket_key]["confidence"], det.confidence
+        )
+
+        # Update class counts
+        class_counts[det.class_name] = class_counts.get(det.class_name, 0) + 1
+
+    events = [
+        TimelineEvent(**bucket_data)
+        for bucket_data in sorted(buckets.values(), key=lambda x: x["timestamp_ms"])
+    ]
+
+    return TimelineEventsResponse(
+        events=events,
+        total=len(detections),
+        class_counts=class_counts,
+    )
 
 
 # === Models ===

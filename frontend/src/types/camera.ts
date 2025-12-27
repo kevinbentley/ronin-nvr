@@ -207,3 +207,18 @@ export interface MLStatus {
   queue: MLQueueStatus;
   models_loaded: string[];
 }
+
+// Timeline events
+export interface TimelineEvent {
+  timestamp_ms: number;  // Milliseconds from start of day
+  class_name: string;
+  confidence: number;
+  recording_id: number;
+  count: number;
+}
+
+export interface TimelineEventsResponse {
+  events: TimelineEvent[];
+  total: number;
+  class_counts: Record<string, number>;
+}

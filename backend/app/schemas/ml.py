@@ -90,6 +90,24 @@ class DetectionSummaryResponse(BaseModel):
     time_range: Optional[dict] = None
 
 
+class TimelineEvent(BaseModel):
+    """A single event for timeline display."""
+
+    timestamp_ms: int  # Milliseconds from start of day
+    class_name: str
+    confidence: float
+    recording_id: int
+    count: int = 1  # Number of detections at this time
+
+
+class TimelineEventsResponse(BaseModel):
+    """Response for timeline events."""
+
+    events: list[TimelineEvent]
+    total: int
+    class_counts: dict[str, int]  # Summary by class
+
+
 # === Model Schemas ===
 
 class ModelResponse(BaseModel):

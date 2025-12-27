@@ -19,6 +19,7 @@ import type {
   MLJob,
   MLDetectionSummary,
   MLModelListResponse,
+  TimelineEventsResponse,
 } from '../types/camera';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api';
@@ -311,6 +312,16 @@ class ApiClient {
   getMLEventsUrl(): string {
     const token = this.getToken();
     return `${API_BASE}/ml/events${token ? `?token=${token}` : ''}`;
+  }
+
+  async getTimelineEvents(params: {
+    camera_name: string;
+    date: string;
+    class_filter?: string;
+    min_confidence?: number;
+  }): Promise<TimelineEventsResponse> {
+    const response = await this.client.get('/ml/detections/timeline', { params });
+    return response.data;
   }
 }
 

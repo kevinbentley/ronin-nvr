@@ -302,9 +302,8 @@ TBD
 
 ## Future Features
 - Make cameras selectable for the display grid, so you can choose which to see
-- Archive files to remote server
-- User authentication / management
-- List box display of recorded videos
+- Cold Storage - Archive files to remote server, but make it available in playback
+- List box display of recorded videos?
 - Distributed stream handling (Need to determine how many streams a reasonably fast computer can handle)
 - AI Pipeline
 - Notifications

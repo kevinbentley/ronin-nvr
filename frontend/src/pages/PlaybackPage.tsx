@@ -7,7 +7,7 @@ import { api } from '../services/api';
 import { DatePicker } from '../components/DatePicker';
 import { Timeline } from '../components/Timeline';
 import { RecordingPlayer } from '../components/RecordingPlayer';
-import type { DayRecordings, RecordingFile } from '../types/camera';
+import type { DayRecordings, RecordingFile, TimelineEvent } from '../types/camera';
 import './PlaybackPage.css';
 
 export function PlaybackPage() {
@@ -17,6 +17,9 @@ export function PlaybackPage() {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [dayRecordings, setDayRecordings] = useState<DayRecordings | null>(null);
   const [selectedRecording, setSelectedRecording] = useState<RecordingFile | null>(null);
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
+  const [eventClassCounts, setEventClassCounts] = useState<Record<string, number>>({});
+  const [selectedEventTypes, setSelectedEventTypes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,9 +86,69 @@ export function PlaybackPage() {
     loadRecordings();
   }, [selectedCamera, selectedDate]);
 
+  // Load timeline events when camera/date changes
+  useEffect(() => {
+    if (!selectedCamera || !selectedDate) {
+      setTimelineEvents([]);
+      setEventClassCounts({});
+      setSelectedEventTypes(new Set());
+      return;
+    }
+
+    const loadEvents = async () => {
+      try {
+        const response = await api.getTimelineEvents({
+          camera_name: selectedCamera,
+          date: selectedDate,
+        });
+        setTimelineEvents(response.events);
+        setEventClassCounts(response.class_counts);
+        // Select all event types by default
+        setSelectedEventTypes(new Set(Object.keys(response.class_counts)));
+      } catch (err) {
+        // Events are optional, don't show error
+        setTimelineEvents([]);
+        setEventClassCounts({});
+        setSelectedEventTypes(new Set());
+      }
+    };
+    loadEvents();
+  }, [selectedCamera, selectedDate]);
+
+  // Filter events based on selected types
+  const filteredEvents = timelineEvents.filter(
+    (event) => selectedEventTypes.has(event.class_name)
+  );
+
+  const handleToggleEventType = (eventType: string) => {
+    setSelectedEventTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(eventType)) {
+        next.delete(eventType);
+      } else {
+        next.add(eventType);
+      }
+      return next;
+    });
+  };
+
   const handleTimelineClick = useCallback((recording: RecordingFile) => {
     setSelectedRecording(recording);
   }, []);
+
+  const handleEventClick = useCallback((event: TimelineEvent) => {
+    // Find the recording that contains this event
+    if (!dayRecordings) return;
+
+    const targetRecording = dayRecordings.files.find(
+      (rec) => rec.id === String(event.recording_id)
+    );
+
+    if (targetRecording) {
+      setSelectedRecording(targetRecording);
+      // Future: could also seek to the specific time within the recording
+    }
+  }, [dayRecordings]);
 
   const handleDownload = useCallback(() => {
     if (selectedRecording) {
@@ -163,6 +226,27 @@ export function PlaybackPage() {
             </button>
           </div>
         )}
+
+        {Object.keys(eventClassCounts).length > 0 && (
+          <div className="sidebar-section">
+            <h3>Events Filter</h3>
+            <div className="event-filters">
+              {Object.entries(eventClassCounts)
+                .sort((a, b) => b[1] - a[1]) // Sort by count descending
+                .map(([eventType, count]) => (
+                  <label key={eventType} className="event-filter-item">
+                    <input
+                      type="checkbox"
+                      checked={selectedEventTypes.has(eventType)}
+                      onChange={() => handleToggleEventType(eventType)}
+                    />
+                    <span className="event-type-name">{eventType}</span>
+                    <span className="event-type-count">({count})</span>
+                  </label>
+                ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="playback-main">
@@ -191,6 +275,8 @@ export function PlaybackPage() {
               recordings={dayRecordings.files}
               selectedRecording={selectedRecording}
               onSelectRecording={handleTimelineClick}
+              events={filteredEvents}
+              onEventClick={handleEventClick}
             />
           )}
         </div>
