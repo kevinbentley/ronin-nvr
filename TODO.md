@@ -305,8 +305,8 @@ A multi-phase implementation plan for building a Network Video Recorder system.
   - [x] `GET /api/ml/models` - List models
   - [x] `GET /api/ml/status` - System status
 - [x] Integrate ML coordinator into app lifecycle
-- [ ] Add SSE endpoint for detection events (Phase 8.1)
-- [ ] Download and register default YOLOv8n model
+- [x] Add SSE endpoint for detection events (Phase 8.1)
+- [x] Download and register default YOLOv8n model
 - [ ] Add frontend ML status page
 - [ ] Add detection overlay for playback (Phase 8.2)
 

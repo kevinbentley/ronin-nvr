@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -388,4 +389,39 @@ async def get_ml_status(
         ],
         queue=QueueStatusResponse(**status_data["queue"]),
         models_loaded=status_data["models_loaded"],
+    )
+
+
+# === Events ===
+
+
+@router.get("/events")
+async def ml_events(
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Server-Sent Events stream for real-time ML updates.
+
+    Events include:
+    - job_created: New job queued
+    - job_started: Job processing began
+    - job_progress: Job progress update
+    - job_completed: Job finished successfully
+    - job_failed: Job failed with error
+    - detection: High-confidence detection found
+    """
+    from app.services.ml import ml_event_service
+
+    async def event_generator():
+        """Generate SSE events."""
+        async for event in ml_event_service.subscribe():
+            yield event.to_sse()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

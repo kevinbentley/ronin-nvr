@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.ml_job import JobStatus, MLJob
 from app.models.recording import Recording
+from app.services.ml.events import ml_event_service
 from app.services.ml.job_queue import MLJobQueue, job_queue
 from app.services.ml.model_manager import ModelManager, model_manager
 from app.services.ml.worker import MLWorker
@@ -185,6 +186,14 @@ class MLCoordinator:
                 return None
 
             logger.info(f"Created job {job.id} for recording {recording_id}")
+
+            # Emit job created event
+            await ml_event_service.emit_job_created(
+                job_id=job.id,
+                recording_id=recording_id,
+                model_name=model_name,
+            )
+
             return job
 
     async def cancel_job(self, job_id: int) -> bool:

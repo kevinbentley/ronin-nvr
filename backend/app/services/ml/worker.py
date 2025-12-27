@@ -14,6 +14,7 @@ from app.models.detection import Detection
 from app.models.ml_job import JobStatus, MLJob
 from app.models.recording import Recording
 from app.services.ml.detection_service import DetectionService, detection_service
+from app.services.ml.events import ml_event_service
 from app.services.ml.frame_extractor import FrameExtractor
 from app.services.ml.job_queue import MLJobQueue, job_queue
 
@@ -153,6 +154,9 @@ class MLWorker:
                 job.started_at = datetime.utcnow()
                 await session.commit()
 
+                # Emit job started event (total_frames updated later)
+                await ml_event_service.emit_job_started(job_id, 0)
+
                 # Process the recording
                 await self._process_recording(session, job, recording)
 
@@ -197,6 +201,9 @@ class MLWorker:
         expected_frames = int(video_info.duration_seconds * self.frame_extractor.fps)
         job.total_frames = expected_frames
         await session.commit()
+
+        # Emit updated job started with correct frame count
+        await ml_event_service.emit_job_started(job.id, expected_frames)
 
         logger.info(
             f"Processing job {job.id}: {video_path.name}, "
@@ -249,6 +256,14 @@ class MLWorker:
                     job.detections_count = detections_count
                     await session.commit()
 
+                    # Emit progress event
+                    await ml_event_service.emit_job_progress(
+                        job_id=job.id,
+                        progress_percent=job.progress_percent,
+                        frames_processed=frames_processed,
+                        detections_count=detections_count,
+                    )
+
             # Commit remaining detections
             if detections_batch:
                 session.add_all(detections_batch)
@@ -269,6 +284,14 @@ class MLWorker:
             logger.info(
                 f"Job {job.id} complete: {frames_processed} frames, "
                 f"{detections_count} detections in {job.processing_time_seconds:.1f}s"
+            )
+
+            # Emit job completed event
+            await ml_event_service.emit_job_completed(
+                job_id=job.id,
+                frames_processed=frames_processed,
+                detections_count=detections_count,
+                processing_time_seconds=job.processing_time_seconds or 0.0,
             )
 
         except Exception as e:
@@ -297,3 +320,6 @@ class MLWorker:
             ).total_seconds()
         await session.commit()
         logger.error(f"Job {job.id} failed: {error_message}")
+
+        # Emit job failed event
+        await ml_event_service.emit_job_failed(job.id, error_message)
