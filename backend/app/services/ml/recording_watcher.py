@@ -4,16 +4,17 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, Set, TYPE_CHECKING
 
-from sqlalchemy import select, and_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.models.camera import Camera
 from app.models.ml_job import JobStatus, MLJob
 from app.models.recording import Recording, RecordingStatus
 from app.services.ml.coordinator import MLCoordinator, ml_coordinator
-from app.services.playback import playback_service
+from app.services.playback import playback_service, RecordingFile
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -24,8 +25,8 @@ logger = logging.getLogger(__name__)
 class RecordingWatcher:
     """Watch for new recordings and auto-queue them for ML processing.
 
-    Periodically scans for completed recordings that haven't been
-    processed yet and submits them to the ML coordinator.
+    Scans the filesystem for completed recordings and submits them
+    to the ML coordinator for processing.
     """
 
     def __init__(
@@ -48,10 +49,11 @@ class RecordingWatcher:
         settings = get_settings()
         self._enabled = settings.ml_enabled and settings.ml_auto_process
         self._default_model = settings.ml_default_model
+        self._segment_duration = settings.segment_duration_minutes * 60
 
         self._running = False
         self._task: Optional[asyncio.Task] = None
-        self._last_check: Optional[datetime] = None
+        self._processed_files: Set[str] = set()  # Track files we've already queued
 
     @property
     def is_running(self) -> bool:
@@ -78,6 +80,9 @@ class RecordingWatcher:
             logger.warning("Recording watcher already running")
             return
 
+        # Load already-processed files from database
+        await self._load_processed_files()
+
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
         logger.info(f"Recording watcher started (check every {self.check_interval}s)")
@@ -98,6 +103,24 @@ class RecordingWatcher:
 
         logger.info("Recording watcher stopped")
 
+    async def _load_processed_files(self) -> None:
+        """Load list of already-processed file paths from database."""
+        if not self.session_factory:
+            return
+
+        async with self.session_factory() as session:
+            # Get all recording file paths that have ML jobs
+            result = await session.execute(
+                select(Recording.file_path).join(
+                    MLJob, MLJob.recording_id == Recording.id
+                ).where(
+                    MLJob.model_name == self._default_model
+                )
+            )
+            paths = result.scalars().all()
+            self._processed_files = set(paths)
+            logger.info(f"Loaded {len(self._processed_files)} already-processed recordings")
+
     async def _run_loop(self) -> None:
         """Main watcher loop."""
         while self._running:
@@ -111,78 +134,97 @@ class RecordingWatcher:
                 await asyncio.sleep(self.check_interval)
 
     async def _check_new_recordings(self) -> None:
-        """Check for new recordings and submit for processing."""
+        """Check for new recordings on filesystem and submit for processing."""
         if not self.session_factory:
             logger.debug("No session factory - skipping check")
             return
 
-        now = datetime.utcnow()
+        # Scan filesystem for all recordings
+        all_recordings = playback_service.scan_recordings()
 
-        # Look for recordings completed in the last check interval + buffer
-        # (or since startup if first check)
-        if self._last_check:
-            since = self._last_check - timedelta(seconds=10)  # Small overlap buffer
-        else:
-            # On first run, check recordings from the last hour
-            since = now - timedelta(hours=1)
+        # Filter to completed recordings (not currently being written)
+        # A recording is considered complete if it's older than segment duration + buffer
+        now = datetime.now()
+        min_age = timedelta(seconds=self._segment_duration + 60)  # Segment duration + 1 min buffer
 
-        self._last_check = now
+        new_recordings = []
+        for rec in all_recordings:
+            # Skip if already processed
+            if str(rec.path) in self._processed_files:
+                continue
+
+            # Skip if too recent (still being written)
+            file_age = now - rec.start_time
+            if file_age < min_age:
+                continue
+
+            new_recordings.append(rec)
+
+        if not new_recordings:
+            return
+
+        logger.info(f"Found {len(new_recordings)} new recordings to process")
 
         async with self.session_factory() as session:
-            # Find recordings that:
-            # 1. Are completed
-            # 2. Were modified recently (file completed)
-            # 3. Don't have a pending/processing ML job
+            # Get camera name -> id mapping
+            result = await session.execute(select(Camera))
+            cameras = {cam.name: cam.id for cam in result.scalars().all()}
 
-            # Get recordings that don't have an ML job yet
-            subquery = (
-                select(MLJob.recording_id)
-                .where(
-                    MLJob.model_name == self._default_model,
-                    MLJob.status.in_([
-                        JobStatus.PENDING.value,
-                        JobStatus.QUEUED.value,
-                        JobStatus.PROCESSING.value,
-                        JobStatus.COMPLETED.value,
-                    ]),
-                )
-            )
-
-            result = await session.execute(
-                select(Recording)
-                .where(
-                    Recording.status == RecordingStatus.COMPLETED.value,
-                    Recording.created_at >= since,
-                    ~Recording.id.in_(subquery),
-                )
-                .order_by(Recording.created_at.asc())
-                .limit(10)  # Process at most 10 at a time
-            )
-            recordings = result.scalars().all()
-
-            if recordings:
-                logger.info(f"Found {len(recordings)} new recordings to process")
-
-            for recording in recordings:
+            for rec_file in new_recordings[:10]:  # Process at most 10 at a time
                 try:
-                    job = await self.coordinator.process_recording(
-                        recording_id=recording.id,
-                        model_name=self._default_model,
-                        priority=0,  # Normal priority for auto-detected
-                    )
-                    if job:
-                        logger.info(
-                            f"Queued recording {recording.id} "
-                            f"({recording.file_path}) for processing"
-                        )
+                    await self._process_recording_file(session, rec_file, cameras)
                 except Exception as e:
-                    logger.error(
-                        f"Failed to queue recording {recording.id}: {e}"
-                    )
+                    logger.error(f"Failed to process {rec_file.path}: {e}")
+
+    async def _process_recording_file(
+        self,
+        session: AsyncSession,
+        rec_file: RecordingFile,
+        cameras: dict[str, int],
+    ) -> None:
+        """Create database record and submit for ML processing."""
+        # Get camera ID
+        camera_id = cameras.get(rec_file.camera_name)
+        if not camera_id:
+            logger.warning(f"Camera '{rec_file.camera_name}' not found in database")
+            return
+
+        # Check if recording already exists in database
+        result = await session.execute(
+            select(Recording).where(Recording.file_path == str(rec_file.path))
+        )
+        recording = result.scalar_one_or_none()
+
+        if not recording:
+            # Create new recording record
+            recording = Recording(
+                camera_id=camera_id,
+                file_path=str(rec_file.path),
+                file_size=rec_file.size,
+                start_time=rec_file.start_time,
+                end_time=rec_file.start_time + timedelta(seconds=rec_file.duration_seconds or self._segment_duration),
+                duration_seconds=rec_file.duration_seconds or self._segment_duration,
+                status=RecordingStatus.COMPLETED.value,
+            )
+            session.add(recording)
+            await session.commit()
+            await session.refresh(recording)
+            logger.info(f"Created recording record for {rec_file.path}")
+
+        # Submit for ML processing
+        job = await self.coordinator.process_recording(
+            recording_id=recording.id,
+            model_name=self._default_model,
+            priority=0,
+        )
+
+        if job:
+            self._processed_files.add(str(rec_file.path))
+            logger.info(f"Queued {rec_file.path} for ML processing (job {job.id})")
 
     async def process_existing_recordings(
         self,
-        camera_id: Optional[int] = None,
+        camera_name: Optional[str] = None,
         limit: int = 100,
     ) -> int:
         """Process existing recordings that haven't been analyzed.
@@ -190,7 +232,7 @@ class RecordingWatcher:
         Useful for initial setup or reprocessing.
 
         Args:
-            camera_id: Optional camera to filter by
+            camera_name: Optional camera to filter by
             limit: Maximum number of recordings to queue
 
         Returns:
@@ -199,49 +241,34 @@ class RecordingWatcher:
         if not self.session_factory:
             return 0
 
+        # Scan filesystem
+        all_recordings = playback_service.scan_recordings(camera_name=camera_name)
+
+        # Filter out already processed
+        new_recordings = [
+            rec for rec in all_recordings
+            if str(rec.path) not in self._processed_files
+        ]
+
+        # Limit
+        new_recordings = new_recordings[:limit]
+
+        if not new_recordings:
+            logger.info("No unprocessed recordings found")
+            return 0
+
         async with self.session_factory() as session:
-            # Find completed recordings without ML jobs
-            subquery = (
-                select(MLJob.recording_id)
-                .where(
-                    MLJob.model_name == self._default_model,
-                    MLJob.status.in_([
-                        JobStatus.PENDING.value,
-                        JobStatus.QUEUED.value,
-                        JobStatus.PROCESSING.value,
-                        JobStatus.COMPLETED.value,
-                    ]),
-                )
-            )
-
-            query = (
-                select(Recording)
-                .where(
-                    Recording.status == RecordingStatus.COMPLETED.value,
-                    ~Recording.id.in_(subquery),
-                )
-            )
-
-            if camera_id:
-                query = query.where(Recording.camera_id == camera_id)
-
-            query = query.order_by(Recording.created_at.desc()).limit(limit)
-
-            result = await session.execute(query)
-            recordings = result.scalars().all()
+            # Get camera mapping
+            result = await session.execute(select(Camera))
+            cameras = {cam.name: cam.id for cam in result.scalars().all()}
 
             queued = 0
-            for recording in recordings:
+            for rec_file in new_recordings:
                 try:
-                    job = await self.coordinator.process_recording(
-                        recording_id=recording.id,
-                        model_name=self._default_model,
-                        priority=-1,  # Lower priority for batch processing
-                    )
-                    if job:
-                        queued += 1
+                    await self._process_recording_file(session, rec_file, cameras)
+                    queued += 1
                 except Exception as e:
-                    logger.error(f"Failed to queue recording {recording.id}: {e}")
+                    logger.error(f"Failed to process {rec_file.path}: {e}")
 
             logger.info(f"Queued {queued} existing recordings for processing")
             return queued
