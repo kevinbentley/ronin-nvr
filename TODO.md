@@ -308,6 +308,8 @@ A multi-phase implementation plan for building a Network Video Recorder system.
 - [x] Add SSE endpoint for detection events (Phase 8.1)
 - [x] Download and register default YOLOv8n model
 - [x] Add frontend ML status page
+- [x] Add motion detection service (MOG2 background subtraction)
+- [ ] Add timeline event markers in playback UI
 - [ ] Add detection overlay for playback (Phase 8.2)
 
 ### Design Decisions

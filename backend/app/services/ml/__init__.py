@@ -3,6 +3,7 @@
 from app.services.ml.frame_extractor import FrameExtractor, VideoInfo
 from app.services.ml.model_manager import LoadedModel, ModelManager, model_manager
 from app.services.ml.detection_service import DetectionResult, DetectionService, detection_service
+from app.services.ml.motion_detector import MotionDetector, MotionResult
 from app.services.ml.job_queue import MLJobQueue, job_queue
 from app.services.ml.worker import MLWorker
 from app.services.ml.coordinator import MLCoordinator, ml_coordinator
@@ -21,6 +22,8 @@ __all__ = [
     "MLJobQueue",
     "MLWorker",
     "ModelManager",
+    "MotionDetector",
+    "MotionResult",
     "RecordingWatcher",
     "VideoInfo",
     "detection_service",

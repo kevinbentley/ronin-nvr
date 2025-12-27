@@ -17,6 +17,7 @@ from app.services.ml.detection_service import DetectionService, detection_servic
 from app.services.ml.events import ml_event_service
 from app.services.ml.frame_extractor import FrameExtractor
 from app.services.ml.job_queue import MLJobQueue, job_queue
+from app.services.ml.motion_detector import MotionDetector
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -60,6 +61,10 @@ class MLWorker:
             fps=settings.ml_default_fps,
             max_dimension=640,
         )
+
+        # Motion detection (reset per video to rebuild background model)
+        self.motion_detection_enabled = settings.motion_detection_enabled
+        self._motion_detector: Optional[MotionDetector] = None
 
     @property
     def is_running(self) -> bool:
@@ -210,6 +215,11 @@ class MLWorker:
             f"~{expected_frames} frames at {self.frame_extractor.fps} fps"
         )
 
+        # Create fresh motion detector for this video (needs to build background model)
+        if self.motion_detection_enabled:
+            self._motion_detector = MotionDetector.from_settings()
+            logger.debug(f"Motion detection enabled for job {job.id}")
+
         frames_processed = 0
         detections_count = 0
         detections_batch: list[Detection] = []
@@ -219,10 +229,10 @@ class MLWorker:
             async for frame, frame_num, timestamp_ms in self.frame_extractor.extract_frames(
                 video_path
             ):
-                # Run detection
+                # Run YOLO object detection
                 results = self.detector.detect(frame, model_name)
 
-                # Create detection records
+                # Create detection records for YOLO results
                 for result in results:
                     detection = Detection(
                         recording_id=recording.id,
@@ -239,6 +249,33 @@ class MLWorker:
                     )
                     detections_batch.append(detection)
                     detections_count += 1
+
+                # Run motion detection
+                if self._motion_detector is not None:
+                    motion_result = self._motion_detector.detect(frame)
+                    if motion_result.has_motion:
+                        # Store motion as a detection with class_name="motion"
+                        # Use the largest bounding box if available
+                        if motion_result.bounding_boxes:
+                            bbox = motion_result.bounding_boxes[0]  # Largest
+                        else:
+                            bbox = (0.0, 0.0, 1.0, 1.0)  # Full frame
+
+                        motion_detection = Detection(
+                            recording_id=recording.id,
+                            camera_id=camera_id,
+                            class_name="motion",
+                            confidence=min(motion_result.motion_percent / 100.0, 1.0),
+                            timestamp_ms=int(timestamp_ms),
+                            frame_number=frame_num,
+                            bbox_x=bbox[0],
+                            bbox_y=bbox[1],
+                            bbox_width=bbox[2],
+                            bbox_height=bbox[3],
+                            model_name="motion_detector",
+                        )
+                        detections_batch.append(motion_detection)
+                        detections_count += 1
 
                 frames_processed += 1
 
@@ -297,6 +334,9 @@ class MLWorker:
         except Exception as e:
             await self._fail_job(session, job, str(e))
             raise
+        finally:
+            # Clean up motion detector
+            self._motion_detector = None
 
     async def _fail_job(
         self,

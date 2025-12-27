@@ -72,6 +72,15 @@ class Settings(BaseSettings):
     # ML Detection retention
     ml_detection_retention_days: Optional[int] = 90
 
+    # Motion Detection settings
+    motion_detection_enabled: bool = True
+    motion_threshold: float = 0.5  # Percent of frame for motion trigger (0-100)
+    motion_min_contour_area: int = 500  # Minimum pixel area to consider
+    motion_history: int = 500  # Frames for background model history
+    motion_var_threshold: float = 16.0  # Foreground/background threshold
+    motion_detect_shadows: bool = True  # Detect and handle shadows
+    motion_learning_rate: float = -1  # Background learning rate (-1 = auto)
+
 
 @lru_cache
 def get_settings() -> Settings:
