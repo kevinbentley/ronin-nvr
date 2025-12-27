@@ -278,6 +278,78 @@ A multi-phase implementation plan for building a Network Video Recorder system.
 
 ---
 
+## Phase 8: ML Video Inference Pipeline
+**Branch**: `phase-8-ml-pipeline`
+**Status**: IN PROGRESS
+**Depends on**: Phase 7
+
+### Tasks
+- [x] Create database models (Detection, MLJob, MLModel)
+- [x] Add ML settings to config.py
+- [x] Add ML dependencies (onnxruntime, numpy, opencv-python-headless)
+- [x] Create Alembic migration for ML tables
+- [x] Create frame extraction service (FFmpeg-based)
+- [x] Create model manager (ONNX Runtime)
+- [x] Create detection service (YOLO inference)
+- [x] Create job queue (asyncio priority queue)
+- [x] Create ML worker for job processing
+- [x] Create ML coordinator for worker pool management
+- [x] Create recording watcher for auto-processing
+- [x] Create ML API endpoints:
+  - [x] `GET /api/ml/jobs` - List jobs
+  - [x] `GET /api/ml/jobs/{id}` - Job details
+  - [x] `POST /api/ml/jobs` - Create job
+  - [x] `DELETE /api/ml/jobs/{id}` - Cancel job
+  - [x] `GET /api/ml/detections` - Query detections
+  - [x] `GET /api/ml/detections/summary` - Detection stats
+  - [x] `GET /api/ml/models` - List models
+  - [x] `GET /api/ml/status` - System status
+- [x] Integrate ML coordinator into app lifecycle
+- [ ] Add SSE endpoint for detection events (Phase 8.1)
+- [ ] Download and register default YOLOv8n model
+- [ ] Add frontend ML status page
+- [ ] Add detection overlay for playback (Phase 8.2)
+
+### Design Decisions
+- **Batch processing**: Process completed 15-minute MP4 recordings (not real-time)
+- **Local inference**: ONNX Runtime with YOLOv8 (no cloud dependencies)
+- **Distributed workers**: 4 parallel workers using asyncio (configurable)
+- **Automatic processing**: RecordingWatcher auto-queues new recordings
+
+### Architecture
+```
+[Completed MP4] -> [Recording Watcher] -> [Job Queue]
+                                               |
+                                       [ML Coordinator]
+                                               |
+                   +---------------------------+---------------------------+
+                   |                           |                           |
+             [Worker 1]                  [Worker 2]                  [Worker N]
+                   |
+        +----------+----------+
+        |          |          |
+   [FFmpeg]   [ONNX Model]  [DB Storage]
+```
+
+### Validation Criteria
+- [ ] Can register and list ML models
+- [ ] Can manually trigger processing of a recording
+- [ ] Jobs show progress during processing
+- [ ] Detections stored with timestamps and bounding boxes
+- [ ] Can query detections by camera, date, class
+- [ ] Auto-processing of new recordings works
+- [ ] 4 workers process jobs in parallel
+- [ ] System handles 8+ cameras without issues
+
+### Merge Checklist
+- [ ] All validation criteria met
+- [ ] Tests pass
+- [ ] Code reviewed
+- [ ] Merge `phase-8-ml-pipeline` into `master`
+- [ ] Tag release: `v8.0`
+
+---
+
 ## Quick Reference
 
 ### Git Workflow
@@ -315,6 +387,6 @@ alembic revision --autogenerate -m "description"
 ### Dependencies Summary
 **System**: FFmpeg 5.x+, PostgreSQL 14+, Node.js 18+, Python 3.11+
 
-**Backend (pip)**: fastapi, uvicorn, sqlalchemy, alembic, asyncpg, pydantic, python-dotenv, pytest, httpx
+**Backend (pip)**: fastapi, uvicorn, sqlalchemy, alembic, asyncpg, pydantic, python-dotenv, pytest, httpx, onnxruntime, numpy, opencv-python-headless
 
 **Frontend (npm)**: react, typescript, vite, hls.js, axios

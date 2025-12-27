@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import get_settings
 from app.database import Base
-from app.models import Camera, Recording, User  # noqa: F401
+from app.models import Camera, Detection, MLJob, MLModel, Recording, User  # noqa: F401
 
 config = context.config
 settings = get_settings()

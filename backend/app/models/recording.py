@@ -19,6 +19,8 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.camera import Camera
+    from app.models.detection import Detection
+    from app.models.ml_job import MLJob
 
 
 class RecordingStatus(str, Enum):
@@ -66,6 +68,12 @@ class Recording(Base):
 
     # Relationships
     camera: Mapped["Camera"] = relationship("Camera", back_populates="recordings")
+    detections: Mapped[list["Detection"]] = relationship(
+        "Detection", back_populates="recording", cascade="all, delete-orphan"
+    )
+    ml_jobs: Mapped[list["MLJob"]] = relationship(
+        "MLJob", back_populates="recording", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return (

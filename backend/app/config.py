@@ -53,6 +53,25 @@ class Settings(BaseSettings):
     # CORS (comma-separated origins for production)
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
+    # ML Processing
+    ml_enabled: bool = True
+    ml_workers: int = 4
+    ml_max_queue_size: int = 100
+
+    # ML Processing defaults
+    ml_default_fps: float = 1.0  # Frames per second to analyze
+    ml_batch_size: int = 8
+    ml_auto_process: bool = True  # Auto-process new recordings
+
+    # ML Model settings
+    ml_models_directory: Path = Path("./storage/.ml/models")
+    ml_default_model: str = "yolov8n"
+    ml_confidence_threshold: float = 0.5
+    ml_nms_threshold: float = 0.45
+
+    # ML Detection retention
+    ml_detection_retention_days: Optional[int] = 90
+
 
 @lru_cache
 def get_settings() -> Settings:

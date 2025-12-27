@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 if TYPE_CHECKING:
+    from app.models.detection import Detection
     from app.models.recording import Recording
 
 
@@ -61,6 +62,9 @@ class Camera(Base):
     # Relationships
     recordings: Mapped[list["Recording"]] = relationship(
         "Recording", back_populates="camera", cascade="all, delete-orphan"
+    )
+    detections: Mapped[list["Detection"]] = relationship(
+        "Detection", back_populates="camera", cascade="all, delete-orphan"
     )
 
     @property
