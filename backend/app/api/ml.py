@@ -267,6 +267,11 @@ async def delete_detections(
     }
 
 
+def _safe_camera_name(name: str) -> str:
+    """Convert camera name to filesystem-safe version."""
+    return "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in name)
+
+
 @router.get("/detections/timeline", response_model=TimelineEventsResponse)
 async def get_timeline_events(
     camera_name: str,
@@ -281,11 +286,21 @@ async def get_timeline_events(
     Returns events for a specific camera and date, optimized for timeline visualization.
     Events are grouped into time buckets to reduce data volume.
     """
-    # Get camera by name
+    # Get camera by name - try exact match first, then filesystem-safe match
     result = await db.execute(
         select(Camera).where(Camera.name == camera_name)
     )
     camera = result.scalar_one_or_none()
+
+    # If not found, the camera_name might be filesystem-safe format (underscores)
+    # Try to find a camera whose safe name matches
+    if not camera:
+        all_cameras = await db.execute(select(Camera))
+        for cam in all_cameras.scalars().all():
+            if _safe_camera_name(cam.name) == camera_name:
+                camera = cam
+                break
+
     if not camera:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -498,10 +513,15 @@ async def delete_model(
 
 @router.get("/status", response_model=MLStatusResponse)
 async def get_ml_status(
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> MLStatusResponse:
     """Get ML system status."""
-    status_data = ml_coordinator.get_status()
+    # Ensure coordinator has session factory
+    from app.database import async_session_maker
+    ml_coordinator.set_session_factory(async_session_maker)
+
+    status_data = await ml_coordinator.get_status()
 
     return MLStatusResponse(
         running=status_data["running"],
@@ -615,4 +635,79 @@ async def process_all_recordings(
         "success": True,
         "queued": queued,
         "message": f"Queued {queued} recordings for processing",
+    }
+
+
+@router.post("/retry-failed")
+async def retry_failed_jobs(
+    error_filter: Optional[str] = Query(
+        None, description="Only retry jobs with this error message (partial match)"
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Reset failed jobs back to PENDING so they can be retried.
+
+    This is useful when jobs failed due to transient issues like queue full.
+    """
+    from sqlalchemy import update
+
+    # Build query for failed jobs
+    query = (
+        update(MLJob)
+        .where(MLJob.status == JobStatus.FAILED.value)
+    )
+
+    if error_filter:
+        query = query.where(MLJob.error_message.contains(error_filter))
+
+    query = query.values(
+        status=JobStatus.PENDING.value,
+        error_message=None,
+        started_at=None,
+        completed_at=None,
+    )
+
+    result = await db.execute(query)
+    await db.commit()
+
+    return {
+        "success": True,
+        "reset_count": result.rowcount,
+        "message": f"Reset {result.rowcount} failed jobs to PENDING",
+    }
+
+
+@router.post("/reset-stuck")
+async def reset_stuck_jobs(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Reset stuck processing jobs back to PENDING.
+
+    When the server restarts, jobs that were in PROCESSING state become orphaned
+    because no worker is actually processing them. This endpoint resets those
+    jobs so they can be picked up again.
+    """
+    from sqlalchemy import update
+
+    # Reset PROCESSING jobs back to PENDING
+    query = (
+        update(MLJob)
+        .where(MLJob.status == JobStatus.PROCESSING.value)
+        .values(
+            status=JobStatus.PENDING.value,
+            started_at=None,
+            progress_percent=0,
+            frames_processed=0,
+        )
+    )
+
+    result = await db.execute(query)
+    await db.commit()
+
+    return {
+        "success": True,
+        "reset_count": result.rowcount,
+        "message": f"Reset {result.rowcount} stuck processing jobs to PENDING",
     }

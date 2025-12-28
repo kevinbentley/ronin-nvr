@@ -121,6 +121,34 @@ export function MLStatusPage() {
     }
   };
 
+  const handleRetryFailed = async () => {
+    try {
+      setActionInProgress(true);
+      setError(null);
+      const result = await api.retryFailedJobs();
+      await loadData();
+      alert(`Reset ${result.reset_count} failed jobs to pending`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retry jobs');
+    } finally {
+      setActionInProgress(false);
+    }
+  };
+
+  const handleResetStuck = async () => {
+    try {
+      setActionInProgress(true);
+      setError(null);
+      const result = await api.resetStuckJobs();
+      await loadData();
+      alert(`Reset ${result.reset_count} stuck processing jobs to pending`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset stuck jobs');
+    } finally {
+      setActionInProgress(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="ml-status-page loading">
@@ -161,6 +189,22 @@ export function MLStatusPage() {
             title={!mlStatus?.running ? 'Start ML system first' : 'Queue all unprocessed recordings'}
           >
             Process All
+          </button>
+          <button
+            className="control-button retry"
+            onClick={handleRetryFailed}
+            disabled={actionInProgress}
+            title="Reset failed jobs to pending for retry"
+          >
+            Retry Failed
+          </button>
+          <button
+            className="control-button reset"
+            onClick={handleResetStuck}
+            disabled={actionInProgress}
+            title="Reset stuck processing jobs to pending"
+          >
+            Reset Stuck
           </button>
           <button className="refresh-button" onClick={loadData}>
             Refresh

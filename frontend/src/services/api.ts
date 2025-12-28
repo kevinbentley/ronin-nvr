@@ -332,6 +332,18 @@ class ApiClient {
     return response.data;
   }
 
+  async retryFailedJobs(params?: {
+    error_filter?: string;
+  }): Promise<{ success: boolean; reset_count: number; message: string }> {
+    const response = await this.client.post('/ml/retry-failed', null, { params });
+    return response.data;
+  }
+
+  async resetStuckJobs(): Promise<{ success: boolean; reset_count: number; message: string }> {
+    const response = await this.client.post('/ml/reset-stuck');
+    return response.data;
+  }
+
   async getTimelineEvents(params: {
     camera_name: string;
     date: string;

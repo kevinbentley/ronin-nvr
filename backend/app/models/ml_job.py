@@ -66,6 +66,10 @@ class MLJob(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
 
+    # Worker tracking (for standalone worker processes)
+    worker_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    last_heartbeat: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
     # Configuration used for this job
     config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
@@ -82,6 +86,8 @@ class MLJob(Base):
         Index("ix_ml_jobs_status", "status"),
         Index("ix_ml_jobs_recording_id", "recording_id"),
         Index("ix_ml_jobs_created_at", "created_at"),
+        # Composite index for efficient job claiming: ORDER BY priority DESC, created_at ASC
+        Index("ix_ml_jobs_pending_queue", "status", "priority", "created_at"),
     )
 
     def __repr__(self) -> str:

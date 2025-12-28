@@ -158,9 +158,22 @@ class ModelManager:
         try:
             logger.info(f"Loading model: {model_path}")
 
-            # Create inference session
-            # Use CPU provider by default, can add CUDA later
-            providers = ["CPUExecutionProvider"]
+            # Create inference session with best available provider
+            # Priority: CoreML (Apple Silicon) > CUDA (NVIDIA) > CPU
+            available = ort.get_available_providers()
+            providers = []
+
+            if "CoreMLExecutionProvider" in available:
+                # Use Apple Neural Engine + GPU on Mac
+                providers.append("CoreMLExecutionProvider")
+                logger.info("Using CoreML execution provider (Apple Neural Engine/GPU)")
+            elif "CUDAExecutionProvider" in available:
+                providers.append("CUDAExecutionProvider")
+                logger.info("Using CUDA execution provider (NVIDIA GPU)")
+
+            # Always include CPU as fallback
+            providers.append("CPUExecutionProvider")
+
             session = ort.InferenceSession(str(model_path), providers=providers)
 
             # Get input details

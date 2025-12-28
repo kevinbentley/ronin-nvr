@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-import struct
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncIterator, Optional
@@ -187,7 +187,13 @@ class FrameExtractor:
         frame_size = out_width * out_height * 3
 
         # Build FFmpeg command
+        # Note: We use CPU decoding intentionally - FFmpeg's multi-threaded software
+        # decoder is faster than hardware decode when frames must be copied to CPU
+        # for ML processing. Hardware decode only helps when frames stay in GPU memory.
         cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error"]
+
+        # Use multiple threads for decoding
+        cmd.extend(["-threads", "0"])  # Auto-detect optimal thread count
 
         # Input seeking (if specified)
         if start_time is not None and start_time > 0:
@@ -214,18 +220,20 @@ class FrameExtractor:
         logger.debug(f"FFmpeg command: {' '.join(cmd)}")
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            # Use subprocess.Popen with threaded reads instead of asyncio subprocess
+            # This avoids macOS asyncio pipe buffer deadlock issues with large reads
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
 
             frame_number = 0
             base_timestamp = start_time * 1000 if start_time else 0
 
             while True:
-                # Read exactly one frame
-                frame_data = await process.stdout.read(frame_size)
+                # Read exactly one frame using threaded I/O to avoid blocking event loop
+                frame_data = await asyncio.to_thread(process.stdout.read, frame_size)
 
                 if not frame_data:
                     break
@@ -248,10 +256,10 @@ class FrameExtractor:
                 frame_number += 1
 
             # Wait for process to finish
-            await process.wait()
+            process.wait()
 
             if process.returncode != 0:
-                stderr = await process.stderr.read()
+                stderr = process.stderr.read()
                 logger.warning(f"FFmpeg exited with code {process.returncode}: {stderr.decode()}")
 
             logger.info(f"Extracted {frame_number} frames from {video_path}")

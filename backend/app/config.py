@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     ml_max_queue_size: int = 100
 
     # ML Processing defaults
-    ml_default_fps: float = 1.0  # Frames per second to analyze
+    ml_default_fps: float = 2.0  # Frames per second to analyze
     ml_batch_size: int = 8
     ml_auto_process: bool = True  # Auto-process new recordings
 

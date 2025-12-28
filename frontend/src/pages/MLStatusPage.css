@@ -86,6 +86,24 @@
   background: #1e88e5;
 }
 
+.control-button.retry {
+  background: #ff9800;
+  color: #fff;
+}
+
+.control-button.retry:hover:not(:disabled) {
+  background: #f57c00;
+}
+
+.control-button.reset {
+  background: #9c27b0;
+  color: #fff;
+}
+
+.control-button.reset:hover:not(:disabled) {
+  background: #7b1fa2;
+}
+
 .ml-status-page .error-banner {
   background: rgba(229, 57, 53, 0.2);
   border: 1px solid #e53935;
