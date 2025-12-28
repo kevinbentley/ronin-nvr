@@ -65,9 +65,13 @@ class Settings(BaseSettings):
 
     # ML Model settings
     ml_models_directory: Path = Path("./storage/.ml/models")
-    ml_default_model: str = "yolov8n"
+    ml_default_model: str = "yolov8l"
     ml_confidence_threshold: float = 0.5
     ml_nms_threshold: float = 0.45
+
+    # Class filter - only save detections for these classes (empty = all classes)
+    # Common classes: person, car, truck, bus, motorcycle, bicycle, dog, cat
+    ml_class_filter: str = "person,car,truck,bus,motorcycle,bicycle,dog,cat"
 
     # ML Detection retention
     ml_detection_retention_days: Optional[int] = 90

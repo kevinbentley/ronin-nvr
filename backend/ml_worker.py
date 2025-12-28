@@ -84,6 +84,15 @@ class StandaloneMLWorker:
         self.detector = DetectionService(model_mgr=self.model_manager)
         self.frame_extractor = FrameExtractor(fps=fps, max_dimension=640)
 
+        # Class filter - only save detections for these classes
+        settings = get_settings()
+        filter_str = settings.ml_class_filter.strip()
+        if filter_str:
+            self.class_filter = set(c.strip().lower() for c in filter_str.split(","))
+            logger.info(f"Class filter enabled: {self.class_filter}")
+        else:
+            self.class_filter = None  # No filter, accept all classes
+
     async def start(self) -> None:
         """Start the worker and begin processing jobs."""
         logger.info(f"Worker {self.worker_id} starting...")
@@ -194,8 +203,12 @@ class StandaloneMLWorker:
                 # Run YOLO object detection
                 results = self.detector.detect(frame, job.model_name)
 
-                # Create detection records
+                # Create detection records (filtered by class if configured)
                 for result in results:
+                    # Apply class filter if configured
+                    if self.class_filter and result.class_name.lower() not in self.class_filter:
+                        continue
+
                     detections_batch.append({
                         "recording_id": job.recording_id,
                         "camera_id": job.camera_id,
