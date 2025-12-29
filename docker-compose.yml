@@ -1,0 +1,150 @@
+# RoninNVR Docker Compose Configuration
+#
+# Usage:
+#   docker compose up -d                    # Start all services
+#   docker compose up -d --scale ml-worker=4  # Start with 4 ML workers
+#   docker compose logs -f backend          # View backend logs
+#   docker compose down                     # Stop all services
+#
+# GPU Support:
+#   Requires nvidia-container-toolkit installed on host
+#   GPU services will use NVIDIA runtime automatically
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: ronin-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ronin_nvr_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ronin_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-ronin_nvr}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ronin_nvr_user} -d ${POSTGRES_DB:-ronin_nvr}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ronin-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ronin_nvr_user}:${POSTGRES_PASSWORD:-ronin_pass}@postgres:5432/${POSTGRES_DB:-ronin_nvr}
+      STORAGE_ROOT: /data/storage
+      HOST: 0.0.0.0
+      PORT: 8000
+      DEBUG: ${DEBUG:-false}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:3000}
+      ML_ENABLED: "true"
+      ML_AUTO_PROCESS: "true"
+    volumes:
+      - storage_data:/data/storage
+      - ml_models:/data/storage/.ml/models
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # React Frontend (Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ronin-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ML Worker (can scale)
+  ml-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ronin_nvr_user}:${POSTGRES_PASSWORD:-ronin_pass}@postgres:5432/${POSTGRES_DB:-ronin_nvr}
+      STORAGE_ROOT: /data/storage
+      ML_WORKERS: 1
+      ML_DEFAULT_FPS: ${ML_DEFAULT_FPS:-2.0}
+      ML_CONFIDENCE_THRESHOLD: ${ML_CONFIDENCE_THRESHOLD:-0.5}
+      ML_CLASS_FILTER: ${ML_CLASS_FILTER:-person,car,truck,bus,motorcycle,bicycle,dog,cat}
+    volumes:
+      - storage_data:/data/storage
+      - ml_models:/data/storage/.ml/models
+    command: ["python", "ml_worker.py", "--workers", "1"]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Transcode Worker (can scale)
+  transcode-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      STORAGE_ROOT: /data/storage
+      TRANSCODE_CRF: ${TRANSCODE_CRF:-28}
+      TRANSCODE_PRESET: ${TRANSCODE_PRESET:-medium}
+    volumes:
+      - storage_data:/data/storage
+    command: ["python", "transcode_worker.py", "--continuous"]
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  postgres_data:
+    name: ronin_postgres_data
+  storage_data:
+    name: ronin_storage_data
+  ml_models:
+    name: ronin_ml_models
+
+networks:
+  default:
+    name: ronin_network

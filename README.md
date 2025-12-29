@@ -306,5 +306,6 @@ TBD
 - List box display of recorded videos?
 - Distributed stream handling (Need to determine how many streams a reasonably fast computer can handle)
 - AI Pipeline
+ - Blank out areas to ignore the clock and stuff.
 - Notifications
 - Android app?

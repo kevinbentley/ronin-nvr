@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     motion_detect_shadows: bool = True  # Detect and handle shadows
     motion_learning_rate: float = -1  # Background learning rate (-1 = auto)
 
+    # Transcoding settings (for transcode_worker.py)
+    transcode_enabled: bool = True
+    transcode_crf: int = 28  # H.265 CRF (18-32, lower = better quality, larger)
+    transcode_preset: str = "medium"  # FFmpeg preset (ultrafast to veryslow)
+    transcode_min_age_minutes: int = 20  # Wait before transcoding new files
+    transcode_check_interval: int = 300  # Seconds between checks in continuous mode
+
 
 @lru_cache
 def get_settings() -> Settings:

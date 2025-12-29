@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build output (will be rebuilt in Docker)
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.docker/
+
+# Documentation
+*.md
+
+# Environment
+.env*
+!.env.example
