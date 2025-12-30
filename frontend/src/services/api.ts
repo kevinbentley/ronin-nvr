@@ -22,7 +22,7 @@ import type {
   TimelineEventsResponse,
 } from '../types/camera';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 const TOKEN_KEY = 'auth_token';
 
 // Auth types
