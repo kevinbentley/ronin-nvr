@@ -1,13 +1,15 @@
 """ML API endpoints for managing inference jobs and detections."""
 
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import StreamingResponse
-from sqlalchemy import delete, func, select
+from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.camera import Camera
@@ -550,6 +552,7 @@ async def ml_events(
     - job_completed: Job finished successfully
     - job_failed: Job failed with error
     - detection: High-confidence detection found
+    - live_detection: Real-time detection from live stream
     """
     from app.services.ml import ml_event_service
 
@@ -711,3 +714,140 @@ async def reset_stuck_jobs(
         "reset_count": result.rowcount,
         "message": f"Reset {result.rowcount} stuck processing jobs to PENDING",
     }
+
+
+# === Live Detection ===
+
+
+@router.get("/live-detections")
+async def get_live_detections(
+    camera_id: Optional[int] = None,
+    class_name: Optional[str] = None,
+    since: Optional[datetime] = None,
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Get recent live detections.
+
+    Live detections are those with recording_id=NULL, meaning they came
+    from real-time stream analysis rather than historical file processing.
+    """
+    query = select(Detection).where(Detection.recording_id.is_(None))
+
+    if camera_id:
+        query = query.where(Detection.camera_id == camera_id)
+    if class_name:
+        query = query.where(Detection.class_name == class_name)
+    if since:
+        query = query.where(Detection.detected_at >= since)
+
+    query = query.order_by(Detection.detected_at.desc()).limit(limit)
+    result = await db.execute(query)
+    detections = result.scalars().all()
+
+    return {
+        "detections": [
+            {
+                "id": d.id,
+                "camera_id": d.camera_id,
+                "class_name": d.class_name,
+                "confidence": d.confidence,
+                "detected_at": d.detected_at.isoformat() if d.detected_at else None,
+                "snapshot_url": f"/api/snapshots/{d.snapshot_path}"
+                if d.snapshot_path
+                else None,
+                "bbox": {
+                    "x": d.bbox_x,
+                    "y": d.bbox_y,
+                    "width": d.bbox_width,
+                    "height": d.bbox_height,
+                },
+            }
+            for d in detections
+        ],
+        "count": len(detections),
+    }
+
+
+@router.get("/live-detections/status")
+async def get_live_detection_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Get live detection worker status."""
+    settings = get_settings()
+
+    # Count recent live detections (last hour)
+    from datetime import timedelta
+
+    one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+    count_query = select(func.count()).select_from(
+        select(Detection)
+        .where(Detection.recording_id.is_(None))
+        .where(Detection.detected_at >= one_hour_ago)
+        .subquery()
+    )
+    recent_count = await db.scalar(count_query) or 0
+
+    # Get cameras with recent live detections
+    cameras_query = (
+        select(Detection.camera_id)
+        .where(Detection.recording_id.is_(None))
+        .where(Detection.detected_at >= one_hour_ago)
+        .distinct()
+    )
+    result = await db.execute(cameras_query)
+    active_cameras = [r[0] for r in result.all()]
+
+    return {
+        "enabled": settings.live_detection_enabled,
+        "config": {
+            "fps": settings.live_detection_fps,
+            "cooldown": settings.live_detection_cooldown,
+            "confidence": settings.live_detection_confidence,
+            "classes": settings.live_detection_classes.split(","),
+        },
+        "detections_last_hour": recent_count,
+        "active_cameras": active_cameras,
+    }
+
+
+# === Snapshots ===
+
+
+@router.get("/snapshots/{path:path}")
+async def get_snapshot(
+    path: str,
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
+    """Serve snapshot images.
+
+    Snapshots are JPG images with detection bounding boxes drawn,
+    stored in .snapshots/{camera_id}/{date}/{time}.jpg
+    """
+    settings = get_settings()
+    snapshot_path = Path(settings.storage_root) / ".snapshots" / path
+
+    if not snapshot_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Snapshot not found",
+        )
+
+    # Security: ensure path doesn't escape snapshot directory
+    try:
+        snapshot_path.resolve().relative_to(
+            (Path(settings.storage_root) / ".snapshots").resolve()
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid snapshot path",
+        )
+
+    return FileResponse(
+        snapshot_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "max-age=86400"},  # Cache for 24 hours
+    )

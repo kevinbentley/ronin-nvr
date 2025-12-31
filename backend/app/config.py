@@ -102,6 +102,13 @@ class Settings(BaseSettings):
     transcode_min_age_minutes: int = 20  # Wait before transcoding new files
     transcode_check_interval: int = 300  # Seconds between checks in continuous mode
 
+    # Live Detection settings (for live_detection_worker.py)
+    live_detection_enabled: bool = True
+    live_detection_fps: float = 1.0  # Frames per second per camera
+    live_detection_cooldown: float = 30.0  # Seconds between same-class notifications
+    live_detection_confidence: float = 0.6  # Higher threshold for real-time alerts
+    live_detection_classes: str = "person,car,truck"  # Classes that trigger alerts
+
 
 @lru_cache
 def get_settings() -> Settings:

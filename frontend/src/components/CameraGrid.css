@@ -1,9 +1,17 @@
+.camera-grid-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+}
+
 .camera-grid {
   display: grid;
   gap: 8px;
-  height: 100%;
+  flex: 1;
   padding: 8px;
   box-sizing: border-box;
+  min-height: 0;
 }
 
 .camera-grid.zoomed {
@@ -68,4 +76,46 @@
 .zoom-exit-button:hover {
   background: rgba(229, 57, 53, 0.9);
   transform: scale(1.1);
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px;
+  background: #1a1a1a;
+  border-top: 1px solid #333;
+}
+
+.pagination-button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #2a2a2a;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.pagination-button:hover:not(:disabled) {
+  background: #3a3a3a;
+  border-color: #1976d2;
+}
+
+.pagination-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pagination-info {
+  color: #aaa;
+  font-size: 14px;
+  min-width: 50px;
+  text-align: center;
 }

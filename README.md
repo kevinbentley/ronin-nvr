@@ -1,423 +1,541 @@
-# RoninNVR
+# Ronin NVR
 
-![RoninNVR Logo](logo.png)
+## Summary
 
-A modern, self-hosted Network Video Recorder (NVR) solution built with Python FastAPI and React. RoninNVR provides reliable IP camera recording, live streaming, and playback with a clean web interface.
+Ronin NVR is a self-hosted Network Video Recorder designed to replace commercial surveillance systems. It provides multi-camera recording, live streaming, timeline-based playback, and ML-powered object detection. The system is built with a Python/FastAPI backend, React frontend, and PostgreSQL database, all orchestrated via Docker with optional GPU acceleration.
 
-## Features
-
-- **Multi-Camera Support** - Connect to IP cameras via RTSP (TCP/UDP)
-- **Live View Grid** - View multiple cameras simultaneously in configurable layouts (1x1, 2x2, 3x3, 4x4)
-- **Click-to-Zoom** - Click any camera feed to view full-screen
-- **Continuous Recording** - 24/7 recording with automatic file segmentation
-- **Timeline Playback** - Browse and play back recordings by date with visual timeline
-- **Storage Management** - Automatic retention policy (by days or storage limit)
-- **Low Latency Streaming** - HLS-based live view with 3-5 second latency
-- **Connection Resilience** - Automatic reconnection on camera or network failures
-- **ML Object Detection** - YOLO-based detection of people, vehicles, animals
-- **Motion Detection** - Background subtraction-based motion alerts
-- **Storage Optimization** - H.265 transcoding reduces storage by 40-70%
-- **GPU Acceleration** - NVENC support for 10-20x faster transcoding
-- **Docker Deployment** - Production-ready containerized deployment
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.11+
-- PostgreSQL 14+
-- FFmpeg 5.x+
-- Node.js 18+
-
-See [SYSTEM.md](SYSTEM.md) for detailed installation instructions.
-
-### Backend Setup
-
-```bash
-# Create Python environment
-./setup_venv.sh
-
-# Configure environment
-cp backend/.env.example backend/.env
-# Edit .env with your database credentials
-
-# Run database migrations
-cd backend
-source venv/bin/activate
-alembic upgrade head
-
-# Start the server
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-### Frontend Setup
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Access the web interface at `http://localhost:5173`
+**Key Capabilities:**
+- 24/7 continuous recording from IP cameras via RTSP
+- Low-latency live streaming (3-5 seconds) via HLS
+- Calendar-based timeline playback with seeking
+- YOLO-based object detection (people, vehicles, animals)
+- Real-time detection alerts with debouncing
+- Automatic storage retention management
+- H.265 transcoding for storage optimization
 
 ---
 
-## Docker Deployment
+![Live View Blurred for Privacy](images/playback_view.png)
+![Playback View Blurred for Privacy](images/camera_grid.png)
 
-The recommended way to deploy RoninNVR in production is using Docker Compose.
 
-### Prerequisites
+## System Architecture
 
-- Docker Engine 24+
-- Docker Compose v2
-- (Optional) NVIDIA GPU with Container Toolkit for hardware-accelerated transcoding
-
-### Quick Deploy (CPU)
-
-```bash
-# Clone the repository
-git clone <repo-url>
-cd dvr
-
-# Create environment file
-cp .env.example .env
-# Edit .env with your secrets (JWT_SECRET_KEY, POSTGRES_PASSWORD)
-
-# Build and start
-docker compose -f docker-compose.cpu.yml up -d --build
-
-# Check status
-docker compose ps
-```
-
-### Deploy with NVIDIA GPU
-
-For hardware-accelerated ML inference and video transcoding:
-
-```bash
-# Install NVIDIA Container Toolkit (one-time)
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
-sudo nvidia-ctk runtime configure --runtime=docker
-sudo systemctl restart docker
-
-# Verify GPU access
-docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
-
-# Deploy with GPU support
-docker compose up -d --build
-```
-
-### Services
-
-| Service | Port | Description |
-|---------|------|-------------|
-| `frontend` | 80 | Web UI (Nginx + React) |
-| `backend` | 8000 | FastAPI server |
-| `postgres` | 5432 | PostgreSQL database |
-| `ml-worker` | - | Object detection (YOLO) |
-| `transcode-worker` | - | H.265 re-encoding |
-
-### Scaling Workers
-
-```bash
-# Scale ML workers (for more concurrent video analysis)
-docker compose up -d --scale ml-worker=4
-
-# Scale transcode workers (for faster re-encoding)
-docker compose up -d --scale transcode-worker=2
-```
-
-### Storage Configuration
-
-By default, recordings are stored in a Docker volume. To use a host directory:
-
-```yaml
-# In docker-compose.yml, change:
-volumes:
-  - storage_data:/data/storage
-# To:
-volumes:
-  - /path/to/your/storage:/data/storage
-```
-
-### Useful Commands
-
-```bash
-# View logs
-docker compose logs -f backend
-docker compose logs -f ml-worker
-
-# Check transcode statistics
-docker compose exec transcode-worker python transcode_worker.py --stats
-
-# Restart a service
-docker compose restart backend
-
-# Stop everything
-docker compose down
-
-# Stop and remove volumes (DELETES DATA)
-docker compose down -v
-```
-
----
-
-## Concept of Operations
-
-### Overview
-
-RoninNVR uses a unified streaming architecture where each camera is managed by a single FFmpeg process. This design ensures efficient resource usage and eliminates conflicts from multiple connections to the same camera.
+### High-Level Component Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                              RoninNVR                                    │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│   ┌──────────┐     ┌──────────────────┐     ┌─────────────────────┐    │
-│   │ IP Camera│────▶│  FFmpeg Process  │────▶│  HLS Segments (.ts) │    │
-│   │  (RTSP)  │     │  (per camera)    │     │  for live view      │    │
-│   └──────────┘     │                  │     └─────────────────────┘    │
-│                    │  Single RTSP     │                                 │
-│                    │  connection      │     ┌─────────────────────┐    │
-│                    │                  │────▶│  MP4 Recordings     │    │
-│                    └──────────────────┘     │  (15-min segments)  │    │
-│                                             └─────────────────────┘    │
-│                                                                          │
-│   ┌────────────────────────────────────────────────────────────────┐   │
-│   │                     FastAPI Backend                             │   │
-│   │  - Camera management API                                        │   │
-│   │  - Stream control (start/stop)                                  │   │
-│   │  - HLS playlist/segment serving                                 │   │
-│   │  - Playback API for recordings                                  │   │
-│   └────────────────────────────────────────────────────────────────┘   │
-│                              │                                          │
-│                              ▼                                          │
-│   ┌────────────────────────────────────────────────────────────────┐   │
-│   │                     React Frontend                              │   │
-│   │  - HLS.js player with auto-reconnect                           │   │
-│   │  - Multi-camera grid view                                       │   │
-│   │  - Timeline-based playback                                      │   │
-│   └────────────────────────────────────────────────────────────────┘   │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
+│                              User Browser                                │
+│    ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │
+│    │  Live View  │  │  Playback   │  │   Setup     │  │  ML Status  │   │
+│    └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘   │
+└───────────┼────────────────┼────────────────┼────────────────┼──────────┘
+            │                │                │                │
+            │    REST API + HLS Streaming + SSE Events         │
+            └────────────────────────┬─────────────────────────┘
+                                     │
+┌────────────────────────────────────┼────────────────────────────────────┐
+│                              Nginx Proxy                                 │
+└────────────────────────────────────┼────────────────────────────────────┘
+                                     │
+┌────────────────────────────────────┼────────────────────────────────────┐
+│                         FastAPI Backend                                  │
+│  ┌─────────────────────────────────┴─────────────────────────────────┐  │
+│  │                         API Layer                                  │  │
+│  │  cameras · playback · recordings · ml · storage · auth · health   │  │
+│  └─────────────────────────────────┬─────────────────────────────────┘  │
+│  ┌─────────────────────────────────┴─────────────────────────────────┐  │
+│  │                       Service Layer                                │  │
+│  │  CameraStream · Retention · StatusMonitor · MLCoordinator         │  │
+│  └─────────────────────────────────┬─────────────────────────────────┘  │
+└────────────────────────────────────┼────────────────────────────────────┘
+                                     │
+        ┌────────────────────────────┼────────────────────────────────┐
+        │                            │                                │
+        ▼                            ▼                                ▼
+┌───────────────┐          ┌─────────────────┐           ┌────────────────┐
+│  PostgreSQL   │          │  File Storage   │           │  ML Workers    │
+│   Database    │          │   (Recordings)  │           │ (GPU Optional) │
+└───────────────┘          └─────────────────┘           └────────────────┘
 ```
 
-### Stream Management
+### Technology Stack
 
-Each camera stream is handled by a dedicated `CameraStream` instance that manages a single FFmpeg process with dual outputs:
+| Layer | Technology |
+|-------|------------|
+| Frontend | React 19, TypeScript, Vite, HLS.js |
+| Backend | Python 3.11+, FastAPI, SQLAlchemy 2.0 |
+| Database | PostgreSQL 16+ with asyncpg |
+| Video | FFmpeg 5.x, RTSP, HLS |
+| ML | ONNX Runtime, YOLO models, OpenCV |
+| Deployment | Docker, Docker Compose, Nginx |
 
-1. **RTSP Input** - FFmpeg connects to the camera using RTSP over TCP (default) or UDP
-2. **HLS Output** - 2-second segments for live streaming to browsers
-3. **MP4 Output** - 15-minute segments for archival recording
+---
 
-**Key Features:**
-- **Single Connection** - Only one RTSP connection per camera, avoiding authentication conflicts
-- **Transmuxing** - Video is copied without re-encoding (H.264/H.265 passthrough)
-- **Audio Transcoding** - Audio is transcoded to AAC for browser compatibility
-- **Automatic Reconnection** - Up to 10 retry attempts with exponential backoff on connection loss
-- **Graceful Shutdown** - Proper stream termination preserves in-progress recordings
+## Core Subsystems
 
-**FFmpeg Command Structure:**
-```bash
-ffmpeg -rtsp_transport tcp -i rtsp://camera/stream \
-    # Output 1: HLS for live view
-    -c:v copy -c:a aac -f hls -hls_time 2 -hls_list_size 10 \
-    -hls_flags delete_segments+append_list stream.m3u8 \
-    # Output 2: MP4 for recording
-    -c:v copy -c:a aac -f segment -segment_time 900 \
-    -strftime 1 %H-%M-%S.mp4
+### 1. Camera Management
+
+**Purpose:** Configure and manage IP camera connections.
+
+**Location:** `backend/app/api/cameras.py`, `backend/app/services/camera.py`
+
+**Responsibilities:**
+- Store camera configurations (host, port, credentials, stream paths)
+- Encrypt sensitive credentials at rest using Fernet encryption
+- Validate RTSP connectivity before saving
+- Provide camera status (online, offline, recording)
+- Support camera grouping and ordering
+
+**Data Flow:**
+1. Admin adds camera via Setup page
+2. Backend validates RTSP connection
+3. Credentials encrypted and stored in database
+4. Camera appears in live view grid
+
+### 2. Video Streaming
+
+**Purpose:** Deliver live camera feeds to browsers with low latency.
+
+**Location:** `backend/app/services/camera_stream.py`, `backend/app/services/streaming.py`
+
+**Design Decision:** Each camera uses a single FFmpeg process with dual outputs—one for live HLS streaming and one for MP4 recording. This avoids opening multiple RTSP connections to the same camera.
+
+**Architecture:**
+```
+IP Camera (RTSP)
+      │
+      ▼
+┌─────────────────────────────────────────────┐
+│            FFmpeg Process                    │
+│  Input: rtsp://camera/stream                │
+│  ┌─────────────────┬──────────────────────┐ │
+│  │ Output 1: HLS   │ Output 2: MP4        │ │
+│  │ 2-sec segments  │ 15-min segments      │ │
+│  │ 10-seg playlist │ Continuous recording │ │
+│  └────────┬────────┴──────────┬───────────┘ │
+└───────────┼───────────────────┼─────────────┘
+            ▼                   ▼
+    .streams/{id}/        {Name}/{date}/
+    └── stream.m3u8       └── HH-MM-SS.mp4
 ```
 
-### File Storage Structure
+**Key Characteristics:**
+- **Transmuxing only:** Copies video codec without re-encoding (low CPU)
+- **Audio transcoding:** Converts to AAC for browser compatibility
+- **Auto-reconnect:** Exponential backoff up to 10 attempts
+- **Latency:** 3-5 seconds (2-second segments + buffering)
 
-Recordings are organized in a hierarchical directory structure:
+### 3. Recording System
 
+**Purpose:** Continuously record camera streams to disk.
+
+**Location:** `backend/app/services/recorder.py`, `backend/app/models/recording.py`
+
+**Storage Organization:**
 ```
 storage/
-├── .streams/                    # Temporary HLS segments (live view)
-│   ├── 1/                       # Camera ID
-│   │   ├── playlist.m3u8
-│   │   ├── segment000.ts
-│   │   ├── segment001.ts
-│   │   └── ...
-│   └── 2/
+├── {CameraName}/
+│   └── {YYYY-MM-DD}/
+│       ├── 00-00-00.mp4   # 15-minute segments
+│       ├── 00-15-00.mp4
 │       └── ...
-│
-├── .logs/                       # FFmpeg log files
-│   ├── Front_Door_ffmpeg.log
-│   └── Backyard_ffmpeg.log
-│
-├── .exports/                    # Exported video clips
-│
-├── Front_Door/                  # Camera name (filesystem-safe)
-│   ├── 2025-01-15/             # Date directory
-│   │   ├── 08-00-00.mp4        # 15-minute segments
-│   │   ├── 08-15-00.mp4
-│   │   └── ...
-│   └── 2025-01-14/
-│       └── ...
-│
-└── Backyard/
-    └── ...
+└── .streams/              # Live HLS segments (ephemeral)
 ```
 
-**Storage Characteristics:**
-- **Segment Duration**: 15 minutes (configurable)
-- **File Format**: MP4 with H.264/H.265 video and AAC audio
-- **Naming Convention**: `HH-MM-SS.mp4` based on recording start time
-- **Retention Policy**: Automatic cleanup by age (days) or total size (GB)
+**Workflow:**
+1. FFmpeg writes continuous MP4 segments (default: 15 minutes)
+2. On segment completion, metadata stored in database
+3. Recording includes: start/end timestamps, file path, size, duration
+4. Retention monitor periodically removes old recordings
 
-### Client Video Streaming
+### 4. Playback System
 
-The frontend uses HLS.js for video playback with several optimizations for reliability:
+**Purpose:** Browse and view historical recordings.
 
-**Live View Flow:**
-```
-Browser                    Backend                     Camera
-   │                          │                          │
-   │  GET /stream/start       │                          │
-   ├─────────────────────────▶│                          │
-   │                          │  RTSP Connect            │
-   │                          ├─────────────────────────▶│
-   │                          │  ◀───Video Stream────    │
-   │                          │                          │
-   │  GET playlist.m3u8       │                          │
-   ├─────────────────────────▶│                          │
-   │  ◀──────HLS Manifest─────┤                          │
-   │                          │                          │
-   │  GET segment001.ts       │                          │
-   ├─────────────────────────▶│                          │
-   │  ◀──────Video Chunk──────┤                          │
-   │                          │                          │
-   │  (continuous segment     │                          │
-   │   requests...)           │                          │
-```
+**Location:** `backend/app/api/playback.py`, `backend/app/services/playback.py`
 
-**HLS Configuration:**
-- **Segment Duration**: 2 seconds
-- **Playlist Size**: 10 segments (20-second window)
-- **Target Latency**: 3-5 seconds
-- **Buffer Settings**: Optimized for low latency vs stability balance
+**Features:**
+- Calendar-based date navigation
+- 24-hour timeline visualization
+- Click-to-seek within segments
+- Cross-segment time range export
+- HTTP range requests for efficient seeking
 
-**Error Recovery:**
-- **Auto-Retry**: Up to 5 automatic reconnection attempts on network errors
-- **Media Recovery**: HLS.js built-in media error recovery
-- **Stall Detection**: Automatic reload when playback stalls
-- **Manual Reconnect**: User-triggered full stream restart
+**Data Flow:**
+1. User selects date via calendar picker
+2. Backend returns list of recordings for that date
+3. Timeline displays segment bars on 24-hour ruler
+4. User clicks segment; player loads MP4 stream
+5. Detection markers overlay on timeline
 
-### Recording Playback
+### 5. Storage Retention
 
-Recorded video playback uses a different path optimized for seeking and downloading:
+**Purpose:** Automatically manage disk space by removing old recordings.
 
-**Playback API:**
-- `GET /playback/cameras` - List cameras with recordings
-- `GET /playback/cameras/{name}/dates` - Available recording dates
-- `GET /playback/cameras/{name}/recordings?date=YYYY-MM-DD` - Day's recordings
-- `GET /playback/recordings/{id}/stream` - Stream video file
-- `GET /playback/recordings/{id}/download` - Download video file
-- `POST /playback/export` - Export time range as single file
+**Location:** `backend/app/services/retention.py`
 
-**Recording ID Format:**
-Recording IDs encode the file path: `CameraName::2025-01-15::08-00-00.mp4`
+**Strategies:**
+- **Age-based:** Delete recordings older than N days
+- **Size-based:** Delete oldest when storage exceeds threshold
+- **Combined:** Apply both policies
+
+**Operation:**
+- Runs as background task in main process
+- Checks periodically (configurable interval)
+- Deletes database records and filesystem files atomically
+- Logs deletions for audit trail
+
+### 6. Authentication & Security
+
+**Purpose:** Protect system access and secure stored credentials.
+
+**Location:** `backend/app/api/auth.py`, `backend/app/services/auth.py`, `backend/app/services/encryption.py`
+
+**Components:**
+- **User authentication:** JWT tokens with configurable expiry
+- **Credential encryption:** Fernet symmetric encryption for camera passwords
+- **Rate limiting:** Prevent brute-force attacks
+- **CORS:** Configured for frontend origin
+
+**Note:** HLS streaming endpoints are unauthenticated because browser video elements cannot send Authorization headers. Access control relies on page-level authentication.
 
 ---
 
-## Configuration
+## ML Detection System
 
-### Environment Variables
+### Overview
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | `postgresql+asyncpg://localhost/ronin_nvr` | PostgreSQL connection string |
-| `STORAGE_ROOT` | `./storage` | Root directory for recordings |
-| `HOST` | `0.0.0.0` | Server bind address |
-| `PORT` | `8000` | Server port |
-| `SEGMENT_DURATION_MINUTES` | `15` | Recording segment length |
-| `RETENTION_DAYS` | `30` | Days to keep recordings |
-| `RETENTION_MAX_GB` | `null` | Max storage size (optional) |
+The ML system provides object detection capabilities through two complementary modes:
 
-### Camera Configuration
+| Mode | Purpose | Latency | Coverage |
+|------|---------|---------|----------|
+| Historical | Analyze completed recordings | Minutes | Complete |
+| Live | Real-time alerts | Seconds | Sampling |
 
-Each camera requires:
-- **Name**: Display name for the camera
-- **Host**: IP address or hostname
-- **Port**: RTSP port (default: 554)
-- **Path**: RTSP stream path (e.g., `/cam/realmonitor`)
-- **Username/Password**: Camera credentials
-- **Transport**: TCP (default, more reliable) or UDP (lower latency)
-
----
-
-## Project Structure
+### ML Architecture
 
 ```
-dvr/
-├── backend/
-│   ├── app/
-│   │   ├── api/              # FastAPI route handlers
-│   │   ├── models/           # SQLAlchemy models
-│   │   ├── schemas/          # Pydantic schemas
-│   │   ├── services/         # Business logic
-│   │   │   ├── camera_stream.py  # Stream management
-│   │   │   ├── playback.py       # Recording playback
-│   │   │   └── retention.py      # Storage cleanup
-│   │   ├── config.py         # Settings
-│   │   └── main.py           # FastAPI app
-│   ├── tests/
-│   ├── alembic/              # Database migrations
-│   └── requirements.txt
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/       # React components
-│   │   ├── pages/            # Page components
-│   │   ├── services/         # API client
-│   │   └── types/            # TypeScript types
-│   └── package.json
-│
-├── storage/                  # Video storage (gitignored)
-├── setup_venv.sh            # Python environment setup
-├── camera_cli.sh            # CLI for camera testing
-└── README.md
+┌─────────────────────────────────────────────────────────────────┐
+│                    ML Coordinator (FastAPI)                     │
+│  - Creates jobs in database                                     │
+│  - Monitors job status                                          │
+│  - Provides API for status queries                              │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ PostgreSQL NOTIFY
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   Recording Watcher                              │
+│  - Monitors completed recordings                                 │
+│  - Auto-queues for ML processing                                │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+        ┌────────────────────┴────────────────────┐
+        ▼                                         ▼
+┌───────────────────┐                   ┌───────────────────┐
+│  Historical       │                   │  Live Detection   │
+│  ML Worker        │                   │  Worker           │
+│  (ml_worker.py)   │                   │  (live_detection_ │
+│                   │                   │   worker.py)      │
+│  - Processes MP4  │                   │  - Monitors HLS   │
+│  - 2 fps analysis │                   │  - 1-2 fps        │
+│  - Full coverage  │                   │  - Debounced      │
+└───────────────────┘                   └───────────────────┘
+        │                                         │
+        └────────────────────┬────────────────────┘
+                             ▼
+                    ┌───────────────┐
+                    │  Detections   │
+                    │    Table      │
+                    └───────────────┘
+```
+
+**Location:** `backend/app/services/ml/`
+
+### Historical Detection
+
+**Purpose:** Comprehensive analysis of recorded footage.
+
+**Process:**
+1. Recording completes → RecordingWatcher queues ML job
+2. Worker claims job (atomic database update)
+3. Frame extraction at configured FPS
+4. YOLO inference on each frame
+5. Detection records stored with bounding boxes
+6. Job marked complete
+
+**Location:** `backend/ml_worker.py`, `backend/app/services/ml/worker.py`
+
+### Live Detection
+
+**Purpose:** Real-time alerts from camera streams.
+
+**Design Decision:** Taps existing HLS segments rather than opening new RTSP connections. This is efficient and avoids camera connection limits.
+
+**Process:**
+1. Worker monitors `.streams/{camera_id}/` directories
+2. Extracts frames from newest HLS segments
+3. Runs YOLO inference (1-2 fps)
+4. Applies debouncing (e.g., one "person" alert per 30 seconds)
+5. Stores detection, emits SSE event, saves snapshot
+
+**Location:** `backend/live_detection_worker.py`, `backend/app/services/ml/live_detection_listener.py`
+
+### Detection Model
+
+**Table:** `detections`
+
+| Field | Purpose |
+|-------|---------|
+| camera_id | Source camera |
+| recording_id | Associated recording (NULL for live) |
+| class_name | Detection class (person, car, etc.) |
+| confidence | Model confidence score |
+| bbox | Bounding box coordinates |
+| detected_at | Actual detection timestamp |
+| frame_number | Frame within recording |
+| snapshot_path | Path to saved snapshot image |
+
+### Motion Detection
+
+**Purpose:** Pre-filter frames to avoid running inference on static scenes.
+
+**Location:** `backend/app/services/ml/motion_detector.py`
+
+**Algorithm:** Background subtraction (MOG2) identifies motion regions. Frames with insufficient motion are skipped.
+
+---
+
+## Frontend Architecture
+
+### Page Structure
+
+| Page | Purpose | Key Components |
+|------|---------|----------------|
+| Live View | Real-time camera grid | CameraGrid, VideoPlayer, LayoutSelector |
+| Playback | Historical recording browser | Timeline, DatePicker, RecordingPlayer |
+| Setup | Camera configuration | CameraModal, connection testing |
+| Status | System health overview | Storage stats, camera status |
+| ML Status | Detection monitoring | Job queue, detection feed, alerts |
+| Login | Authentication | JWT token management |
+
+### Component Hierarchy
+
+```
+App
+├── AuthContext (authentication state)
+├── Header (navigation, user menu)
+├── Routes
+│   ├── LiveViewPage
+│   │   ├── CameraSidebar (camera list)
+│   │   ├── LayoutSelector (grid layout)
+│   │   └── CameraGrid
+│   │       └── VideoPlayer (HLS.js)
+│   ├── PlaybackPage
+│   │   ├── DatePicker
+│   │   ├── Timeline
+│   │   └── RecordingPlayer
+│   ├── SetupPage
+│   │   └── CameraModal
+│   ├── StatusPage
+│   └── MLStatusPage
+└── LoginPage
+```
+
+**Location:** `frontend/src/`
+
+### State Management
+
+- **AuthContext:** Global authentication state, JWT handling
+- **useCameras hook:** Camera list with periodic polling
+- **Local state:** Grid layout preferences (persisted to localStorage)
+- **API client:** Axios with automatic token injection
+
+### Video Playback
+
+**Library:** HLS.js
+
+**Configuration:**
+- Low-latency mode for live view
+- Buffer tuning for smooth playback
+- Auto-quality selection
+- Reconnection on errors
+
+---
+
+## Deployment Architecture
+
+### Docker Services
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     docker-compose.yml                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   postgres   │  │   backend    │  │   frontend   │      │
+│  │  (database)  │←─│  (FastAPI)   │←─│   (Nginx)    │←─────│
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+│         ↑                 ↑                                  │
+│         │                 │                                  │
+│  ┌──────┴─────────────────┴──────────────────────────┐     │
+│  │                  Shared Volumes                    │     │
+│  │  - /data/storage (recordings)                     │     │
+│  │  - /data/ml_models (ONNX models)                  │     │
+│  └───────────────────────────────────────────────────┘     │
+│         ↑                 ↑                                  │
+│  ┌──────┴─────┐    ┌──────┴─────┐    ┌──────────────┐      │
+│  │   live-    │    │  ml-worker │    │  transcode-  │      │
+│  │ detection  │    │ (optional) │    │    worker    │      │
+│  └────────────┘    └────────────┘    └──────────────┘      │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Service Responsibilities
+
+| Service | Purpose | GPU |
+|---------|---------|-----|
+| postgres | Database persistence | No |
+| backend | API, streaming, coordination | Optional |
+| frontend | Static assets, reverse proxy | No |
+| live-detection | Real-time detection worker | Yes |
+| ml-worker | Historical detection (optional profile) | Yes |
+| transcode-worker | H.265 conversion | Yes |
+
+### Configuration
+
+Primary configuration via environment variables:
+
+| Category | Key Variables |
+|----------|---------------|
+| Database | DATABASE_URL |
+| Storage | STORAGE_ROOT, RETENTION_DAYS, RETENTION_MAX_GB |
+| Security | JWT_SECRET_KEY, ENCRYPTION_KEY |
+| ML | ML_ENABLED, ML_CONFIDENCE_THRESHOLD, ML_CLASS_FILTER |
+| Live Detection | LIVE_DETECTION_ENABLED, LIVE_DETECTION_FPS |
+
+---
+
+## Data Flow Scenarios
+
+### Scenario: User Views Live Camera
+
+```
+1. User opens Live View page
+2. Frontend fetches camera list from /api/cameras
+3. For each visible camera:
+   a. Frontend requests /api/cameras/{id}/stream/start
+   b. Backend starts FFmpeg if not running
+   c. Frontend polls for HLS playlist availability
+   d. HLS.js begins streaming segments
+4. Video displays with ~3-5 second latency
+```
+
+### Scenario: Recording with Detection
+
+```
+1. FFmpeg writes MP4 segment (15 minutes)
+2. On segment close:
+   a. Recording metadata stored in database
+   b. RecordingWatcher detects new recording
+   c. MLJob created with status=pending
+3. ML Worker:
+   a. Claims job (atomic database update)
+   b. Extracts frames at 2 fps
+   c. Runs YOLO inference per frame
+   d. Stores detections in database
+   e. Marks job complete
+4. User browses playback:
+   a. Timeline shows detection markers
+   b. Clicking marker jumps to that time
+```
+
+### Scenario: Live Detection Alert
+
+```
+1. Live detection worker monitors HLS directories
+2. New .ts segment appears
+3. Worker extracts frame from segment
+4. YOLO inference runs
+5. Person detected:
+   a. Check debounce: last "person" alert > 30s ago?
+   b. If yes: store detection, emit SSE event, save snapshot
+   c. If no: skip (prevent alert spam)
+6. Frontend receives SSE event
+7. Alert notification displayed to user
 ```
 
 ---
 
-## Tested Cameras
+## Key Design Decisions
 
-- Amcrest IP cameras (RTSP)
-- Synology IP cameras (RTSP)
+### Single FFmpeg Process Per Camera
 
-The system should work with any RTSP-compatible IP camera using H.264 or H.265 video encoding.
+**Rationale:** IP cameras often limit concurrent RTSP connections. Using one process with multiple outputs (HLS + MP4) ensures reliable streaming without connection conflicts.
+
+### Transmuxing Over Transcoding
+
+**Rationale:** Copying the video codec without re-encoding keeps CPU usage minimal (~5-10% per camera). Transcoding to H.265 is available as an optional background worker for storage optimization.
+
+### File-Based Recording Organization
+
+**Rationale:** Organizing recordings by camera name and date allows easy filesystem navigation and manual recovery. The structure mirrors how users think about footage.
+
+### Debounced Live Notifications
+
+**Rationale:** Without debouncing, a person walking through frame would generate hundreds of alerts. Configurable cooldown periods (per class) ensure alerts are actionable, not overwhelming.
+
+### Unified Detection Table
+
+**Rationale:** Both live and historical detections use the same table with `recording_id` nullable for live detections. This enables a single query interface, unified retention policy, and consistent UI.
+
+### HLS for Browser Streaming
+
+**Rationale:** HLS provides reliable streaming with adaptive bitrate, broad browser support (via HLS.js), and built-in buffering. The 3-5 second latency is acceptable for surveillance use cases.
 
 ---
 
-## License
+## File Reference
 
-TBD
+| Component | Key Files |
+|-----------|-----------|
+| Camera streaming | [camera_stream.py](backend/app/services/camera_stream.py) |
+| HLS generation | [streaming.py](backend/app/services/streaming.py) |
+| Recording playback | [playback.py](backend/app/services/playback.py) |
+| Storage retention | [retention.py](backend/app/services/retention.py) |
+| ML inference | [detection_service.py](backend/app/services/ml/detection_service.py) |
+| ML coordination | [coordinator.py](backend/app/services/ml/coordinator.py) |
+| Live detection | [live_detection_worker.py](backend/live_detection_worker.py) |
+| Frame extraction | [frame_extractor.py](backend/app/services/ml/frame_extractor.py) |
+| Motion detection | [motion_detector.py](backend/app/services/ml/motion_detector.py) |
+| Frontend API | [api.ts](frontend/src/services/api.ts) |
+| Live view grid | [CameraGrid.tsx](frontend/src/components/CameraGrid.tsx) |
+| Playback UI | [PlaybackPage.tsx](frontend/src/pages/PlaybackPage.tsx) |
+| ML status UI | [MLStatusPage.tsx](frontend/src/pages/MLStatusPage.tsx) |
+| Docker config | [docker-compose.yml](docker-compose.yml) |
 
 ---
 
-## Contributing
+## Performance Characteristics
 
-- Kevin Bentley
-- Claude Code
+| Metric | Typical Value |
+|--------|---------------|
+| Camera streaming CPU | ~5-10% per camera |
+| HLS live latency | 3-5 seconds |
+| YOLO inference (GPU) | ~20ms per frame |
+| YOLO inference (CPU) | ~100-300ms per frame |
+| Storage (1080p 24/7) | ~150GB/camera/month |
+| Storage (H.265 24/7) | ~50GB/camera/month |
 
 ---
 
-## Bugs
-- If the browser window isn't tall enough, because of the aspect ratio of the video in playback window, the bottom part of the page, where the detections show up, is off-screen, unless you change the dimensions of the window. It probably should force the playback window to be a size that fits in the browser's dimensions.
-- It seems like it may not automatically start recording for new cameras when you add them.
+## Future Considerations
 
-## Future Features
+The architecture supports several planned enhancements:
 
-- Selectable camera grid - Choose which cameras to display
-- Cold storage - Archive to remote server with playback integration
-- Detection zones - Mask areas to ignore (clocks, etc.)
-- Push notifications - Alerts for detected objects/motion
-- Mobile app - Android/iOS companion app
-- Distributed processing - Stream handling across multiple servers
+- **Detection zones:** Mask regions to ignore (e.g., busy streets)
+- **Vision LLM integration:** Scene descriptions via Claude or GPT-4V
+- **Push notifications:** Mobile alerts for important detections
+- **Multi-node deployment:** Distributed processing across servers
+- **PTZ control:** Pan-tilt-zoom camera integration

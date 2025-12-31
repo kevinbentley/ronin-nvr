@@ -1,10 +1,15 @@
 # RoninNVR Docker Compose Configuration
 #
 # Usage:
-#   docker compose up -d                    # Start all services
-#   docker compose up -d --scale ml-worker=4  # Start with 4 ML workers
+#   docker compose up -d                    # Start all services (live detection only)
+#   docker compose --profile historical up -d  # Include historical ML processing
 #   docker compose logs -f backend          # View backend logs
 #   docker compose down                     # Stop all services
+#
+# ML Processing Modes:
+#   - live-detection: Real-time alerts from live streams (default, ~2-5s latency)
+#   - ml-worker: Historical analysis of completed recordings (use --profile historical)
+#   - Both can run together if you want real-time alerts AND deeper historical analysis
 #
 # GPU Support:
 #   Requires nvidia-container-toolkit installed on host
@@ -81,8 +86,11 @@ services:
       timeout: 10s
       retries: 3
 
-  # ML Worker (can scale)
+  # ML Worker - Historical Analysis (processes completed recordings)
+  # Use --profile historical to enable: docker compose --profile historical up -d
   ml-worker:
+    profiles:
+      - historical
     build:
       context: ./backend
       dockerfile: Dockerfile.worker
@@ -101,6 +109,43 @@ services:
       - /opt2/ronin/storage:/data/storage
       - /opt2/ronin/ml_models:/data/storage/.ml/models
     command: ["python", "ml_worker.py", "--workers", "1"]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Live Detection Worker (single instance, monitors all cameras)
+  live-detection:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: ronin-live-detection
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ronin_nvr_user}:${POSTGRES_PASSWORD:-ronin_pass}@postgres:5432/${POSTGRES_DB:-ronin_nvr}
+      STORAGE_ROOT: /data/storage
+      LIVE_DETECTION_ENABLED: ${LIVE_DETECTION_ENABLED:-true}
+      LIVE_DETECTION_FPS: ${LIVE_DETECTION_FPS:-1.0}
+      LIVE_DETECTION_COOLDOWN: ${LIVE_DETECTION_COOLDOWN:-30.0}
+      LIVE_DETECTION_CONFIDENCE: ${LIVE_DETECTION_CONFIDENCE:-0.6}
+      LIVE_DETECTION_CLASSES: ${LIVE_DETECTION_CLASSES:-person,car,truck}
+      ML_CONFIDENCE_THRESHOLD: ${ML_CONFIDENCE_THRESHOLD:-0.5}
+      ML_CLASS_FILTER: ${ML_CLASS_FILTER:-person,car,truck,bus,motorcycle,bicycle,dog,cat}
+    volumes:
+      - /opt2/ronin/storage:/data/storage
+      - /opt2/ronin/ml_models:/data/storage/.ml/models
+    command: ["python", "live_detection_worker.py"]
     deploy:
       resources:
         limits:

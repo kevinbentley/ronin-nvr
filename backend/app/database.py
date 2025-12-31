@@ -1,7 +1,10 @@
 """Database connection and session management."""
 
+import logging
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -10,6 +13,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -49,10 +54,45 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
+def run_migrations() -> None:
+    """Run Alembic migrations to upgrade database schema.
+
+    This runs synchronously since Alembic's command API is synchronous.
+    Called during application startup before async operations begin.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    # Find alembic.ini relative to this file
+    backend_dir = Path(__file__).parent.parent
+    alembic_ini = backend_dir / "alembic.ini"
+
+    if not alembic_ini.exists():
+        logger.warning(f"alembic.ini not found at {alembic_ini}, skipping migrations")
+        return
+
+    try:
+        alembic_cfg = Config(str(alembic_ini))
+        # Set the script location relative to the ini file
+        alembic_cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+
+        logger.info("Running database migrations...")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Database migrations completed successfully")
+    except Exception as e:
+        logger.error(f"Database migration failed: {e}")
+        raise
+
+
 async def init_db() -> None:
-    """Initialize database tables."""
+    """Initialize database - run migrations and verify connection."""
+    # Run Alembic migrations first (synchronous)
+    run_migrations()
+
+    # Verify connection works
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        # Just verify we can connect - migrations handle schema
+        await conn.execute(text("SELECT 1"))
 
 
 async def close_db() -> None:

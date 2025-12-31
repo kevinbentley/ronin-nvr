@@ -18,6 +18,7 @@ from app.services.camera_stream import stream_manager
 from app.services.retention import retention_monitor
 from app.services.status_monitor import status_monitor
 from app.services.ml import ml_coordinator, recording_watcher
+from app.services.ml.live_detection_listener import live_detection_listener
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -109,6 +110,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.warning(f"Failed to start ML services: {e}")
 
+        # Start live detection listener for real-time SSE notifications
+        if settings.live_detection_enabled:
+            try:
+                await live_detection_listener.start()
+                logger.info("Live detection listener started")
+            except Exception as e:
+                logger.warning(f"Failed to start live detection listener: {e}")
+
     yield
 
     # Shutdown
@@ -125,6 +134,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     try:
         await ml_coordinator.stop()
+    except Exception:
+        pass
+
+    try:
+        await live_detection_listener.stop()
     except Exception:
         pass
 
