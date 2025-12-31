@@ -35,9 +35,12 @@ Camera → FFmpeg → HLS segments (.ts) ←──┐
               ↓
          Debounce filter
               ↓
-     ┌────────┴────────┐
-     ↓                 ↓
-  Store LiveDetection   WebSocket notification
+     ┌────────┼────────┐
+     ↓        ↓        ↓
+  Database  Snapshot  WebSocket
+             (JPG)    notification
+              ↓
+        [Future: Vision LLM]
 ```
 
 ### Key Design Decisions
@@ -62,6 +65,13 @@ Camera → FFmpeg → HLS segments (.ts) ←──┐
    - Don't spam notifications: "person detected" once per 30 seconds per camera
    - Track last detection time per (camera_id, class_name)
    - Configurable cooldown period
+
+5. **Snapshot Capture**
+   - Save JPG snapshot when detection triggers notification
+   - Draw bounding boxes on snapshot for visual confirmation
+   - Store in `.snapshots/{camera_id}/{timestamp}.jpg`
+   - Snapshots enable future Vision LLM analysis
+   - Same retention as live_detections (48 hours default)
 
 ## Components
 
@@ -147,6 +157,8 @@ class LiveDetection(Base):
     model_name: str            # "yolov8l"
     detected_at: datetime      # When detection occurred (UTC)
     notified: bool             # Whether notification was sent
+    snapshot_path: str         # Path to JPG snapshot (nullable)
+    llm_description: str       # Vision LLM description (nullable, future)
 
     # Indexes for efficient queries
     __table_args__ = (
@@ -155,7 +167,104 @@ class LiveDetection(Base):
     )
 ```
 
-### 3. Debounce Tracker
+### 3. Snapshot Service
+
+Captures and stores JPG snapshots when detections occur:
+
+```python
+class SnapshotService:
+    """Save detection snapshots with bounding boxes."""
+
+    def __init__(self, storage_root: Path):
+        self.storage_root = storage_root
+        self.snapshots_dir = storage_root / ".snapshots"
+        self.jpeg_quality = 85  # Balance quality vs size
+
+    def save_snapshot(
+        self,
+        frame: np.ndarray,
+        camera_id: int,
+        detections: list[DetectionResult],
+        timestamp: datetime,
+    ) -> Path:
+        """Save frame with detection boxes drawn.
+
+        Args:
+            frame: BGR image (original resolution)
+            camera_id: Camera that captured the frame
+            detections: List of detections to draw
+            timestamp: Detection timestamp
+
+        Returns:
+            Path to saved JPG file
+        """
+        # Draw bounding boxes on frame
+        annotated = self._draw_boxes(frame.copy(), detections)
+
+        # Generate path: .snapshots/{camera_id}/{YYYY-MM-DD}/{HH-MM-SS-fff}.jpg
+        date_dir = self.snapshots_dir / str(camera_id) / timestamp.strftime("%Y-%m-%d")
+        date_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = timestamp.strftime("%H-%M-%S-%f")[:-3] + ".jpg"
+        snapshot_path = date_dir / filename
+
+        # Save as JPEG
+        cv2.imwrite(str(snapshot_path), annotated, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+
+        return snapshot_path
+
+    def _draw_boxes(self, frame: np.ndarray, detections: list[DetectionResult]) -> np.ndarray:
+        """Draw detection boxes and labels on frame."""
+        h, w = frame.shape[:2]
+        for det in detections:
+            # Convert normalized coords to pixels
+            x1 = int(det.x * w)
+            y1 = int(det.y * h)
+            x2 = int((det.x + det.width) * w)
+            y2 = int((det.y + det.height) * h)
+
+            # Draw box (green for person, blue for vehicle, etc.)
+            color = self._get_class_color(det.class_name)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+
+            # Draw label
+            label = f"{det.class_name} {det.confidence:.0%}"
+            cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+        return frame
+
+    def _get_class_color(self, class_name: str) -> tuple[int, int, int]:
+        """Get BGR color for detection class."""
+        colors = {
+            "person": (0, 255, 0),      # Green
+            "car": (255, 0, 0),          # Blue
+            "truck": (255, 0, 0),
+            "dog": (0, 165, 255),        # Orange
+            "cat": (0, 165, 255),
+        }
+        return colors.get(class_name, (0, 255, 255))  # Yellow default
+```
+
+**Storage Structure:**
+```
+.snapshots/
+├── 1/                          # camera_id
+│   ├── 2025-01-15/
+│   │   ├── 08-30-45-123.jpg   # HH-MM-SS-milliseconds
+│   │   ├── 08-31-22-456.jpg
+│   │   └── ...
+│   └── 2025-01-14/
+├── 2/
+│   └── ...
+```
+
+**Storage Estimates:**
+- ~50-100KB per snapshot (1080p, JPEG quality 85)
+- 1 detection/minute/camera = ~150KB/hour/camera
+- 8 cameras × 24 hours × 150KB = ~28MB/day
+- 48-hour retention = ~56MB per camera
+
+### 4. Debounce Tracker
 
 Prevents notification spam:
 
@@ -353,6 +462,8 @@ def upgrade():
         sa.Column('model_name', sa.String(100), nullable=False),
         sa.Column('detected_at', sa.TIMESTAMP(timezone=True), server_default=sa.func.now()),
         sa.Column('notified', sa.Boolean(), default=True),
+        sa.Column('snapshot_path', sa.String(500), nullable=True),  # Path to JPG snapshot
+        sa.Column('llm_description', sa.Text(), nullable=True),     # Vision LLM description (future)
     )
     op.create_index('ix_live_detections_camera_detected', 'live_detections', ['camera_id', 'detected_at'])
     op.create_index('ix_live_detections_class_name', 'live_detections', ['class_name'])
@@ -398,28 +509,133 @@ def downgrade():
 - [ ] Per-class alert configuration
 - [ ] Retention cleanup job for old live_detections
 
-### Phase 4: Advanced Features (Future)
-- [ ] Thumbnail snapshots with detection boxes
+### Phase 4: Snapshots
+- [ ] Implement SnapshotService
+- [ ] Save JPG with bounding boxes on detection
+- [ ] Add snapshot_path to LiveDetection model
+- [ ] Serve snapshots via API endpoint
+- [ ] Add snapshot cleanup to retention job
+
+### Phase 5: Vision LLM Integration (Future)
+- [ ] Design LLM service abstraction (support multiple providers)
+- [ ] Implement async LLM processing queue
+- [ ] Send snapshots to Vision LLM for scene description
+- [ ] Store descriptions in llm_description field
+- [ ] Add natural language search over descriptions
+
+### Phase 6: Advanced Features (Future)
 - [ ] Push notifications (mobile)
 - [ ] Detection zones (only alert if person in specific area)
 - [ ] Object tracking (same person across frames)
+- [ ] Alert rules engine (if person + car + nighttime → high priority)
+
+## Future: Vision LLM Integration
+
+The snapshot capture enables a powerful future feature: using Vision LLMs to describe
+what's happening in the scene, enabling natural language search and smarter alerts.
+
+### Architecture
+
+```
+LiveDetection (with snapshot)
+         ↓
+    LLM Job Queue (PostgreSQL)
+         ↓
+    LLMWorker (separate process)
+         ↓
+    Vision LLM API (Claude, GPT-4V, etc.)
+         ↓
+    Store description in live_detections.llm_description
+```
+
+### Example Flow
+
+1. Live detection: "person" detected at front door
+2. Snapshot saved: `.snapshots/1/2025-01-15/08-30-45-123.jpg`
+3. LLM job queued with snapshot path
+4. LLMWorker sends image to Vision API with prompt:
+   ```
+   Describe what is happening in this security camera image.
+   Focus on: people (appearance, actions), vehicles, packages, unusual activity.
+   Be concise (1-2 sentences).
+   ```
+5. Response stored: "A delivery driver in a brown uniform is placing a package
+   on the front porch. A white delivery van is visible in the driveway."
+6. User can later search: "when was a package delivered?" → finds this event
+
+### LLM Provider Abstraction
+
+```python
+class VisionLLMProvider(Protocol):
+    """Abstract interface for Vision LLM providers."""
+
+    async def describe_image(
+        self,
+        image_path: Path,
+        prompt: str,
+        max_tokens: int = 150,
+    ) -> str:
+        """Send image to LLM and get description."""
+        ...
+
+class ClaudeVisionProvider(VisionLLMProvider):
+    """Claude API implementation."""
+    ...
+
+class OpenAIVisionProvider(VisionLLMProvider):
+    """GPT-4V implementation."""
+    ...
+
+class OllamaVisionProvider(VisionLLMProvider):
+    """Local Ollama with LLaVA or similar."""
+    ...
+```
+
+### Configuration
+
+```python
+# Vision LLM settings (future)
+vision_llm_enabled: bool = False
+vision_llm_provider: str = "claude"  # claude, openai, ollama
+vision_llm_model: str = "claude-3-haiku-20240307"  # Cost-effective for descriptions
+vision_llm_api_key: str = ""
+vision_llm_prompt: str = "Describe this security camera image concisely..."
+vision_llm_max_tokens: int = 150
+vision_llm_rate_limit: float = 1.0  # Max requests per second
+```
+
+### Cost Considerations
+
+At ~$0.001 per image (Claude Haiku):
+- 100 detections/day = $0.10/day = $3/month
+- 1000 detections/day = $1/day = $30/month
+
+Can be optimized by:
+- Only processing high-confidence detections
+- Batching similar detections
+- Using local models (Ollama) for cost-free operation
 
 ## Open Questions
 
-1. **Thumbnail Storage**: Should we save a snapshot image when detection occurs?
-   - Pro: Visual confirmation of what triggered alert
-   - Con: Additional storage, complexity
-   - Recommendation: Add later as optional feature
-
-2. **Recording Correlation**: Should live detections link to recordings?
+1. **Recording Correlation**: Should live detections link to recordings?
    - Current design: No, they're separate
    - Could add `approximate_recording_id` based on timestamp match
    - Recommendation: Keep separate for now, correlate in queries if needed
 
-3. **Multi-GPU Support**: Should worker support multiple GPUs?
+2. **Multi-GPU Support**: Should worker support multiple GPUs?
    - Current design: Single GPU
    - Could spawn worker per GPU with camera sharding
    - Recommendation: Single GPU handles 16+ cameras, revisit if needed
+
+3. **Snapshot Resolution**: Should snapshots be full resolution or scaled?
+   - Full resolution: Better for LLM analysis, larger files
+   - Scaled (1280px): Smaller files, still good for LLM
+   - Recommendation: Keep full resolution, optimize JPEG quality
+
+4. **LLM Processing Priority**: Should all detections get LLM analysis?
+   - Could prioritize: person > vehicle > animal
+   - Could skip if same scene described recently
+   - Recommendation: Start with all, add filtering based on cost/value
 
 ## Appendix: Existing Code References
 
