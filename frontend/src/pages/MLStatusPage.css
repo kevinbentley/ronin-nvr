@@ -38,6 +38,8 @@
   font-size: 14px;
   font-weight: normal;
   font-family: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
   color: #aaa;
   cursor: pointer;
   transition: all 0.2s;
@@ -48,65 +50,71 @@
   color: #fff;
 }
 
-.control-button {
-  padding: 8px 16px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: normal;
-  font-family: inherit;
+.ml-status-page .control-button {
+  padding: 8px 16px !important;
+  border: 1px solid transparent !important;
+  border-radius: 4px !important;
+  font-size: 14px !important;
+  font-weight: normal !important;
+  font-family: inherit !important;
   white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
   transition: all 0.2s;
+  width: auto !important;
+  height: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
-.control-button:disabled {
+.ml-status-page .control-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.control-button.start {
+.ml-status-page .control-button.start {
   background: #4caf50;
   color: #fff;
 }
 
-.control-button.start:hover:not(:disabled) {
+.ml-status-page .control-button.start:hover:not(:disabled) {
   background: #43a047;
 }
 
-.control-button.stop {
+.ml-status-page .control-button.stop {
   background: #f44336;
   color: #fff;
 }
 
-.control-button.stop:hover:not(:disabled) {
+.ml-status-page .control-button.stop:hover:not(:disabled) {
   background: #e53935;
 }
 
-.control-button.process {
+.ml-status-page .control-button.process {
   background: #2196f3;
   color: #fff;
 }
 
-.control-button.process:hover:not(:disabled) {
+.ml-status-page .control-button.process:hover:not(:disabled) {
   background: #1e88e5;
 }
 
-.control-button.retry {
+.ml-status-page .control-button.retry {
   background: #ff9800;
   color: #fff;
 }
 
-.control-button.retry:hover:not(:disabled) {
+.ml-status-page .control-button.retry:hover:not(:disabled) {
   background: #f57c00;
 }
 
-.control-button.reset {
+.ml-status-page .control-button.reset {
   background: #9c27b0;
   color: #fff;
 }
 
-.control-button.reset:hover:not(:disabled) {
+.ml-status-page .control-button.reset:hover:not(:disabled) {
   background: #7b1fa2;
 }
 
