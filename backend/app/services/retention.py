@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -83,7 +83,8 @@ class RetentionService:
                 for video_file in date_dir.glob("*.mp4"):
                     try:
                         stat = video_file.stat()
-                        mtime = datetime.fromtimestamp(stat.st_mtime)
+                        # Use UTC for consistent timezone handling
+                        mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
                         size = stat.st_size
 
                         files.append(FileInfo(
@@ -143,7 +144,7 @@ class RetentionService:
 
         # First pass: delete files older than retention_days
         if retention_days is not None:
-            cutoff = datetime.now() - timedelta(days=retention_days)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
             for f in files:
                 if f.mtime < cutoff:
                     to_delete.append(f)

@@ -4,12 +4,14 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
+from sqlalchemy import Boolean, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 if TYPE_CHECKING:
+    from app.models.detection import Detection
     from app.models.recording import Recording
 
 
@@ -44,23 +46,28 @@ class Camera(Base):
     status: Mapped[str] = mapped_column(
         String(20), default=CameraStatus.UNKNOWN.value
     )
-    last_seen: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_seen: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Recording settings
     recording_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # Timestamps
+    # Timestamps (using TIMESTAMP WITH TIME ZONE for proper UTC handling)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+        TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     # Relationships
     recordings: Mapped[list["Recording"]] = relationship(
         "Recording", back_populates="camera", cascade="all, delete-orphan"
+    )
+    detections: Mapped[list["Detection"]] = relationship(
+        "Detection", back_populates="camera", cascade="all, delete-orphan"
     )
 
     @property

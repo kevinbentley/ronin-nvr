@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
+
+from app.schemas.base import UTCBaseModel
 
 
 class RecordingStatusResponse(BaseModel):
@@ -26,10 +28,8 @@ class RecordingActionResponse(BaseModel):
     status: Optional[RecordingStatusResponse] = None
 
 
-class RecordingSegmentResponse(BaseModel):
+class RecordingSegmentResponse(UTCBaseModel):
     """Schema for a recording segment."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: int
     camera_id: int

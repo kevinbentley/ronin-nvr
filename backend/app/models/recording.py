@@ -6,19 +6,21 @@ from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
     BigInteger,
-    DateTime,
     ForeignKey,
     Integer,
     String,
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.camera import Camera
+    from app.models.detection import Detection
+    from app.models.ml_job import MLJob
 
 
 class RecordingStatus(str, Enum):
@@ -43,9 +45,9 @@ class Recording(Base):
     file_path: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
     file_size: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
-    # Time range
-    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Time range (using TIMESTAMP WITH TIME ZONE for proper UTC handling)
+    start_time: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    end_time: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # Status
@@ -61,11 +63,17 @@ class Recording(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
 
     # Relationships
     camera: Mapped["Camera"] = relationship("Camera", back_populates="recordings")
+    detections: Mapped[list["Detection"]] = relationship(
+        "Detection", back_populates="recording", cascade="all, delete-orphan"
+    )
+    ml_jobs: Mapped[list["MLJob"]] = relationship(
+        "MLJob", back_populates="recording", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return (

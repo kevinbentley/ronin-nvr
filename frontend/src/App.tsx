@@ -9,6 +9,7 @@ import { CameraGrid } from './components/CameraGrid';
 import { CameraSidebar } from './components/CameraSidebar';
 import { PlaybackPage } from './pages/PlaybackPage';
 import { StatusPage } from './pages/StatusPage';
+import { MLStatusPage } from './pages/MLStatusPage';
 import { SetupPage } from './pages/SetupPage';
 import { LoginPage } from './pages/LoginPage';
 import { useCameras } from './hooks/useCameras';
@@ -125,6 +126,8 @@ function AppContent() {
             recordingStatus={recordingStatus}
           />
         );
+      case 'ml':
+        return <MLStatusPage />;
       case 'setup':
         return (
           <SetupPage

@@ -1,7 +1,7 @@
 """Unit tests for CameraStream class."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -481,7 +481,7 @@ class TestGetStatus:
         """Status reflects running state correctly."""
         stream._state = StreamState.RUNNING
         stream._recording_enabled = True
-        stream._start_time = datetime.now()
+        stream._start_time = datetime.now(timezone.utc)
 
         status = stream.get_status()
         assert status["state"] == "running"

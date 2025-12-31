@@ -1,0 +1,441 @@
+.ml-status-page {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.ml-status-page.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 400px;
+}
+
+.ml-status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.ml-status-header h2 {
+  margin: 0;
+  font-size: 24px;
+  color: #fff;
+}
+
+.ml-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.ml-status-page .refresh-button {
+  padding: 8px 16px;
+  background: #3a3a3a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: normal;
+  font-family: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: #aaa;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ml-status-page .refresh-button:hover {
+  background: #444;
+  color: #fff;
+}
+
+.ml-status-page .control-button {
+  padding: 8px 16px !important;
+  border: 1px solid transparent !important;
+  border-radius: 4px !important;
+  font-size: 14px !important;
+  font-weight: normal !important;
+  font-family: inherit !important;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: auto !important;
+  height: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.ml-status-page .control-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ml-status-page .control-button.start {
+  background: #4caf50;
+  color: #fff;
+}
+
+.ml-status-page .control-button.start:hover:not(:disabled) {
+  background: #43a047;
+}
+
+.ml-status-page .control-button.stop {
+  background: #f44336;
+  color: #fff;
+}
+
+.ml-status-page .control-button.stop:hover:not(:disabled) {
+  background: #e53935;
+}
+
+.ml-status-page .control-button.process {
+  background: #2196f3;
+  color: #fff;
+}
+
+.ml-status-page .control-button.process:hover:not(:disabled) {
+  background: #1e88e5;
+}
+
+.ml-status-page .control-button.retry {
+  background: #ff9800;
+  color: #fff;
+}
+
+.ml-status-page .control-button.retry:hover:not(:disabled) {
+  background: #f57c00;
+}
+
+.ml-status-page .control-button.reset {
+  background: #9c27b0;
+  color: #fff;
+}
+
+.ml-status-page .control-button.reset:hover:not(:disabled) {
+  background: #7b1fa2;
+}
+
+.ml-status-page .error-banner {
+  background: rgba(229, 57, 53, 0.2);
+  border: 1px solid #e53935;
+  color: #ef9a9a;
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 24px;
+}
+
+.ml-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.ml-status-card {
+  background: #2a2a2a;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.ml-status-card.wide {
+  grid-column: 1 / -1;
+}
+
+.ml-status-card h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  color: #888;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ml-status-card h4 {
+  margin: 16px 0 12px 0;
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ml-status-card .status-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
+}
+
+.ml-status-card .status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ml-status-card .status-item .label {
+  font-size: 12px;
+  color: #888;
+}
+
+.ml-status-card .status-item .value {
+  font-size: 18px;
+  font-weight: 500;
+  color: #fff;
+}
+
+.ml-status-card .status-item .value.good {
+  color: #4caf50;
+}
+
+.ml-status-card .status-item .value.bad {
+  color: #e53935;
+}
+
+.ml-status-card .status-item .value.warning {
+  color: #ff9800;
+}
+
+.ml-status-card .status-item .value.processing {
+  color: #2196f3;
+}
+
+/* Detection breakdown */
+.detection-breakdown {
+  margin-top: 8px;
+  border-top: 1px solid #3a3a3a;
+  padding-top: 12px;
+}
+
+.detection-classes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detection-class-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #333;
+  border-radius: 4px;
+}
+
+.detection-class-item .class-name {
+  flex: 1;
+  font-size: 14px;
+  color: #ddd;
+  text-transform: capitalize;
+}
+
+.detection-class-item .class-count {
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  min-width: 60px;
+  text-align: right;
+}
+
+.detection-class-item .class-confidence {
+  font-size: 12px;
+  color: #4caf50;
+  min-width: 40px;
+  text-align: right;
+}
+
+/* Workers grid */
+.workers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 12px;
+}
+
+.worker-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px;
+  background: #333;
+  border-radius: 6px;
+  border: 2px solid #444;
+  transition: border-color 0.2s;
+}
+
+.worker-item.busy {
+  border-color: #2196f3;
+  background: rgba(33, 150, 243, 0.1);
+}
+
+.worker-item .worker-id {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.worker-item .worker-status {
+  font-size: 13px;
+  font-weight: 500;
+  color: #aaa;
+}
+
+.worker-item .worker-status.running {
+  color: #4caf50;
+}
+
+.worker-item.busy .worker-status {
+  color: #2196f3;
+}
+
+/* Jobs table container with scrolling */
+.jobs-table-container {
+  max-height: 400px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+/* Jobs and models tables */
+.jobs-table,
+.models-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.models-table {
+  margin-top: 8px;
+}
+
+.jobs-table th,
+.jobs-table td,
+.models-table th,
+.models-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.jobs-table th,
+.models-table th {
+  font-size: 12px;
+  color: #888;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.jobs-table td,
+.models-table td {
+  font-size: 14px;
+  color: #ddd;
+}
+
+.jobs-table tbody tr:hover,
+.models-table tbody tr:hover {
+  background: #333;
+}
+
+/* Status badges */
+.ml-status-page .status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.status-badge.completed {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.status-badge.processing {
+  background: rgba(33, 150, 243, 0.2);
+  color: #2196f3;
+}
+
+.status-badge.pending {
+  background: rgba(255, 152, 0, 0.2);
+  color: #ff9800;
+}
+
+.status-badge.failed {
+  background: rgba(229, 57, 53, 0.2);
+  color: #e53935;
+}
+
+.status-badge.cancelled {
+  background: rgba(158, 158, 158, 0.2);
+  color: #9e9e9e;
+}
+
+.status-badge.enabled {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.status-badge.disabled {
+  background: rgba(158, 158, 158, 0.2);
+  color: #9e9e9e;
+}
+
+/* Progress bar */
+.progress-bar {
+  position: relative;
+  width: 100px;
+  height: 20px;
+  background: #333;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #1976d2, #42a5f5);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Model info */
+.model-name-sub {
+  display: block;
+  font-size: 11px;
+  color: #666;
+  font-weight: normal;
+  margin-top: 2px;
+}
+
+.default-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  background: rgba(33, 150, 243, 0.2);
+  color: #42a5f5;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+/* No data message */
+.ml-status-page .no-data {
+  color: #666;
+  font-style: italic;
+  margin: 16px 0;
+}

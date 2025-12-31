@@ -14,6 +14,11 @@ A modern, self-hosted Network Video Recorder (NVR) solution built with Python Fa
 - **Storage Management** - Automatic retention policy (by days or storage limit)
 - **Low Latency Streaming** - HLS-based live view with 3-5 second latency
 - **Connection Resilience** - Automatic reconnection on camera or network failures
+- **ML Object Detection** - YOLO-based detection of people, vehicles, animals
+- **Motion Detection** - Background subtraction-based motion alerts
+- **Storage Optimization** - H.265 transcoding reduces storage by 40-70%
+- **GPU Acceleration** - NVENC support for 10-20x faster transcoding
+- **Docker Deployment** - Production-ready containerized deployment
 
 ## Quick Start
 
@@ -54,6 +59,110 @@ npm run dev
 ```
 
 Access the web interface at `http://localhost:5173`
+
+---
+
+## Docker Deployment
+
+The recommended way to deploy RoninNVR in production is using Docker Compose.
+
+### Prerequisites
+
+- Docker Engine 24+
+- Docker Compose v2
+- (Optional) NVIDIA GPU with Container Toolkit for hardware-accelerated transcoding
+
+### Quick Deploy (CPU)
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd dvr
+
+# Create environment file
+cp .env.example .env
+# Edit .env with your secrets (JWT_SECRET_KEY, POSTGRES_PASSWORD)
+
+# Build and start
+docker compose -f docker-compose.cpu.yml up -d --build
+
+# Check status
+docker compose ps
+```
+
+### Deploy with NVIDIA GPU
+
+For hardware-accelerated ML inference and video transcoding:
+
+```bash
+# Install NVIDIA Container Toolkit (one-time)
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+# Verify GPU access
+docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
+
+# Deploy with GPU support
+docker compose up -d --build
+```
+
+### Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| `frontend` | 80 | Web UI (Nginx + React) |
+| `backend` | 8000 | FastAPI server |
+| `postgres` | 5432 | PostgreSQL database |
+| `ml-worker` | - | Object detection (YOLO) |
+| `transcode-worker` | - | H.265 re-encoding |
+
+### Scaling Workers
+
+```bash
+# Scale ML workers (for more concurrent video analysis)
+docker compose up -d --scale ml-worker=4
+
+# Scale transcode workers (for faster re-encoding)
+docker compose up -d --scale transcode-worker=2
+```
+
+### Storage Configuration
+
+By default, recordings are stored in a Docker volume. To use a host directory:
+
+```yaml
+# In docker-compose.yml, change:
+volumes:
+  - storage_data:/data/storage
+# To:
+volumes:
+  - /path/to/your/storage:/data/storage
+```
+
+### Useful Commands
+
+```bash
+# View logs
+docker compose logs -f backend
+docker compose logs -f ml-worker
+
+# Check transcode statistics
+docker compose exec transcode-worker python transcode_worker.py --stats
+
+# Restart a service
+docker compose restart backend
+
+# Stop everything
+docker compose down
+
+# Stop and remove volumes (DELETES DATA)
+docker compose down -v
+```
 
 ---
 
@@ -301,11 +410,10 @@ TBD
 ---
 
 ## Future Features
-- Make cameras selectable for the display grid, so you can choose which to see
-- Archive files to remote server
-- User authentication / management
-- List box display of recorded videos
-- Distributed stream handling (Need to determine how many streams a reasonably fast computer can handle)
-- AI Pipeline
-- Notifications
-- Android app?
+
+- Selectable camera grid - Choose which cameras to display
+- Cold storage - Archive to remote server with playback integration
+- Detection zones - Mask areas to ignore (clocks, etc.)
+- Push notifications - Alerts for detected objects/motion
+- Mobile app - Android/iOS companion app
+- Distributed processing - Stream handling across multiple servers

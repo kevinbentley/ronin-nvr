@@ -14,9 +14,15 @@ import type {
   DayRecordings,
   ExportRequest,
   ExportResponse,
+  MLStatus,
+  MLJobListResponse,
+  MLJob,
+  MLDetectionSummary,
+  MLModelListResponse,
+  TimelineEventsResponse,
 } from '../types/camera';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 const TOKEN_KEY = 'auth_token';
 
 // Auth types
@@ -253,6 +259,99 @@ class ApiClient {
 
   getExportDownloadUrl(exportId: string): string {
     return `${API_BASE}/playback/exports/${exportId}`;
+  }
+
+  // ML API
+  async getMLStatus(): Promise<MLStatus> {
+    const response = await this.client.get('/ml/status');
+    return response.data;
+  }
+
+  async getMLJobs(params?: {
+    status?: string;
+    recording_id?: number;
+    limit?: number;
+    offset?: number;
+  }): Promise<MLJobListResponse> {
+    const response = await this.client.get('/ml/jobs', { params });
+    return response.data;
+  }
+
+  async getMLJob(jobId: number): Promise<MLJob> {
+    const response = await this.client.get(`/ml/jobs/${jobId}`);
+    return response.data;
+  }
+
+  async createMLJob(recordingId: number, modelName?: string, priority?: number): Promise<MLJob> {
+    const response = await this.client.post('/ml/jobs', {
+      recording_id: recordingId,
+      model_name: modelName,
+      priority: priority ?? 0,
+    });
+    return response.data;
+  }
+
+  async cancelMLJob(jobId: number): Promise<void> {
+    await this.client.delete(`/ml/jobs/${jobId}`);
+  }
+
+  async getMLDetectionSummary(params?: {
+    camera_id?: number;
+    recording_id?: number;
+    group_by?: 'class_name' | 'camera' | 'hour';
+  }): Promise<MLDetectionSummary> {
+    const response = await this.client.get('/ml/detections/summary', { params });
+    return response.data;
+  }
+
+  async getMLModels(): Promise<MLModelListResponse> {
+    const response = await this.client.get('/ml/models');
+    return response.data;
+  }
+
+  getMLEventsUrl(): string {
+    const token = this.getToken();
+    return `${API_BASE}/ml/events${token ? `?token=${token}` : ''}`;
+  }
+
+  async startMLSystem(): Promise<{ success: boolean; message: string }> {
+    const response = await this.client.post('/ml/start');
+    return response.data;
+  }
+
+  async stopMLSystem(): Promise<{ success: boolean; message: string }> {
+    const response = await this.client.post('/ml/stop');
+    return response.data;
+  }
+
+  async processAllRecordings(params?: {
+    camera_name?: string;
+    limit?: number;
+  }): Promise<{ success: boolean; queued: number; message: string }> {
+    const response = await this.client.post('/ml/process-all', null, { params });
+    return response.data;
+  }
+
+  async retryFailedJobs(params?: {
+    error_filter?: string;
+  }): Promise<{ success: boolean; reset_count: number; message: string }> {
+    const response = await this.client.post('/ml/retry-failed', null, { params });
+    return response.data;
+  }
+
+  async resetStuckJobs(): Promise<{ success: boolean; reset_count: number; message: string }> {
+    const response = await this.client.post('/ml/reset-stuck');
+    return response.data;
+  }
+
+  async getTimelineEvents(params: {
+    camera_name: string;
+    date: string;
+    class_filter?: string;
+    min_confidence?: number;
+  }): Promise<TimelineEventsResponse> {
+    const response = await this.client.get('/ml/detections/timeline', { params });
+    return response.data;
   }
 }
 

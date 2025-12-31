@@ -17,6 +17,7 @@ from app.rate_limiter import limiter
 from app.services.camera_stream import stream_manager
 from app.services.retention import retention_monitor
 from app.services.status_monitor import status_monitor
+from app.services.ml import ml_coordinator, recording_watcher
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -96,12 +97,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning(f"Failed to start retention monitor: {e}")
 
+    # Start ML coordinator and recording watcher if database available and ML enabled
+    if db_available and settings.ml_enabled:
+        try:
+            from app.database import AsyncSessionLocal
+            ml_coordinator.set_session_factory(AsyncSessionLocal)
+            recording_watcher.set_session_factory(AsyncSessionLocal)
+            await ml_coordinator.start()
+            await recording_watcher.start()
+            logger.info("ML coordinator and recording watcher started")
+        except Exception as e:
+            logger.warning(f"Failed to start ML services: {e}")
+
     yield
 
     # Shutdown
     try:
         await stream_manager.stop_all()
         logger.info("All streams stopped")
+    except Exception:
+        pass
+
+    try:
+        await recording_watcher.stop()
+    except Exception:
+        pass
+
+    try:
+        await ml_coordinator.stop()
     except Exception:
         pass
 

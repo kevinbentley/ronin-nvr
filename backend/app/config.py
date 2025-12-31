@@ -4,6 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,6 +53,54 @@ class Settings(BaseSettings):
 
     # CORS (comma-separated origins for production)
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
+
+    # ML Processing
+    ml_enabled: bool = True
+    ml_workers: int = 4
+    ml_max_queue_size: int = 100
+
+    # ML Processing defaults
+    ml_default_fps: float = 2.0  # Frames per second to analyze
+    ml_batch_size: int = 8
+    ml_auto_process: bool = True  # Auto-process new recordings
+
+    # ML Model settings
+    ml_models_directory: Optional[Path] = None  # Derived from storage_root if not set
+    ml_default_model: str = "yolov8l"
+    ml_confidence_threshold: float = 0.5
+    ml_nms_threshold: float = 0.45
+
+    @model_validator(mode="after")
+    def set_ml_models_directory(self) -> "Settings":
+        """Set ml_models_directory from storage_root if not explicitly set."""
+        if self.ml_models_directory is None:
+            object.__setattr__(
+                self, "ml_models_directory", self.storage_root / ".ml" / "models"
+            )
+        return self
+
+    # Class filter - only save detections for these classes (empty = all classes)
+    # Common classes: person, car, truck, bus, motorcycle, bicycle, dog, cat
+    ml_class_filter: str = "person,car,truck,bus,motorcycle,bicycle,dog,cat"
+
+    # ML Detection retention
+    ml_detection_retention_days: Optional[int] = 90
+
+    # Motion Detection settings
+    motion_detection_enabled: bool = True
+    motion_threshold: float = 0.5  # Percent of frame for motion trigger (0-100)
+    motion_min_contour_area: int = 500  # Minimum pixel area to consider
+    motion_history: int = 500  # Frames for background model history
+    motion_var_threshold: float = 16.0  # Foreground/background threshold
+    motion_detect_shadows: bool = True  # Detect and handle shadows
+    motion_learning_rate: float = -1  # Background learning rate (-1 = auto)
+
+    # Transcoding settings (for transcode_worker.py)
+    transcode_enabled: bool = True
+    transcode_crf: int = 28  # H.265 CRF (18-32, lower = better quality, larger)
+    transcode_preset: str = "medium"  # FFmpeg preset (ultrafast to veryslow)
+    transcode_min_age_minutes: int = 20  # Wait before transcoding new files
+    transcode_check_interval: int = 300  # Seconds between checks in continuous mode
 
 
 @lru_cache

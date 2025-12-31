@@ -1,0 +1,61 @@
+# RoninNVR Worker (ML + Transcode)
+# Supports both CPU and NVIDIA GPU acceleration
+#
+# Build:
+#   docker build -f Dockerfile.worker -t ronin-worker .
+#
+# Run ML Worker (CPU):
+#   docker run ronin-worker python ml_worker.py
+#
+# Run ML Worker (GPU):
+#   docker run --gpus all ronin-worker python ml_worker.py
+#
+# Run Transcode Worker (GPU auto-detected):
+#   docker run --gpus all ronin-worker python transcode_worker.py --continuous
+
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+
+WORKDIR /app
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies including FFmpeg with NVENC support
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
+    libpq5 \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    libgl1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python
+
+# Create and activate virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip
+
+# Copy and install requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# For GPU support, install onnxruntime-gpu instead of onnxruntime
+# Uncomment the next line if you want GPU inference for ML
+# RUN pip uninstall -y onnxruntime && pip install --no-cache-dir onnxruntime-gpu
+
+# Copy application code
+COPY . .
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash appuser && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
+# Default command (override in docker-compose)
+CMD ["python", "ml_worker.py"]
