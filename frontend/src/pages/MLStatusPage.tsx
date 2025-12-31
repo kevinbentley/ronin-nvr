@@ -322,6 +322,7 @@ export function MLStatusPage() {
         <div className="ml-status-card wide">
           <h3>Recent Jobs ({jobsTotal} total)</h3>
           {jobs.length > 0 ? (
+            <div className="jobs-table-container">
             <table className="jobs-table">
               <thead>
                 <tr>
@@ -370,6 +371,7 @@ export function MLStatusPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           ) : (
             <p className="no-data">No jobs yet</p>
           )}

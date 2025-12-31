@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -133,7 +133,13 @@ class PlaybackService:
                     if not file_time:
                         continue
 
-                    start_dt = datetime.combine(rec_date, file_time.time())
+                    # Combine date and time with UTC timezone
+                    # Note: filename encodes local time when recorded, but we treat
+                    # it as UTC for consistent handling. The frontend will display
+                    # in the user's local timezone.
+                    start_dt = datetime.combine(
+                        rec_date, file_time.time(), tzinfo=timezone.utc
+                    )
 
                     try:
                         stat = video_file.stat()

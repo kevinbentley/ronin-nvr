@@ -1,7 +1,7 @@
 """Camera management API endpoints."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -149,7 +149,7 @@ async def get_stream_debug(
                         "name": s.name,
                         "size_bytes": s.stat().st_size,
                         "age_seconds": round(
-                            (datetime.now().timestamp() - s.stat().st_mtime), 1
+                            (datetime.now(timezone.utc).timestamp() - s.stat().st_mtime), 1
                         ),
                     }
                     for s in segments[-10:]  # Last 10 segments

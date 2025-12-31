@@ -35,7 +35,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -251,7 +251,7 @@ class TranscodeTracker:
             "savings_percent": round((1 - new_size / original_size) * 100, 1) if original_size > 0 else 0,
             "duration_seconds": round(duration, 1),
             "encoder": encoder,
-            "transcoded_at": datetime.now().isoformat(),
+            "transcoded_at": datetime.now(timezone.utc).isoformat(),
         }
         # Remove from failed if it was there
         self._data.get("failed", {}).pop(str(file_path), None)
@@ -261,7 +261,7 @@ class TranscodeTracker:
         """Mark a file as failed."""
         self._data["failed"][str(file_path)] = {
             "error": error,
-            "failed_at": datetime.now().isoformat(),
+            "failed_at": datetime.now(timezone.utc).isoformat(),
         }
         self._save()
 
@@ -349,7 +349,7 @@ class TranscodeWorker:
             List of file paths to transcode
         """
         files_to_process = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # Scan all .mp4 files in storage (excluding hidden directories)
         for mp4_file in self.storage_root.rglob("*.mp4"):
@@ -367,7 +367,7 @@ class TranscodeWorker:
 
             # Skip if file is too recent (might still be recording)
             try:
-                mtime = datetime.fromtimestamp(mp4_file.stat().st_mtime)
+                mtime = datetime.fromtimestamp(mp4_file.stat().st_mtime, tz=timezone.utc)
                 if now - mtime < self.min_age:
                     continue
             except OSError:

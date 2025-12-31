@@ -5,13 +5,14 @@ import logging
 import os
 import shutil
 import signal
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Optional
 
 from app.config import get_settings
 from app.models import Camera
+from app.utils import utc_now
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -76,9 +77,13 @@ class CameraRecorder:
         return self.storage_root / safe_name
 
     def _get_segment_pattern(self) -> str:
-        """Get the segment filename pattern for FFmpeg."""
-        today = datetime.now().strftime("%Y-%m-%d")
-        output_dir = self.output_directory / today
+        """Get the segment filename pattern for FFmpeg.
+
+        Uses UTC time for both directory and filename to ensure consistent
+        timezone handling across Docker and native deployments.
+        """
+        today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        output_dir = self.output_directory / today_utc
         output_dir.mkdir(parents=True, exist_ok=True)
         return str(output_dir / "%H-%M-%S.mp4")
 
@@ -136,14 +141,19 @@ class CameraRecorder:
         logger.info(f"Starting recording for '{self.camera.name}'")
         logger.debug(f"FFmpeg command: {' '.join(cmd)}")
 
+        # Set TZ=UTC so FFmpeg's strftime outputs UTC time for filenames
+        env = os.environ.copy()
+        env["TZ"] = "UTC"
+
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
 
         self._state = RecordingState.RECORDING
-        self._start_time = datetime.now()
+        self._start_time = utc_now()
 
         # Start monitoring task
         asyncio.create_task(self._monitor_process())

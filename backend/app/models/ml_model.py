@@ -5,7 +5,6 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean,
-    DateTime,
     Float,
     Integer,
     JSON,
@@ -13,6 +12,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -50,12 +50,12 @@ class MLModel(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     extra_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
-    # Timestamps
+    # Timestamps (using TIMESTAMP WITH TIME ZONE for proper UTC handling)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+        TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     def __repr__(self) -> str:

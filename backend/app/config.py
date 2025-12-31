@@ -4,6 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -64,10 +65,19 @@ class Settings(BaseSettings):
     ml_auto_process: bool = True  # Auto-process new recordings
 
     # ML Model settings
-    ml_models_directory: Path = Path("./storage/.ml/models")
+    ml_models_directory: Optional[Path] = None  # Derived from storage_root if not set
     ml_default_model: str = "yolov8l"
     ml_confidence_threshold: float = 0.5
     ml_nms_threshold: float = 0.45
+
+    @model_validator(mode="after")
+    def set_ml_models_directory(self) -> "Settings":
+        """Set ml_models_directory from storage_root if not explicitly set."""
+        if self.ml_models_directory is None:
+            object.__setattr__(
+                self, "ml_models_directory", self.storage_root / ".ml" / "models"
+            )
+        return self
 
     # Class filter - only save detections for these classes (empty = all classes)
     # Common classes: person, car, truck, bus, motorcycle, bicycle, dog, cat

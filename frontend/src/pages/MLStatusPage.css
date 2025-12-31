@@ -287,11 +287,21 @@
   color: #2196f3;
 }
 
+/* Jobs table container with scrolling */
+.jobs-table-container {
+  max-height: 400px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
 /* Jobs and models tables */
 .jobs-table,
 .models-table {
   width: 100%;
   border-collapse: collapse;
+}
+
+.models-table {
   margin-top: 8px;
 }
 

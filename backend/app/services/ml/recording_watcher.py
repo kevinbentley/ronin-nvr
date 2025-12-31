@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Set, TYPE_CHECKING
 
@@ -152,7 +152,7 @@ class RecordingWatcher:
 
         # Filter to completed recordings (not currently being written)
         # A recording is considered complete if it's older than segment duration + buffer
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         min_age = timedelta(seconds=self._segment_duration + 60)  # Segment duration + 1 min buffer
 
         new_recordings = []

@@ -2,7 +2,9 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
+
+from app.schemas.base import UTCBaseModel
 
 
 class LoginRequest(BaseModel):
@@ -20,10 +22,8 @@ class TokenResponse(BaseModel):
     expires_in: int
 
 
-class UserResponse(BaseModel):
+class UserResponse(UTCBaseModel):
     """Response containing user information."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: int
     username: str

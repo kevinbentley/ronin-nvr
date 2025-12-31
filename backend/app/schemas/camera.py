@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.base import UTCBaseModel
 
 
 class CameraBase(BaseModel):
@@ -74,10 +76,8 @@ class CameraUpdate(BaseModel):
         return v
 
 
-class CameraResponse(CameraBase):
+class CameraResponse(UTCBaseModel, CameraBase):
     """Schema for camera response (includes id and timestamps)."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: int
     status: str

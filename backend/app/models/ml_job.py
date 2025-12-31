@@ -5,7 +5,6 @@ from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
-    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -15,6 +14,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -57,9 +57,9 @@ class MLJob(Base):
     total_frames: Mapped[int] = mapped_column(Integer, default=0)
     detections_count: Mapped[int] = mapped_column(Integer, default=0)
 
-    # Timing
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Timing (using TIMESTAMP WITH TIME ZONE for proper UTC handling)
+    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     processing_time_seconds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Error handling
@@ -68,14 +68,14 @@ class MLJob(Base):
 
     # Worker tracking (for standalone worker processes)
     worker_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    last_heartbeat: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_heartbeat: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
 
     # Configuration used for this job
     config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
 
     # Relationships

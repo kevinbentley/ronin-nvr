@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
+
+from app.schemas.base import UTCBaseModel
 
 
 # === Job Schemas ===
@@ -16,10 +18,8 @@ class CreateJobRequest(BaseModel):
     priority: int = Field(0, description="Job priority (higher = more urgent)")
 
 
-class JobResponse(BaseModel):
+class JobResponse(UTCBaseModel):
     """Response for an ML job."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: int
     recording_id: int
@@ -46,10 +46,8 @@ class JobListResponse(BaseModel):
 
 # === Detection Schemas ===
 
-class DetectionResponse(BaseModel):
+class DetectionResponse(UTCBaseModel):
     """Response for a detection."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: int
     recording_id: int
@@ -110,10 +108,8 @@ class TimelineEventsResponse(BaseModel):
 
 # === Model Schemas ===
 
-class ModelResponse(BaseModel):
+class ModelResponse(UTCBaseModel):
     """Response for an ML model."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: str

@@ -1,7 +1,7 @@
 """Tests for storage API endpoints and retention service."""
 
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -103,7 +103,7 @@ class TestRetentionService:
 
     def test_get_files_to_delete_by_age(self) -> None:
         """Test getting files to delete by age."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         old_time = now - timedelta(days=40)
         recent_time = now - timedelta(days=5)
 
@@ -122,7 +122,7 @@ class TestRetentionService:
 
     def test_get_files_to_delete_by_size(self) -> None:
         """Test getting files to delete by size."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         files = [
             FileInfo(
@@ -147,7 +147,7 @@ class TestRetentionService:
 
     def test_get_files_to_delete_combined(self) -> None:
         """Test getting files to delete with both policies."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         old_time = now - timedelta(days=40)
 
         files = [
@@ -181,7 +181,7 @@ class TestRetentionService:
             test_file = camera_dir / "12-00-00.mp4"
             test_file.write_bytes(b"x" * 1000)
 
-            files = [FileInfo(test_file, 1000, datetime.now(), "TestCamera")]
+            files = [FileInfo(test_file, 1000, datetime.now(timezone.utc), "TestCamera")]
 
             service = RetentionService(storage_root)
             deleted, freed = service.delete_files(files)
@@ -200,7 +200,7 @@ class TestRetentionService:
             test_file = camera_dir / "12-00-00.mp4"
             test_file.write_bytes(b"x" * 1000)
 
-            files = [FileInfo(test_file, 1000, datetime.now(), "TestCamera")]
+            files = [FileInfo(test_file, 1000, datetime.now(timezone.utc), "TestCamera")]
 
             service = RetentionService(storage_root)
             service.delete_files(files)

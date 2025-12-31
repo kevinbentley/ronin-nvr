@@ -10,15 +10,17 @@ This uses only ONE RTSP connection per camera, avoiding conflicts.
 
 import asyncio
 import logging
+import os
 import shutil
 import signal
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Optional
 
 from app.config import get_settings
 from app.models import Camera
+from app.utils import utc_now
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -127,10 +129,16 @@ class CameraStream:
         return self._rtsp_url
 
     def _get_recording_pattern(self) -> str:
-        """Get MP4 segment filename pattern."""
-        today = datetime.now().strftime("%Y-%m-%d")
-        output_dir = self.recording_directory / today
+        """Get MP4 segment filename pattern.
+
+        Uses UTC time for both directory and filename to ensure consistent
+        timezone handling across Docker and native deployments.
+        """
+        today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        output_dir = self.recording_directory / today_utc
         output_dir.mkdir(parents=True, exist_ok=True)
+        # FFmpeg strftime uses system time, so we set TZ=UTC in the environment
+        # when starting FFmpeg. For now, we use the pattern and document this.
         return str(output_dir / "%H-%M-%S.mp4")
 
     def _build_ffmpeg_command(self, clean_hls: bool = True) -> list[str]:
@@ -243,14 +251,19 @@ class CameraStream:
         logger.info(f"RTSP URL: {self.rtsp_url}")
         logger.debug(f"FFmpeg command: {' '.join(cmd)}")
 
+        # Set TZ=UTC so FFmpeg's strftime outputs UTC time for filenames
+        env = os.environ.copy()
+        env["TZ"] = "UTC"
+
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
 
         self._state = StreamState.RUNNING
-        self._start_time = datetime.now()
+        self._start_time = utc_now()
         self._last_stderr_lines: list[str] = []
 
         # Start monitoring tasks
