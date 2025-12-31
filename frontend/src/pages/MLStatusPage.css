@@ -2,6 +2,9 @@
   padding: 24px;
   max-width: 1400px;
   margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .ml-status-page.loading {
