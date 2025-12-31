@@ -23,13 +23,32 @@ const layoutConfig: Record<GridLayout, { columns: number; rows: number }> = {
 
 export function CameraGrid({ cameras, recordingStatus, layout }: CameraGridProps) {
   const [zoomedCameraId, setZoomedCameraId] = useState<number | null>(null);
+  const [currentPage, setCurrentPage] = useState(0);
 
   const { columns, rows } = layoutConfig[layout];
-  const maxCameras = columns * rows;
-  const displayCameras = cameras.slice(0, maxCameras);
+  const camerasPerPage = columns * rows;
+  const totalPages = Math.max(1, Math.ceil(cameras.length / camerasPerPage));
 
-  // Fill empty slots
-  const emptySlots = maxCameras - displayCameras.length;
+  // Reset to first page when layout changes or camera count reduces
+  useEffect(() => {
+    if (currentPage >= totalPages) {
+      setCurrentPage(Math.max(0, totalPages - 1));
+    }
+  }, [currentPage, totalPages]);
+
+  const startIndex = currentPage * camerasPerPage;
+  const displayCameras = cameras.slice(startIndex, startIndex + camerasPerPage);
+
+  // Fill empty slots on the current page
+  const emptySlots = camerasPerPage - displayCameras.length;
+
+  const handlePrevPage = useCallback(() => {
+    setCurrentPage((p) => Math.max(0, p - 1));
+  }, []);
+
+  const handleNextPage = useCallback(() => {
+    setCurrentPage((p) => Math.min(totalPages - 1, p + 1));
+  }, [totalPages]);
 
   // Handle Escape key to exit zoom
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -59,28 +78,30 @@ export function CameraGrid({ cameras, recordingStatus, layout }: CameraGridProps
     if (zoomedCamera) {
       const status = recordingStatus.get(zoomedCamera.id);
       return (
-        <div className="camera-grid zoomed">
-          <div
-            className="grid-cell zoomed-cell"
-            onClick={() => setZoomedCameraId(null)}
-          >
-            <VideoPlayer
-              src={api.getStreamUrl(zoomedCamera.id)}
-              cameraId={zoomedCamera.id}
-              cameraName={zoomedCamera.name}
-              status={zoomedCamera.status}
-              isRecording={status?.is_recording}
-            />
-            <button
-              className="zoom-exit-button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setZoomedCameraId(null);
-              }}
-              title="Exit zoom (Esc)"
+        <div className="camera-grid-container">
+          <div className="camera-grid zoomed">
+            <div
+              className="grid-cell zoomed-cell"
+              onClick={() => setZoomedCameraId(null)}
             >
-              &times;
-            </button>
+              <VideoPlayer
+                src={api.getStreamUrl(zoomedCamera.id)}
+                cameraId={zoomedCamera.id}
+                cameraName={zoomedCamera.name}
+                status={zoomedCamera.status}
+                isRecording={status?.is_recording}
+              />
+              <button
+                className="zoom-exit-button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomedCameraId(null);
+                }}
+                title="Exit zoom (Esc)"
+              >
+                &times;
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -88,40 +109,66 @@ export function CameraGrid({ cameras, recordingStatus, layout }: CameraGridProps
   }
 
   return (
-    <div
-      className="camera-grid"
-      style={{
-        gridTemplateColumns: `repeat(${columns}, 1fr)`,
-        gridTemplateRows: `repeat(${rows}, 1fr)`,
-      }}
-    >
-      {displayCameras.map((camera) => {
-        const status = recordingStatus.get(camera.id);
-        return (
-          <div
-            key={camera.id}
-            className="grid-cell clickable"
-            onClick={() => handleCameraClick(camera.id)}
-            title="Click to zoom"
-          >
-            <VideoPlayer
-              src={api.getStreamUrl(camera.id)}
-              cameraId={camera.id}
-              cameraName={camera.name}
-              status={camera.status}
-              isRecording={status?.is_recording}
-            />
-          </div>
-        );
-      })}
+    <div className="camera-grid-container">
+      <div
+        className="camera-grid"
+        style={{
+          gridTemplateColumns: `repeat(${columns}, 1fr)`,
+          gridTemplateRows: `repeat(${rows}, 1fr)`,
+        }}
+      >
+        {displayCameras.map((camera) => {
+          const status = recordingStatus.get(camera.id);
+          return (
+            <div
+              key={camera.id}
+              className="grid-cell clickable"
+              onClick={() => handleCameraClick(camera.id)}
+              title="Click to zoom"
+            >
+              <VideoPlayer
+                src={api.getStreamUrl(camera.id)}
+                cameraId={camera.id}
+                cameraName={camera.name}
+                status={camera.status}
+                isRecording={status?.is_recording}
+              />
+            </div>
+          );
+        })}
 
-      {Array.from({ length: emptySlots }).map((_, index) => (
-        <div key={`empty-${index}`} className="grid-cell empty">
-          <div className="empty-slot">
-            <span>No Camera</span>
+        {Array.from({ length: emptySlots }).map((_, index) => (
+          <div key={`empty-${index}`} className="grid-cell empty">
+            <div className="empty-slot">
+              <span>No Camera</span>
+            </div>
           </div>
+        ))}
+      </div>
+
+      {totalPages > 1 && (
+        <div className="pagination-controls">
+          <button
+            className="pagination-button"
+            onClick={handlePrevPage}
+            disabled={currentPage === 0}
+            title="Previous page"
+          >
+            ‹
+          </button>
+          <span className="pagination-info">
+            {currentPage + 1} / {totalPages}
+          </span>
+          <button
+            className="pagination-button"
+            onClick={handleNextPage}
+            disabled={currentPage === totalPages - 1}
+            title="Next page"
+          >
+            ›
+          </button>
         </div>
-      ))}
+      )}
     </div>
   );
 }
