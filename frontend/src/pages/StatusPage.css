@@ -2,6 +2,7 @@
   padding: 24px;
   max-width: 1400px;
   margin: 0 auto;
+  overflow-y: auto;
 }
 
 .status-page.loading {

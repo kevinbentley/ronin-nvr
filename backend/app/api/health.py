@@ -25,7 +25,7 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> HealthResponse:
     db_status = "error"
     try:
         await db.execute(text("SELECT 1"))
-        db_status = "ok"
+        db_status = "connected"
     except Exception:
         db_status = "unavailable"
 

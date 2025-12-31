@@ -123,10 +123,11 @@ def detect_nvenc_support() -> bool:
         if "hevc_nvenc" in result.stdout:
             # Try a quick encode test to verify GPU is accessible
             # This catches cases where the encoder exists but no GPU is available
+            # Note: NVENC requires minimum 256x256 resolution
             test_result = subprocess.run(
                 [
                     "ffmpeg", "-hide_banner", "-loglevel", "error",
-                    "-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.1",
+                    "-f", "lavfi", "-i", "nullsrc=s=256x256:d=0.1",
                     "-c:v", "hevc_nvenc", "-f", "null", "-"
                 ],
                 capture_output=True,
