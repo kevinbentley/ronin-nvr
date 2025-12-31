@@ -20,6 +20,7 @@ class EventType(str, Enum):
     JOB_COMPLETED = "job_completed"
     JOB_FAILED = "job_failed"
     DETECTION = "detection"
+    LIVE_DETECTION = "live_detection"  # Real-time detection from live stream
 
 
 @dataclass
@@ -192,6 +193,34 @@ class MLEventService:
                 "class_name": class_name,
                 "confidence": confidence,
                 "camera_id": camera_id,
+            },
+        ))
+
+    async def emit_live_detection(
+        self,
+        camera_id: int,
+        camera_name: str,
+        class_name: str,
+        confidence: float,
+        snapshot_url: Optional[str] = None,
+    ) -> None:
+        """Emit live detection event for real-time alerts.
+
+        Args:
+            camera_id: Camera that captured the detection
+            camera_name: Human-readable camera name
+            class_name: Detected object class (person, car, etc.)
+            confidence: Detection confidence (0.0-1.0)
+            snapshot_url: Optional URL to snapshot image with bounding box
+        """
+        await self.emit(MLEvent(
+            event_type=EventType.LIVE_DETECTION,
+            data={
+                "camera_id": camera_id,
+                "camera_name": camera_name,
+                "class_name": class_name,
+                "confidence": confidence,
+                "snapshot_url": snapshot_url,
             },
         ))
 

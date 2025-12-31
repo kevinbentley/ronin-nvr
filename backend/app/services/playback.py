@@ -179,7 +179,8 @@ class PlaybackService:
         if not rec_date or not file_time:
             return None
 
-        start_dt = datetime.combine(rec_date, file_time.time())
+        # Combine date and time with UTC timezone (matches scan_recordings behavior)
+        start_dt = datetime.combine(rec_date, file_time.time(), tzinfo=timezone.utc)
 
         try:
             stat = full_path.stat()

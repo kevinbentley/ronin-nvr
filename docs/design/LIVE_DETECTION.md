@@ -55,11 +55,12 @@ Camera → FFmpeg → HLS segments (.ts) ←──┐
    - No additional RTSP connections (cameras have limited concurrent streams)
    - Graceful degradation: if ML falls behind, skip segments
 
-3. **Separate Detection Table**
-   - Live detections go to `live_detections` table (not `detections`)
-   - No `recording_id` - these aren't tied to specific recordings
-   - Shorter retention (24-48 hours vs 90 days)
-   - Prevents confusion between real-time alerts and historical analysis
+3. **Unified Detection Table**
+   - Live detections use the same `detections` table as historical
+   - `recording_id` is NULL for live (correlate by timestamp later)
+   - `detected_at` column stores actual detection timestamp
+   - Single retention policy, single timeline view
+   - Same events visible in both real-time alerts AND playback
 
 4. **Debouncing**
    - Don't spam notifications: "person detected" once per 30 seconds per camera
@@ -71,7 +72,7 @@ Camera → FFmpeg → HLS segments (.ts) ←──┐
    - Draw bounding boxes on snapshot for visual confirmation
    - Store in `.snapshots/{camera_id}/{timestamp}.jpg`
    - Snapshots enable future Vision LLM analysis
-   - Same retention as live_detections (48 hours default)
+   - Retention follows same policy as detections table
 
 ## Components
 
@@ -136,36 +137,50 @@ async def extract_frame_from_segment(self, segment_path: Path) -> Optional[np.nd
     # Run and read stdout as numpy array
 ```
 
-### 2. Database Model (`LiveDetection`)
+### 2. Database Model (Unified `Detection`)
 
-New model separate from historical `Detection`:
+Live detections use the same `detections` table as historical, with these additions:
 
 ```python
-class LiveDetection(Base):
-    """Real-time detection from live stream."""
+class Detection(Base):
+    """ML detection result - supports both historical and live detections."""
 
-    __tablename__ = "live_detections"
+    __tablename__ = "detections"
 
-    id: int                    # Primary key
-    camera_id: int             # FK to cameras
-    class_name: str            # "person", "car", etc.
-    confidence: float          # 0.0 - 1.0
-    bbox_x: float              # Normalized bounding box
+    id: int                         # Primary key
+    recording_id: Optional[int]     # FK to recordings (NULL for live)
+    camera_id: int                  # FK to cameras
+    class_name: str                 # "person", "car", etc.
+    confidence: float               # 0.0 - 1.0
+    timestamp_ms: int               # Offset in recording (0 for live)
+    frame_number: int               # Frame index (0 for live)
+    bbox_x: float                   # Normalized bounding box
     bbox_y: float
     bbox_width: float
     bbox_height: float
-    model_name: str            # "yolov8l"
-    detected_at: datetime      # When detection occurred (UTC)
-    notified: bool             # Whether notification was sent
-    snapshot_path: str         # Path to JPG snapshot (nullable)
-    llm_description: str       # Vision LLM description (nullable, future)
+    model_name: str                 # "yolov8l"
+    created_at: datetime            # Row insertion time
+    detected_at: Optional[datetime] # Actual detection time (NEW)
+    snapshot_path: Optional[str]    # JPG with bounding boxes (NEW)
+    llm_description: Optional[str]  # Vision LLM description (NEW, future)
+
+    @property
+    def is_live_detection(self) -> bool:
+        return self.recording_id is None
 
     # Indexes for efficient queries
     __table_args__ = (
-        Index("ix_live_detections_camera_detected", "camera_id", "detected_at"),
-        Index("ix_live_detections_class_name", "class_name"),
+        # ... existing indexes ...
+        Index("ix_detections_detected_at", "detected_at"),
+        Index("ix_detections_camera_detected_at", "camera_id", "detected_at"),
     )
 ```
+
+**Key differences for live detections:**
+- `recording_id` = NULL (can correlate later by timestamp)
+- `timestamp_ms` = 0 (not meaningful for live)
+- `detected_at` = actual detection time (UTC)
+- `snapshot_path` = path to JPG with bounding boxes
 
 ### 3. Snapshot Service
 
@@ -447,10 +462,12 @@ live-detection:
 
 Alembic migration file: `backend/alembic/versions/20241230_add_live_detections.py`
 
-Creates the `live_detections` table with indexes for:
-- `(camera_id, detected_at)` - primary query pattern
-- `class_name` - filtering by detection type
-- `detected_at` - retention cleanup
+Modifies the existing `detections` table:
+- Makes `recording_id` nullable (live detections have no recording)
+- Adds `detected_at` column for actual detection timestamp
+- Adds `snapshot_path` for event thumbnails
+- Adds `llm_description` for future Vision LLM integration
+- Creates indexes for `detected_at` and `(camera_id, detected_at)`
 
 Run migration:
 ```bash
@@ -478,8 +495,9 @@ alembic upgrade head
 ## Rollout Plan
 
 ### Phase 1: Core Worker
+- [x] Update `Detection` model with new columns
+- [x] Create alembic migration for schema changes
 - [ ] Create `live_detection_worker.py`
-- [ ] Add `LiveDetection` model and migration
 - [ ] Implement HLS segment tapping
 - [ ] Basic detection loop (no notifications yet)
 
@@ -493,12 +511,12 @@ alembic upgrade head
 - [ ] Add configuration options to Settings
 - [ ] Per-camera enable/disable
 - [ ] Per-class alert configuration
-- [ ] Retention cleanup job for old live_detections
+- [ ] Retention cleanup job for old detections
 
 ### Phase 4: Snapshots
 - [ ] Implement SnapshotService
 - [ ] Save JPG with bounding boxes on detection
-- [ ] Add snapshot_path to LiveDetection model
+- [x] Add snapshot_path to Detection model
 - [ ] Serve snapshots via API endpoint
 - [ ] Add snapshot cleanup to retention job
 
@@ -604,9 +622,9 @@ Can be optimized by:
 ## Open Questions
 
 1. **Recording Correlation**: Should live detections link to recordings?
-   - Current design: No, they're separate
-   - Could add `approximate_recording_id` based on timestamp match
-   - Recommendation: Keep separate for now, correlate in queries if needed
+   - **RESOLVED**: Live detections have `recording_id = NULL`
+   - Can correlate by `detected_at` timestamp to find overlapping recordings
+   - Query: `WHERE detected_at BETWEEN recording.start_time AND recording.end_time`
 
 2. **Multi-GPU Support**: Should worker support multiple GPUs?
    - Current design: Single GPU
