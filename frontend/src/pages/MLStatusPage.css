@@ -35,6 +35,9 @@
   background: #3a3a3a;
   border: 1px solid #444;
   border-radius: 4px;
+  font-size: 14px;
+  font-weight: normal;
+  font-family: inherit;
   color: #aaa;
   cursor: pointer;
   transition: all 0.2s;
@@ -47,9 +50,12 @@
 
 .control-button {
   padding: 8px 16px;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 4px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: normal;
+  font-family: inherit;
+  white-space: nowrap;
   cursor: pointer;
   transition: all 0.2s;
 }
