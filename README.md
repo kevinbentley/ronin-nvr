@@ -483,19 +483,6 @@ Primary configuration via environment variables:
 
 ---
 
-## Performance Characteristics
-
-| Metric | Typical Value |
-|--------|---------------|
-| Camera streaming CPU | ~5-10% per camera |
-| HLS live latency | 3-5 seconds |
-| YOLO inference (GPU) | ~20ms per frame |
-| YOLO inference (CPU) | ~100-300ms per frame |
-| Storage (1080p 24/7) | ~150GB/camera/month |
-| Storage (H.265 24/7) | ~50GB/camera/month |
-
----
-
 ## Future Considerations
 
 The architecture supports several planned enhancements:
