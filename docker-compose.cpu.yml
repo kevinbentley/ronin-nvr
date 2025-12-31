@@ -3,8 +3,12 @@
 # Use this on systems without NVIDIA GPU support.
 #
 # Usage:
-#   docker compose -f docker-compose.cpu.yml up -d
-#   docker compose -f docker-compose.cpu.yml up -d --scale ml-worker=2
+#   docker compose -f docker-compose.cpu.yml up -d                    # Live detection only
+#   docker compose -f docker-compose.cpu.yml --profile historical up -d  # Include historical ML
+#
+# ML Processing Modes:
+#   - live-detection: Real-time alerts from live streams (default, ~2-5s latency)
+#   - ml-worker: Historical analysis of completed recordings (use --profile historical)
 
 services:
   # PostgreSQL Database
@@ -76,8 +80,11 @@ services:
       timeout: 10s
       retries: 3
 
-  # ML Worker (CPU only) - uses standard Dockerfile
+  # ML Worker - Historical Analysis (processes completed recordings)
+  # Use --profile historical to enable
   ml-worker:
+    profiles:
+      - historical
     build:
       context: ./backend
       dockerfile: Dockerfile
