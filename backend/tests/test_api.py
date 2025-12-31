@@ -28,7 +28,7 @@ async def test_health_endpoint(client: AsyncClient) -> None:
     data = response.json()
     assert data["status"] == "ok"
     assert data["version"] == __version__
-    assert data["database"] == "ok"
+    assert data["database"] == "connected"
 
 
 @pytest.mark.asyncio

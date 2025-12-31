@@ -409,6 +409,10 @@ TBD
 
 ---
 
+## Bugs
+- If the browser window isn't tall enough, because of the aspect ratio of the video in playback window, the bottom part of the page, where the detections show up, is off-screen, unless you change the dimensions of the window. It probably should force the playback window to be a size that fits in the browser's dimensions.
+- It seems like it may not automatically start recording for new cameras when you add them.
+
 ## Future Features
 
 - Selectable camera grid - Choose which cameras to display

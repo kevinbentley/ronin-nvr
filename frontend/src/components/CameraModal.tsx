@@ -36,7 +36,10 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
   const [passwordModified, setPasswordModified] = useState(false);
   const hasExistingPassword = useRef(false);
 
-  const isEditing = !!camera;
+  // Track the saved camera ID after initial creation (for "Save & Test" flow)
+  const [savedCameraId, setSavedCameraId] = useState<number | null>(null);
+
+  const isEditing = !!camera || savedCameraId !== null;
 
   useEffect(() => {
     if (camera) {
@@ -105,7 +108,9 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
 
     try {
       let savedCamera: Camera;
-      if (isEditing && camera) {
+      const cameraId = camera?.id ?? savedCameraId;
+
+      if (isEditing && cameraId !== null) {
         // Build update payload - only include password if it was modified
         const updateData: CameraUpdate = {
           name: formData.name,
@@ -120,9 +125,11 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
         if (passwordModified && formData.password) {
           updateData.password = formData.password;
         }
-        savedCamera = await api.updateCamera(camera.id, updateData);
+        savedCamera = await api.updateCamera(cameraId, updateData);
       } else {
         savedCamera = await api.createCamera(formData);
+        // Track the ID so subsequent saves don't try to create again
+        setSavedCameraId(savedCamera.id);
       }
 
       if (andTest) {

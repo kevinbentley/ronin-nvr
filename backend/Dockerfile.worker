@@ -13,7 +13,7 @@
 # Run Transcode Worker (GPU auto-detected):
 #   docker run --gpus all ronin-worker python transcode_worker.py --continuous
 
-FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
 
 WORKDIR /app
 
@@ -45,8 +45,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # For GPU support, install onnxruntime-gpu instead of onnxruntime
-# Uncomment the next line if you want GPU inference for ML
-# RUN pip uninstall -y onnxruntime && pip install --no-cache-dir onnxruntime-gpu
+RUN pip uninstall -y onnxruntime && pip install --no-cache-dir onnxruntime-gpu
 
 # Copy application code
 COPY . .
