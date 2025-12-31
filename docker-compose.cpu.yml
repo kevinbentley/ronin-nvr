@@ -103,6 +103,39 @@ services:
         reservations:
           memory: 1G
 
+  # Live Detection Worker (CPU only, single instance)
+  live-detection:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ronin-live-detection
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ronin_nvr_user}:${POSTGRES_PASSWORD:-ronin_pass}@postgres:5432/${POSTGRES_DB:-ronin_nvr}
+      STORAGE_ROOT: /data/storage
+      LIVE_DETECTION_ENABLED: ${LIVE_DETECTION_ENABLED:-true}
+      LIVE_DETECTION_FPS: ${LIVE_DETECTION_FPS:-0.5}
+      LIVE_DETECTION_COOLDOWN: ${LIVE_DETECTION_COOLDOWN:-30.0}
+      LIVE_DETECTION_CONFIDENCE: ${LIVE_DETECTION_CONFIDENCE:-0.6}
+      LIVE_DETECTION_CLASSES: ${LIVE_DETECTION_CLASSES:-person,car,truck}
+      ML_CONFIDENCE_THRESHOLD: ${ML_CONFIDENCE_THRESHOLD:-0.5}
+      ML_CLASS_FILTER: ${ML_CLASS_FILTER:-person,car,truck,bus,motorcycle,bicycle,dog,cat}
+    volumes:
+      - storage_data:/data/storage
+      - ml_models:/data/storage/.ml/models
+    command: ["python", "live_detection_worker.py"]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
   # Transcode Worker (CPU only)
   transcode-worker:
     build:

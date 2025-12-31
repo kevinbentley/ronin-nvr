@@ -445,31 +445,17 @@ live-detection:
 
 ## Migration
 
-Alembic migration for new table:
+Alembic migration file: `backend/alembic/versions/20241230_add_live_detections.py`
 
-```python
-def upgrade():
-    op.create_table(
-        'live_detections',
-        sa.Column('id', sa.Integer(), primary_key=True),
-        sa.Column('camera_id', sa.Integer(), sa.ForeignKey('cameras.id', ondelete='CASCADE')),
-        sa.Column('class_name', sa.String(100), nullable=False),
-        sa.Column('confidence', sa.Float(), nullable=False),
-        sa.Column('bbox_x', sa.Float(), nullable=False),
-        sa.Column('bbox_y', sa.Float(), nullable=False),
-        sa.Column('bbox_width', sa.Float(), nullable=False),
-        sa.Column('bbox_height', sa.Float(), nullable=False),
-        sa.Column('model_name', sa.String(100), nullable=False),
-        sa.Column('detected_at', sa.TIMESTAMP(timezone=True), server_default=sa.func.now()),
-        sa.Column('notified', sa.Boolean(), default=True),
-        sa.Column('snapshot_path', sa.String(500), nullable=True),  # Path to JPG snapshot
-        sa.Column('llm_description', sa.Text(), nullable=True),     # Vision LLM description (future)
-    )
-    op.create_index('ix_live_detections_camera_detected', 'live_detections', ['camera_id', 'detected_at'])
-    op.create_index('ix_live_detections_class_name', 'live_detections', ['class_name'])
+Creates the `live_detections` table with indexes for:
+- `(camera_id, detected_at)` - primary query pattern
+- `class_name` - filtering by detection type
+- `detected_at` - retention cleanup
 
-def downgrade():
-    op.drop_table('live_detections')
+Run migration:
+```bash
+cd backend
+alembic upgrade head
 ```
 
 ## Testing Strategy

@@ -112,6 +112,43 @@ services:
               count: all
               capabilities: [gpu]
 
+  # Live Detection Worker (single instance, monitors all cameras)
+  live-detection:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: ronin-live-detection
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ronin_nvr_user}:${POSTGRES_PASSWORD:-ronin_pass}@postgres:5432/${POSTGRES_DB:-ronin_nvr}
+      STORAGE_ROOT: /data/storage
+      LIVE_DETECTION_ENABLED: ${LIVE_DETECTION_ENABLED:-true}
+      LIVE_DETECTION_FPS: ${LIVE_DETECTION_FPS:-1.0}
+      LIVE_DETECTION_COOLDOWN: ${LIVE_DETECTION_COOLDOWN:-30.0}
+      LIVE_DETECTION_CONFIDENCE: ${LIVE_DETECTION_CONFIDENCE:-0.6}
+      LIVE_DETECTION_CLASSES: ${LIVE_DETECTION_CLASSES:-person,car,truck}
+      ML_CONFIDENCE_THRESHOLD: ${ML_CONFIDENCE_THRESHOLD:-0.5}
+      ML_CLASS_FILTER: ${ML_CLASS_FILTER:-person,car,truck,bus,motorcycle,bicycle,dog,cat}
+    volumes:
+      - /opt2/ronin/storage:/data/storage
+      - /opt2/ronin/ml_models:/data/storage/.ml/models
+    command: ["python", "live_detection_worker.py"]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
   # Transcode Worker (can scale)
   transcode-worker:
     build:
