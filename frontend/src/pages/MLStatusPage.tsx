@@ -1,5 +1,8 @@
 /**
- * ML Status page showing ML system health, jobs, and detection statistics.
+ * ML Status page showing live detection status, detection statistics, and models.
+ *
+ * The system uses real-time detection from live camera streams (not worker-based
+ * queue processing). Historical recording processing is done via ml_worker containers.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -9,11 +12,15 @@ import type {
   MLJob,
   MLDetectionSummary,
   MLModel,
+  LiveDetectionStatus,
+  LiveDetection,
 } from '../types/camera';
 import './MLStatusPage.css';
 
 export function MLStatusPage() {
   const [mlStatus, setMlStatus] = useState<MLStatus | null>(null);
+  const [liveStatus, setLiveStatus] = useState<LiveDetectionStatus | null>(null);
+  const [recentDetections, setRecentDetections] = useState<LiveDetection[]>([]);
   const [jobs, setJobs] = useState<MLJob[]>([]);
   const [jobsTotal, setJobsTotal] = useState(0);
   const [detectionSummary, setDetectionSummary] = useState<MLDetectionSummary | null>(null);
@@ -25,13 +32,17 @@ export function MLStatusPage() {
   const loadData = useCallback(async () => {
     try {
       setError(null);
-      const [status, jobsResponse, summary, modelsResponse] = await Promise.all([
+      const [status, live, detections, jobsResponse, summary, modelsResponse] = await Promise.all([
         api.getMLStatus(),
+        api.getLiveDetectionStatus(),
+        api.getLiveDetections({ limit: 10 }),
         api.getMLJobs({ limit: 20 }),
         api.getMLDetectionSummary(),
         api.getMLModels(),
       ]);
       setMlStatus(status);
+      setLiveStatus(live);
+      setRecentDetections(detections.detections);
       setJobs(jobsResponse.jobs);
       setJobsTotal(jobsResponse.total);
       setDetectionSummary(summary);
@@ -45,12 +56,12 @@ export function MLStatusPage() {
 
   useEffect(() => {
     loadData();
-    // Refresh every 5 seconds for real-time job progress
+    // Refresh every 5 seconds for real-time updates
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
   }, [loadData]);
 
-  const formatDate = (dateStr: string | undefined): string => {
+  const formatDate = (dateStr: string | undefined | null): string => {
     if (!dateStr) return '-';
     return new Date(dateStr).toLocaleString();
   };
@@ -61,6 +72,20 @@ export function MLStatusPage() {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}m ${secs}s`;
+  };
+
+  const formatTimeAgo = (dateStr: string | null): string => {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSecs = Math.floor(diffMs / 1000);
+
+    if (diffSecs < 60) return `${diffSecs}s ago`;
+    const diffMins = Math.floor(diffSecs / 60);
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    return `${diffHours}h ago`;
   };
 
   const getJobStatusClass = (status: string): string => {
@@ -157,9 +182,6 @@ export function MLStatusPage() {
     );
   }
 
-  const activeWorkers = mlStatus?.worker_status.filter(w => w.running).length ?? 0;
-  const busyWorkers = mlStatus?.worker_status.filter(w => w.current_job !== null).length ?? 0;
-
   return (
     <div className="ml-status-page">
       <div className="ml-status-header">
@@ -215,9 +237,55 @@ export function MLStatusPage() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="ml-status-grid">
-        {/* System Status */}
+        {/* Live Detection Status */}
         <div className="ml-status-card">
-          <h3>System Status</h3>
+          <h3>Live Detection</h3>
+          <div className="status-items">
+            <div className="status-item">
+              <span className="label">Status</span>
+              <span className={`value ${liveStatus?.enabled ? 'good' : 'bad'}`}>
+                {liveStatus?.enabled ? 'Active' : 'Disabled'}
+              </span>
+            </div>
+            <div className="status-item">
+              <span className="label">Detections (1h)</span>
+              <span className={`value ${(liveStatus?.detections_last_hour ?? 0) > 0 ? 'good' : ''}`}>
+                {liveStatus?.detections_last_hour ?? 0}
+              </span>
+            </div>
+          </div>
+          {liveStatus?.config && (
+            <div className="config-section">
+              <h4>Configuration</h4>
+              <div className="config-items">
+                <span className="config-item">
+                  <strong>Model:</strong> {liveStatus.config.model}
+                </span>
+                <span className="config-item">
+                  <strong>FPS:</strong> {liveStatus.config.fps}
+                </span>
+                <span className="config-item">
+                  <strong>Cooldown:</strong> {liveStatus.config.cooldown}s
+                </span>
+                <span className="config-item">
+                  <strong>Confidence:</strong> {(liveStatus.config.confidence * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div className="config-classes">
+                <strong>Classes:</strong>{' '}
+                {liveStatus.config.classes.map((cls: string, i: number) => (
+                  <span key={cls} className="class-tag">
+                    {cls}{i < liveStatus.config.classes.length - 1 ? ', ' : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Historical Processing Status */}
+        <div className="ml-status-card">
+          <h3>Historical Processing</h3>
           <div className="status-items">
             <div className="status-item">
               <span className="label">ML Engine</span>
@@ -226,38 +294,15 @@ export function MLStatusPage() {
               </span>
             </div>
             <div className="status-item">
-              <span className="label">Workers</span>
-              <span className="value">
-                {busyWorkers} / {activeWorkers} busy
-              </span>
-            </div>
-            <div className="status-item">
-              <span className="label">Models Loaded</span>
-              <span className="value">{mlStatus?.models_loaded.length ?? 0}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Queue Status */}
-        <div className="ml-status-card">
-          <h3>Job Queue</h3>
-          <div className="status-items">
-            <div className="status-item">
-              <span className="label">Pending</span>
+              <span className="label">Pending Jobs</span>
               <span className={`value ${(mlStatus?.queue.pending ?? 0) > 10 ? 'warning' : ''}`}>
                 {mlStatus?.queue.pending ?? 0}
               </span>
             </div>
             <div className="status-item">
-              <span className="label">Active</span>
+              <span className="label">Active Jobs</span>
               <span className={`value ${(mlStatus?.queue.active ?? 0) > 0 ? 'processing' : ''}`}>
                 {mlStatus?.queue.active ?? 0}
-              </span>
-            </div>
-            <div className="status-item">
-              <span className="label">Queue Capacity</span>
-              <span className="value">
-                {mlStatus?.queue.max_size ?? 100}
               </span>
             </div>
           </div>
@@ -292,35 +337,34 @@ export function MLStatusPage() {
           )}
         </div>
 
-        {/* Workers */}
+        {/* Recent Live Detections */}
         <div className="ml-status-card">
-          <h3>Workers</h3>
-          {mlStatus && mlStatus.worker_status.length > 0 ? (
-            <div className="workers-grid">
-              {mlStatus.worker_status.map((worker) => (
-                <div
-                  key={worker.id}
-                  className={`worker-item ${worker.current_job ? 'busy' : 'idle'}`}
-                >
-                  <span className="worker-id">Worker {worker.id}</span>
-                  <span className={`worker-status ${worker.running ? 'running' : 'stopped'}`}>
-                    {worker.current_job
-                      ? `Job #${worker.current_job}`
-                      : worker.running
-                      ? 'Idle'
-                      : 'Stopped'}
-                  </span>
+          <h3>Recent Live Detections</h3>
+          {recentDetections.length > 0 ? (
+            <div className="recent-detections">
+              {recentDetections.map((det) => (
+                <div key={det.id} className="detection-item">
+                  <div className="detection-main">
+                    <span className="detection-class">{det.class_name}</span>
+                    <span className="detection-confidence">
+                      {(det.confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="detection-meta">
+                    <span className="detection-camera">Camera {det.camera_id}</span>
+                    <span className="detection-time">{formatTimeAgo(det.detected_at)}</span>
+                  </div>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="no-data">No workers configured</p>
+            <p className="no-data">No recent detections</p>
           )}
         </div>
 
         {/* Recent Jobs */}
         <div className="ml-status-card wide">
-          <h3>Recent Jobs ({jobsTotal} total)</h3>
+          <h3>Recent Historical Jobs ({jobsTotal} total)</h3>
           {jobs.length > 0 ? (
             <div className="jobs-table-container">
             <table className="jobs-table">

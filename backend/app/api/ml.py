@@ -807,6 +807,7 @@ async def get_live_detection_status(
             "cooldown": settings.live_detection_cooldown,
             "confidence": settings.live_detection_confidence,
             "classes": settings.live_detection_classes.split(","),
+            "model": settings.ml_default_model,
         },
         "detections_last_hour": recent_count,
         "active_cameras": active_cameras,

@@ -222,3 +222,39 @@ export interface TimelineEventsResponse {
   total: number;
   class_counts: Record<string, number>;
 }
+
+// Live Detection types
+export interface LiveDetectionConfig {
+  fps: number;
+  cooldown: number;
+  confidence: number;
+  classes: string[];
+  model: string;
+}
+
+export interface LiveDetectionStatus {
+  enabled: boolean;
+  config: LiveDetectionConfig;
+  detections_last_hour: number;
+  active_cameras: number[];
+}
+
+export interface LiveDetection {
+  id: number;
+  camera_id: number;
+  class_name: string;
+  confidence: number;
+  detected_at: string | null;
+  snapshot_url: string | null;
+  bbox: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+export interface LiveDetectionsResponse {
+  detections: LiveDetection[];
+  count: number;
+}

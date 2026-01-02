@@ -442,3 +442,97 @@
   font-style: italic;
   margin: 16px 0;
 }
+
+/* Live Detection Config Section */
+.config-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #3a3a3a;
+}
+
+.config-section h4 {
+  margin: 0 0 12px 0;
+}
+
+.config-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.config-item {
+  font-size: 13px;
+  color: #aaa;
+}
+
+.config-item strong {
+  color: #888;
+  font-weight: 500;
+}
+
+.config-classes {
+  font-size: 13px;
+  color: #aaa;
+}
+
+.config-classes strong {
+  color: #888;
+  font-weight: 500;
+}
+
+.class-tag {
+  color: #ddd;
+}
+
+/* Recent Live Detections */
+.recent-detections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detection-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: #333;
+  border-radius: 6px;
+  border-left: 3px solid #4caf50;
+}
+
+.detection-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.detection-class {
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  text-transform: capitalize;
+}
+
+.detection-confidence {
+  font-size: 12px;
+  color: #4caf50;
+  font-weight: 500;
+}
+
+.detection-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.detection-camera {
+  font-size: 12px;
+  color: #888;
+}
+
+.detection-time {
+  font-size: 12px;
+  color: #666;
+}

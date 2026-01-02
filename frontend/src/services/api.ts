@@ -20,6 +20,8 @@ import type {
   MLDetectionSummary,
   MLModelListResponse,
   TimelineEventsResponse,
+  LiveDetectionStatus,
+  LiveDetectionsResponse,
 } from '../types/camera';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -351,6 +353,22 @@ class ApiClient {
     min_confidence?: number;
   }): Promise<TimelineEventsResponse> {
     const response = await this.client.get('/ml/detections/timeline', { params });
+    return response.data;
+  }
+
+  // Live Detection API
+  async getLiveDetectionStatus(): Promise<LiveDetectionStatus> {
+    const response = await this.client.get('/ml/live-detections/status');
+    return response.data;
+  }
+
+  async getLiveDetections(params?: {
+    camera_id?: number;
+    class_name?: string;
+    since?: string;
+    limit?: number;
+  }): Promise<LiveDetectionsResponse> {
+    const response = await this.client.get('/ml/live-detections', { params });
     return response.data;
   }
 }
