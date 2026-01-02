@@ -1,36 +1,76 @@
 /**
  * Playback page for viewing recorded videos.
+ *
+ * Date handling: The backend stores all timestamps in UTC. This component
+ * converts UTC timestamps to local dates/times for display using the browser's
+ * timezone. Available dates are derived client-side by grouping recordings
+ * by their local date.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import { DatePicker } from '../components/DatePicker';
 import { Timeline } from '../components/Timeline';
 import { RecordingPlayer } from '../components/RecordingPlayer';
-import type { DayRecordings, RecordingFile, TimelineEvent } from '../types/camera';
+import type { RecordingFile, TimelineEvent } from '../types/camera';
 import './PlaybackPage.css';
 
 /**
  * Format an ISO timestamp string as a local time string.
- * The backend stores times in UTC, so we convert to local time for display.
  */
 function formatRecordingTime(isoString: string): string {
   const date = new Date(isoString);
   return date.toLocaleTimeString();
 }
 
+/**
+ * Get the local date string (YYYY-MM-DD) for a UTC timestamp.
+ */
+function getLocalDateString(isoString: string): string {
+  const date = new Date(isoString);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Get today's date string in local timezone.
+ */
+function getTodayString(): string {
+  return getLocalDateString(new Date().toISOString());
+}
+
 export function PlaybackPage() {
   const [cameras, setCameras] = useState<string[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string>('');
-  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [allRecordings, setAllRecordings] = useState<RecordingFile[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
-  const [dayRecordings, setDayRecordings] = useState<DayRecordings | null>(null);
   const [selectedRecording, setSelectedRecording] = useState<RecordingFile | null>(null);
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [eventClassCounts, setEventClassCounts] = useState<Record<string, number>>({});
   const [selectedEventTypes, setSelectedEventTypes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Derive available dates from recordings (grouped by local date)
+  const availableDates = useMemo(() => {
+    const dateSet = new Set<string>();
+    allRecordings.forEach((rec) => {
+      const localDate = getLocalDateString(rec.start_time);
+      dateSet.add(localDate);
+    });
+    // Sort descending (most recent first)
+    return Array.from(dateSet).sort((a, b) => b.localeCompare(a));
+  }, [allRecordings]);
+
+  // Filter recordings for the selected local date
+  const dayRecordings = useMemo(() => {
+    if (!selectedDate) return [];
+    return allRecordings
+      .filter((rec) => getLocalDateString(rec.start_time) === selectedDate)
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  }, [allRecordings, selectedDate]);
 
   // Load cameras with recordings
   useEffect(() => {
@@ -50,50 +90,65 @@ export function PlaybackPage() {
     loadCameras();
   }, []);
 
-  // Load available dates when camera changes
+  // Load all recordings when camera changes
   useEffect(() => {
-    if (!selectedCamera) return;
-
-    const loadDates = async () => {
-      try {
-        const dates = await api.getAvailableDates(selectedCamera);
-        setAvailableDates(dates);
-        if (dates.length > 0) {
-          setSelectedDate(dates[0]); // Most recent date
-        } else {
-          setSelectedDate('');
-          setDayRecordings(null);
-        }
-      } catch (err) {
-        setError('Failed to load dates');
-      }
-    };
-    loadDates();
-  }, [selectedCamera]);
-
-  // Load day recordings when date changes
-  useEffect(() => {
-    if (!selectedCamera || !selectedDate) {
-      setDayRecordings(null);
+    if (!selectedCamera) {
+      setAllRecordings([]);
       return;
     }
 
     const loadRecordings = async () => {
       try {
-        const recordings = await api.getDayRecordings(selectedCamera, selectedDate);
-        setDayRecordings(recordings);
-        if (recordings.files.length > 0) {
-          setSelectedRecording(recordings.files[0]);
-        } else {
-          setSelectedRecording(null);
+        // Fetch recordings for this camera, paginating if necessary
+        const allRecs: RecordingFile[] = [];
+        let offset = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          const result = await api.listRecordings({
+            camera_name: selectedCamera,
+            limit: pageSize,
+            offset,
+          });
+          allRecs.push(...result.recordings);
+          offset += pageSize;
+          hasMore = result.recordings.length === pageSize && offset < result.total;
         }
+
+        setAllRecordings(allRecs);
       } catch (err) {
-        setDayRecordings(null);
-        setSelectedRecording(null);
+        setError('Failed to load recordings');
+        setAllRecordings([]);
       }
     };
     loadRecordings();
-  }, [selectedCamera, selectedDate]);
+  }, [selectedCamera]);
+
+  // Auto-select the most recent date when available dates change
+  useEffect(() => {
+    if (availableDates.length > 0 && !availableDates.includes(selectedDate)) {
+      // Prefer today if available, otherwise most recent
+      const today = getTodayString();
+      if (availableDates.includes(today)) {
+        setSelectedDate(today);
+      } else {
+        setSelectedDate(availableDates[0]);
+      }
+    } else if (availableDates.length === 0) {
+      setSelectedDate('');
+    }
+  }, [availableDates]);
+
+  // Auto-select first recording when day recordings change
+  useEffect(() => {
+    if (dayRecordings.length > 0) {
+      // Select the first recording of the day
+      setSelectedRecording(dayRecordings[0]);
+    } else {
+      setSelectedRecording(null);
+    }
+  }, [dayRecordings]);
 
   // Load timeline events when camera/date changes
   useEffect(() => {
@@ -147,9 +202,7 @@ export function PlaybackPage() {
 
   const handleEventClick = useCallback((event: TimelineEvent) => {
     // Find the recording that contains this event
-    if (!dayRecordings) return;
-
-    const targetRecording = dayRecordings.files.find(
+    const targetRecording = dayRecordings.find(
       (rec) => rec.id === String(event.recording_id)
     );
 
@@ -277,9 +330,9 @@ export function PlaybackPage() {
         </div>
 
         <div className="timeline-container">
-          {dayRecordings && (
+          {dayRecordings.length > 0 && (
             <Timeline
-              recordings={dayRecordings.files}
+              recordings={dayRecordings}
               selectedRecording={selectedRecording}
               onSelectRecording={handleTimelineClick}
               events={filteredEvents}

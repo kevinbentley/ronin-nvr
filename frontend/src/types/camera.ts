@@ -242,6 +242,7 @@ export interface LiveDetectionStatus {
 export interface LiveDetection {
   id: number;
   camera_id: number;
+  camera_name: string;
   class_name: string;
   confidence: number;
   detected_at: string | null;

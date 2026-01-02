@@ -74,18 +74,16 @@ export function MLStatusPage() {
     return `${mins}m ${secs}s`;
   };
 
-  const formatTimeAgo = (dateStr: string | null): string => {
+  const formatDetectionTime = (dateStr: string | null): string => {
     if (!dateStr) return '-';
     const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffSecs = Math.floor(diffMs / 1000);
-
-    if (diffSecs < 60) return `${diffSecs}s ago`;
-    const diffMins = Math.floor(diffSecs / 60);
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    return `${diffHours}h ago`;
+    return date.toLocaleString(undefined, {
+      month: 'numeric',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
   };
 
   const getJobStatusClass = (status: string): string => {
@@ -344,15 +342,17 @@ export function MLStatusPage() {
             <div className="recent-detections">
               {recentDetections.map((det) => (
                 <div key={det.id} className="detection-item">
-                  <div className="detection-main">
-                    <span className="detection-class">{det.class_name}</span>
-                    <span className="detection-confidence">
-                      {(det.confidence * 100).toFixed(0)}%
+                  <div className="detection-summary">
+                    <span className="detection-camera">{det.camera_name}</span>
+                    <span className="detection-timestamp">
+                      {formatDetectionTime(det.detected_at)}
                     </span>
                   </div>
-                  <div className="detection-meta">
-                    <span className="detection-camera">Camera {det.camera_id}</span>
-                    <span className="detection-time">{formatTimeAgo(det.detected_at)}</span>
+                  <div className="detection-details">
+                    <span className="detection-class">{det.class_name}</span>
+                    <span className="detection-confidence">
+                      ({(det.confidence * 100).toFixed(0)}%)
+                    </span>
                   </div>
                 </div>
               ))}

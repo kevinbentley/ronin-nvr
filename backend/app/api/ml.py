@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.database import get_db
@@ -733,7 +734,11 @@ async def get_live_detections(
     Live detections are those with recording_id=NULL, meaning they came
     from real-time stream analysis rather than historical file processing.
     """
-    query = select(Detection).where(Detection.recording_id.is_(None))
+    query = (
+        select(Detection)
+        .where(Detection.recording_id.is_(None))
+        .options(selectinload(Detection.camera))
+    )
 
     if camera_id:
         query = query.where(Detection.camera_id == camera_id)
@@ -751,6 +756,7 @@ async def get_live_detections(
             {
                 "id": d.id,
                 "camera_id": d.camera_id,
+                "camera_name": d.camera.name if d.camera else f"Camera {d.camera_id}",
                 "class_name": d.class_name,
                 "confidence": d.confidence,
                 "detected_at": d.detected_at.isoformat() if d.detected_at else None,
