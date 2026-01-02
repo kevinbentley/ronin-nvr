@@ -6,6 +6,25 @@ import { useMemo } from 'react';
 import type { RecordingFile, TimelineEvent } from '../types/camera';
 import './Timeline.css';
 
+/**
+ * Parse hours and minutes from an ISO timestamp, converting UTC to local time.
+ */
+function parseTimeFromISO(isoString: string): { hours: number; minutes: number } {
+  const date = new Date(isoString);
+  return {
+    hours: date.getHours(),
+    minutes: date.getMinutes(),
+  };
+}
+
+/**
+ * Format an ISO timestamp as a local time string.
+ */
+function formatTimeFromISO(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 // Event type colors for visual differentiation
 const EVENT_COLORS: Record<string, string> = {
   motion: '#ff5722',     // Deep orange for motion
@@ -48,9 +67,7 @@ export function Timeline({
   // Map recordings to timeline positions
   const recordingBlocks = useMemo(() => {
     return recordings.map((rec) => {
-      const startTime = new Date(rec.start_time);
-      const startHour = startTime.getHours();
-      const startMinute = startTime.getMinutes();
+      const { hours: startHour, minutes: startMinute } = parseTimeFromISO(rec.start_time);
       const durationMinutes = rec.duration_seconds ? rec.duration_seconds / 60 : 15;
 
       // Calculate position as percentage of day
@@ -112,7 +129,7 @@ export function Timeline({
             }`}
             style={{ left, width }}
             onClick={() => onSelectRecording(recording)}
-            title={`${new Date(recording.start_time).toLocaleTimeString()} - ${
+            title={`${formatTimeFromISO(recording.start_time)} - ${
               recording.duration_seconds
                 ? `${Math.floor(recording.duration_seconds / 60)} min`
                 : 'Unknown duration'

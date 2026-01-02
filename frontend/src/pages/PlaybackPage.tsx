@@ -10,6 +10,15 @@ import { RecordingPlayer } from '../components/RecordingPlayer';
 import type { DayRecordings, RecordingFile, TimelineEvent } from '../types/camera';
 import './PlaybackPage.css';
 
+/**
+ * Format an ISO timestamp string as a local time string.
+ * The backend stores times in UTC, so we convert to local time for display.
+ */
+function formatRecordingTime(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleTimeString();
+}
+
 export function PlaybackPage() {
   const [cameras, setCameras] = useState<string[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string>('');
@@ -208,7 +217,7 @@ export function PlaybackPage() {
             <div className="clip-info">
               <p>
                 <strong>Time:</strong>{' '}
-                {new Date(selectedRecording.start_time).toLocaleTimeString()}
+                {formatRecordingTime(selectedRecording.start_time)}
               </p>
               <p>
                 <strong>Duration:</strong>{' '}
@@ -258,9 +267,7 @@ export function PlaybackPage() {
           {selectedRecording ? (
             <RecordingPlayer
               src={api.getRecordingStreamUrl(selectedRecording.id)}
-              title={`${selectedCamera} - ${new Date(
-                selectedRecording.start_time
-              ).toLocaleTimeString()}`}
+              title={`${selectedCamera} - ${formatRecordingTime(selectedRecording.start_time)}`}
             />
           ) : (
             <div className="no-selection">

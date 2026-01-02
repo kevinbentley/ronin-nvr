@@ -133,10 +133,10 @@ class PlaybackService:
                     if not file_time:
                         continue
 
-                    # Combine date and time with UTC timezone
-                    # Note: filename encodes local time when recorded, but we treat
-                    # it as UTC for consistent handling. The frontend will display
-                    # in the user's local timezone.
+                    # Combine date and time with UTC timezone.
+                    # Note: filename encodes local time when recorded, but we
+                    # store as UTC for consistent backend handling. The frontend
+                    # is responsible for displaying without timezone conversion.
                     start_dt = datetime.combine(
                         rec_date, file_time.time(), tzinfo=timezone.utc
                     )
@@ -179,7 +179,7 @@ class PlaybackService:
         if not rec_date or not file_time:
             return None
 
-        # Combine date and time with UTC timezone (matches scan_recordings behavior)
+        # Combine date and time with UTC timezone (matches scan_recordings)
         start_dt = datetime.combine(rec_date, file_time.time(), tzinfo=timezone.utc)
 
         try:

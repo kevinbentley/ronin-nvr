@@ -52,6 +52,7 @@ services:
       HOST: 0.0.0.0
       PORT: 8000
       DEBUG: ${DEBUG:-false}
+      TZ: ${TZ:-America/Denver}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-}
@@ -102,6 +103,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ronin_nvr_user}:${POSTGRES_PASSWORD:-ronin_pass}@postgres:5432/${POSTGRES_DB:-ronin_nvr}
       STORAGE_ROOT: /data/storage
+      TZ: ${TZ:-America/Denver}
       ML_WORKERS: 1
       ML_DEFAULT_FPS: ${ML_DEFAULT_FPS:-2.0}
       ML_CONFIDENCE_THRESHOLD: ${ML_CONFIDENCE_THRESHOLD:-0.5}
@@ -137,6 +139,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ronin_nvr_user}:${POSTGRES_PASSWORD:-ronin_pass}@postgres:5432/${POSTGRES_DB:-ronin_nvr}
       STORAGE_ROOT: /data/storage
+      TZ: ${TZ:-America/Denver}
       LIVE_DETECTION_ENABLED: ${LIVE_DETECTION_ENABLED:-true}
       LIVE_DETECTION_FPS: ${LIVE_DETECTION_FPS:-1.0}
       LIVE_DETECTION_COOLDOWN: ${LIVE_DETECTION_COOLDOWN:-30.0}
@@ -170,6 +173,7 @@ services:
       - backend
     environment:
       STORAGE_ROOT: /data/storage
+      TZ: ${TZ:-America/Denver}
       TRANSCODE_CRF: ${TRANSCODE_CRF:-28}
       TRANSCODE_PRESET: ${TRANSCODE_PRESET:-medium}
     volumes:
