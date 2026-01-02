@@ -76,7 +76,6 @@ services:
       dockerfile: Dockerfile
     container_name: ronin-frontend
     restart: unless-stopped
-    user: "1000:1000"
     depends_on:
       - backend
     ports:
