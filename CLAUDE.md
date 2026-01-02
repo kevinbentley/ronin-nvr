@@ -289,3 +289,158 @@ When deleting files, make sure to stash or commit them to the repository first, 
    - Use POSIX-compatible constructs when possible
    - Document bash-specific features used
    - Document and maintain a SYSTEM.md file that tracks dependencies including things like CMake, gcc versions, packages like ffmpg, etc.
+
+## Docker Compose Development
+
+This project uses Docker Compose to orchestrate all services. There are two compose files:
+- `docker-compose.yml` - GPU-enabled configuration (requires nvidia-container-toolkit)
+- `docker-compose.cpu.yml` - CPU-only configuration (no GPU support)
+
+### Services
+
+| Service | Container Name | Purpose | Port |
+|---------|---------------|---------|------|
+| postgres | ronin-postgres | PostgreSQL 16 database | 5432 |
+| backend | ronin-backend | FastAPI application server | 8000 |
+| frontend | ronin-frontend | React app served via Nginx | 80 |
+| live-detection | ronin-live-detection | Real-time ML detection worker | - |
+| ml-worker | (scaled) | Historical recording analysis | - |
+| transcode-worker | (scaled) | H.265 video transcoding | - |
+
+### Common Commands
+
+```bash
+# Start all default services (live detection enabled)
+docker compose up -d
+
+# Start with historical ML processing enabled
+docker compose --profile historical up -d
+
+# CPU-only mode (no NVIDIA GPU)
+docker compose -f docker-compose.cpu.yml up -d
+
+# View logs for specific service
+docker compose logs -f backend
+docker compose logs -f live-detection
+
+# Rebuild after code changes
+docker compose build backend
+docker compose up -d backend
+
+# Rebuild all services
+docker compose build
+docker compose up -d
+
+# Stop all services
+docker compose down
+
+# Stop and remove volumes (WARNING: deletes database)
+docker compose down -v
+
+# Check service status
+docker compose ps
+
+# Restart a specific service
+docker compose restart backend
+```
+
+### Testing During Development
+
+```bash
+# Run backend tests (from host, uses local venv)
+cd backend && uv run pytest
+
+# Run specific test file
+cd backend && uv run pytest tests/unit/test_camera_stream.py
+
+# Run tests inside container
+docker compose exec backend pytest
+
+# Check backend health
+curl http://localhost:8000/api/health
+
+# View database directly
+docker compose exec postgres psql -U ronin_nvr_user -d ronin_nvr
+```
+
+### Building and Debugging
+
+```bash
+# Build specific service with no cache
+docker compose build --no-cache backend
+
+# View build output
+docker compose build --progress=plain backend
+
+# Shell into running container
+docker compose exec backend bash
+docker compose exec postgres bash
+
+# View container resource usage
+docker stats
+
+# Check GPU availability in worker
+docker compose exec live-detection nvidia-smi
+
+# Tail all logs
+docker compose logs -f
+
+# View last 100 lines of backend logs
+docker compose logs --tail=100 backend
+```
+
+### Environment Configuration
+
+Copy `.env.example` to `.env` and configure:
+
+```bash
+# Required for production
+JWT_SECRET_KEY=<generate-with-python-secrets>
+ENCRYPTION_KEY=<generate-fernet-key>
+
+# Database (defaults work for development)
+POSTGRES_USER=ronin_nvr_user
+POSTGRES_PASSWORD=ronin_pass
+POSTGRES_DB=ronin_nvr
+
+# ML tuning
+ML_CONFIDENCE_THRESHOLD=0.5
+LIVE_DETECTION_FPS=1.0
+LIVE_DETECTION_COOLDOWN=30.0
+```
+
+### Volume Mounts (Production)
+
+The GPU compose file uses host paths for persistent data:
+- `/opt2/ronin/postgres` - Database files
+- `/opt2/ronin/storage` - Video recordings
+- `/opt2/ronin/ml_models` - ONNX model cache
+
+The CPU compose file uses named Docker volumes instead.
+
+### Database Migrations
+
+Migrations run automatically on backend startup via `docker-entrypoint.sh`:
+```bash
+# Manual migration (inside container)
+docker compose exec backend alembic upgrade head
+
+# Create new migration
+docker compose exec backend alembic revision --autogenerate -m "description"
+
+# Check migration status
+docker compose exec backend alembic current
+```
+
+### Profiles
+
+- **Default profile**: Starts postgres, backend, frontend, live-detection, transcode-worker
+- **historical profile**: Adds ml-worker for processing completed recordings
+
+```bash
+# Enable historical processing
+docker compose --profile historical up -d
+
+# Disable it later
+docker compose stop ml-worker
+```

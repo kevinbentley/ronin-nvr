@@ -17,6 +17,7 @@ from app.rate_limiter import limiter
 from app.services.camera_stream import stream_manager
 from app.services.retention import retention_monitor
 from app.services.status_monitor import status_monitor
+from app.services.startup import auto_start_recording_cameras
 from app.services.ml import ml_coordinator, recording_watcher
 from app.services.ml.live_detection_listener import live_detection_listener
 
@@ -91,6 +92,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await create_default_admin()
         except Exception as e:
             logger.warning(f"Failed to create default admin: {e}")
+
+        # Auto-start streams for cameras with recording enabled
+        try:
+            await auto_start_recording_cameras()
+        except Exception as e:
+            logger.warning(f"Failed to auto-start camera streams: {e}")
 
     # Start retention monitor
     try:

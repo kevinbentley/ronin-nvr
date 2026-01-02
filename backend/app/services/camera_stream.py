@@ -42,6 +42,10 @@ class CameraStream:
     Outputs both HLS (for live view) and MP4 segments (for recording).
     """
 
+    # Watchdog settings
+    WATCHDOG_CHECK_INTERVAL = 10  # Check every 10 seconds
+    WATCHDOG_STALE_THRESHOLD = 30  # Consider stale if no new segment in 30 seconds
+
     def __init__(
         self,
         camera: Camera,
@@ -72,7 +76,9 @@ class CameraStream:
         self._recording_enabled = True
         self._monitor_task: Optional[asyncio.Task] = None
         self._stderr_task: Optional[asyncio.Task] = None
+        self._watchdog_task: Optional[asyncio.Task] = None
         self._last_stderr_lines: list[str] = []
+        self._last_segment_time: Optional[datetime] = None
 
     @property
     def state(self) -> StreamState:
@@ -264,11 +270,13 @@ class CameraStream:
 
         self._state = StreamState.RUNNING
         self._start_time = utc_now()
-        self._last_stderr_lines: list[str] = []
+        self._last_stderr_lines = []
+        self._last_segment_time = utc_now()  # Initialize for watchdog grace period
 
         # Start monitoring tasks
         self._monitor_task = asyncio.create_task(self._monitor_process())
         self._stderr_task = asyncio.create_task(self._read_stderr())
+        self._watchdog_task = asyncio.create_task(self._watchdog())
 
     async def _read_stderr(self) -> None:
         """Read FFmpeg stderr in real-time for debugging."""
@@ -329,6 +337,88 @@ class CameraStream:
         finally:
             if log_file:
                 log_file.close()
+
+    async def _watchdog(self) -> None:
+        """Monitor HLS segment creation to detect stale streams.
+
+        FFmpeg can hang on stale RTSP connections without exiting. This watchdog
+        monitors segment file creation and triggers reconnection if no new
+        segments are produced within the threshold.
+        """
+        # Initial grace period - wait for FFmpeg to start producing segments
+        await asyncio.sleep(self.WATCHDOG_STALE_THRESHOLD)
+
+        while self._state == StreamState.RUNNING:
+            try:
+                await asyncio.sleep(self.WATCHDOG_CHECK_INTERVAL)
+
+                if self._state != StreamState.RUNNING:
+                    break
+
+                # Find the newest segment file
+                newest_segment_time = self._get_newest_segment_time()
+
+                if newest_segment_time:
+                    self._last_segment_time = newest_segment_time
+
+                # Check if segments are stale
+                if self._last_segment_time:
+                    age = (utc_now() - self._last_segment_time).total_seconds()
+                    if age > self.WATCHDOG_STALE_THRESHOLD:
+                        logger.warning(
+                            f"Watchdog: No new segments for '{self.camera_name}' "
+                            f"in {age:.0f}s (threshold: {self.WATCHDOG_STALE_THRESHOLD}s)"
+                        )
+                        self._error_message = f"Stream stale - no output for {age:.0f}s"
+                        await self._kill_and_reconnect()
+                        return
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug(f"Watchdog error for '{self.camera_name}': {e}")
+
+    def _get_newest_segment_time(self) -> Optional[datetime]:
+        """Get the modification time of the newest HLS segment."""
+        try:
+            segments = list(self.hls_directory.glob("*.ts"))
+            if not segments:
+                return None
+
+            newest = max(segments, key=lambda p: p.stat().st_mtime)
+            mtime = newest.stat().st_mtime
+            return datetime.fromtimestamp(mtime, tz=timezone.utc)
+        except (OSError, ValueError):
+            return None
+
+    async def _kill_and_reconnect(self) -> None:
+        """Kill a hung FFmpeg process and trigger reconnection."""
+        if self._state == StreamState.STOPPED:
+            return
+
+        logger.info(f"Killing hung FFmpeg for '{self.camera_name}'")
+
+        # Cancel other monitoring tasks first
+        for task in [self._monitor_task, self._stderr_task]:
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        # Kill the process
+        if self._process:
+            try:
+                self._process.kill()
+                await asyncio.wait_for(self._process.wait(), timeout=5.0)
+            except (ProcessLookupError, asyncio.TimeoutError):
+                pass
+            finally:
+                self._process = None
+
+        # Trigger reconnection
+        await self._handle_disconnect()
 
     async def _monitor_process(self) -> None:
         """Monitor FFmpeg process and handle failures."""
@@ -399,7 +489,7 @@ class CameraStream:
         self._state = StreamState.STOPPED
 
         # Cancel monitoring tasks
-        for task in [self._monitor_task, self._stderr_task]:
+        for task in [self._monitor_task, self._stderr_task, self._watchdog_task]:
             if task:
                 task.cancel()
                 try:
@@ -408,6 +498,7 @@ class CameraStream:
                     pass
         self._monitor_task = None
         self._stderr_task = None
+        self._watchdog_task = None
 
         if self._process:
             try:
@@ -445,6 +536,12 @@ class CameraStream:
 
     def get_status(self) -> dict:
         """Get stream status."""
+        # Get latest segment info for watchdog status
+        newest_segment = self._get_newest_segment_time()
+        segment_age = None
+        if newest_segment:
+            segment_age = (utc_now() - newest_segment).total_seconds()
+
         return {
             "camera_id": self.camera_id,
             "camera_name": self.camera_name,
@@ -455,6 +552,7 @@ class CameraStream:
             "start_time": self._start_time.isoformat() if self._start_time else None,
             "recording_directory": str(self.recording_directory),
             "reconnect_attempts": self._reconnect_attempts,
+            "last_segment_age_seconds": round(segment_age, 1) if segment_age else None,
             "ffmpeg_output": self._last_stderr_lines[-10:] if self._last_stderr_lines else [],
             "ffmpeg_log_path": str(self.ffmpeg_log_path),
         }

@@ -85,10 +85,12 @@ def run_migrations() -> None:
 
 
 async def init_db() -> None:
-    """Initialize database - run migrations and verify connection."""
-    # Run Alembic migrations first (synchronous)
-    run_migrations()
+    """Initialize database and verify connection.
 
+    Note: Migrations are handled by docker-entrypoint.sh before the
+    application starts. We skip running migrations here because Alembic's
+    asyncio.run() conflicts with FastAPI's already-running event loop.
+    """
     # Verify connection works
     async with engine.begin() as conn:
         # Just verify we can connect - migrations handle schema

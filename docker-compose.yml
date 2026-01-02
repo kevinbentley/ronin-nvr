@@ -76,6 +76,7 @@ services:
       dockerfile: Dockerfile
     container_name: ronin-frontend
     restart: unless-stopped
+    user: "1000:1000"
     depends_on:
       - backend
     ports:
@@ -95,6 +96,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile.worker
     restart: unless-stopped
+    user: "1000:1000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -127,6 +129,7 @@ services:
       dockerfile: Dockerfile.worker
     container_name: ronin-live-detection
     restart: unless-stopped
+    user: "1000:1000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -163,6 +166,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile.worker
     restart: unless-stopped
+    user: "1000:1000"
     depends_on:
       - backend
     environment:

@@ -450,6 +450,7 @@ class TestGetStatus:
             "start_time",
             "recording_directory",
             "reconnect_attempts",
+            "last_segment_age_seconds",
             "ffmpeg_output",
             "ffmpeg_log_path",
         }

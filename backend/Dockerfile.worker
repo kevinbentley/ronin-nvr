@@ -13,25 +13,28 @@
 # Run Transcode Worker (GPU auto-detected):
 #   docker run --gpus all ronin-worker python transcode_worker.py --continuous
 
-FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
+# Use NVIDIA CUDA base image with cuDNN for GPU-accelerated ML inference
+# CUDA 12.6 + cuDNN 9 is required for onnxruntime-gpu
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
 
 WORKDIR /app
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies including FFmpeg with NVENC support
+# Install Python, FFmpeg, and system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-venv \
+    python3 \
+    python3-venv \
     python3-pip \
-    libpq5 \
     ffmpeg \
+    libpq5 \
     libsm6 \
     libxext6 \
     libgl1 \
+    libnuma1 \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python
+    && ln -sf /usr/bin/python3 /usr/bin/python
 
 # Create and activate virtual environment
 RUN python -m venv /opt/venv

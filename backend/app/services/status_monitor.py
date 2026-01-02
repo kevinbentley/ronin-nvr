@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import select
@@ -76,7 +77,26 @@ class CameraStatusMonitor:
             await db.commit()
 
     async def _check_camera(self, db: AsyncSession, camera: Camera) -> None:
-        """Check status of a single camera."""
+        """Check status of a single camera.
+
+        Skips cameras with active streams to avoid opening conflicting RTSP
+        connections. Many cameras only support 1-2 concurrent connections.
+        """
+        # Import here to avoid circular import
+        from app.services.camera_stream import stream_manager
+
+        # Skip cameras with active streams - FFmpeg is already monitoring them
+        # Opening a second RTSP connection via ffprobe can cause the camera
+        # to drop the existing FFmpeg connection
+        if stream_manager.is_running(camera.id):
+            # Stream is active, so camera is online
+            if camera.status != CameraStatus.ONLINE.value:
+                logger.info(f"Camera '{camera.name}' is ONLINE (active stream)")
+            camera.status = CameraStatus.ONLINE.value
+            camera.error_message = None
+            camera.last_seen = datetime.utcnow()
+            return
+
         try:
             result = await test_camera_connection(camera)
 
@@ -85,7 +105,6 @@ class CameraStatusMonitor:
                     logger.info(f"Camera '{camera.name}' is now ONLINE")
                 camera.status = CameraStatus.ONLINE.value
                 camera.error_message = None
-                from datetime import datetime
                 camera.last_seen = datetime.utcnow()
             else:
                 if camera.status != CameraStatus.ERROR.value:

@@ -24,6 +24,7 @@ import os
 import signal
 import socket
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -231,8 +232,9 @@ class LiveDetectionWorker:
         )
 
         # Connect to database
+        # Disable SSL for internal Docker network connections
         self._pool = await asyncpg.create_pool(
-            self.database_url, min_size=2, max_size=5
+            self.database_url, min_size=2, max_size=5, ssl=False
         )
 
         # Load active cameras from database
@@ -262,7 +264,7 @@ class LiveDetectionWorker:
         logger.info(f"Worker {self.worker_id} stopped")
 
     async def _load_cameras(self) -> None:
-        """Load active cameras from database."""
+        """Load active cameras from database, preserving existing state."""
         if not self._pool:
             return
 
@@ -274,13 +276,21 @@ class LiveDetectionWorker:
                 """
             )
 
-        self.cameras = {
-            row["id"]: CameraState(
-                camera_id=row["id"],
-                camera_name=row["name"],
-            )
-            for row in rows
-        }
+        # Build set of active camera IDs
+        active_ids = {row["id"] for row in rows}
+
+        # Remove cameras that are no longer active
+        for cam_id in list(self.cameras.keys()):
+            if cam_id not in active_ids:
+                del self.cameras[cam_id]
+
+        # Add new cameras, preserving existing state
+        for row in rows:
+            if row["id"] not in self.cameras:
+                self.cameras[row["id"]] = CameraState(
+                    camera_id=row["id"],
+                    camera_name=row["name"],
+                )
 
         logger.info(f"Loaded {len(self.cameras)} active cameras")
 
@@ -315,15 +325,27 @@ class LiveDetectionWorker:
         """Process the latest HLS segment for a camera."""
         camera_dir = self.streams_dir / str(state.camera_id)
         if not camera_dir.exists():
+            logger.debug(f"Camera {state.camera_id}: directory doesn't exist")
             return
 
-        # Find the newest segment
-        segments = sorted(camera_dir.glob("segment*.ts"), key=lambda p: p.stat().st_mtime)
-        if not segments:
+        # Find the newest segment - handle race condition where segments may be
+        # deleted by FFmpeg between glob() and stat() calls
+        try:
+            segments = []
+            for p in camera_dir.glob("segment*.ts"):
+                try:
+                    segments.append((p, p.stat().st_mtime))
+                except FileNotFoundError:
+                    # Segment was deleted between glob and stat - skip it
+                    continue
+            if not segments:
+                return
+            # Sort by mtime and get the newest
+            segments.sort(key=lambda x: x[1])
+            newest, newest_mtime = segments[-1]
+        except OSError:
+            # Directory was deleted or other filesystem error
             return
-
-        newest = segments[-1]
-        newest_mtime = newest.stat().st_mtime
 
         # Skip if we already processed this segment
         if (
@@ -333,26 +355,43 @@ class LiveDetectionWorker:
             return
 
         # Wait for segment to be fully written (at least 1 second old)
-        age = asyncio.get_event_loop().time() - newest_mtime
+        age = time.time() - newest_mtime
         if age < 1.0:
             return
 
-        # Process the segment
-        await self._process_segment(state, newest)
+        logger.debug(f"Camera {state.camera_id}: processing {newest.name}")
+
+        # Process the segment - pass mtime to avoid additional stat() call
+        await self._process_segment(state, newest, newest_mtime)
 
         state.last_processed_segment = newest.name
         state.last_segment_mtime = newest_mtime
 
-    async def _process_segment(self, state: CameraState, segment_path: Path) -> None:
-        """Extract frame from segment and run detection."""
-        # Extract a frame from the middle of the segment
+    async def _process_segment(
+        self, state: CameraState, segment_path: Path, segment_mtime: float
+    ) -> None:
+        """Extract frame from segment and run detection.
+
+        Args:
+            state: Camera state for this camera
+            segment_path: Path to the HLS segment file
+            segment_mtime: Modification time of the segment (avoids race condition)
+        """
+        # Extract a frame from the segment
         frame = await self._extract_frame(segment_path)
         if frame is None:
+            logger.debug(f"Camera {state.camera_id}: frame extraction failed")
             return
+
+        logger.debug(f"Camera {state.camera_id}: extracted frame {frame.shape}")
 
         # Run YOLO inference
         results = self.detector.detect(
             frame, self.model_name, confidence_threshold=self.confidence
+        )
+
+        logger.debug(
+            f"Camera {state.camera_id}: {len(results)} raw detections"
         )
 
         if not results:
@@ -363,6 +402,10 @@ class LiveDetectionWorker:
             r for r in results if r.class_name.lower() in self.class_filter
         ]
 
+        logger.debug(
+            f"Camera {state.camera_id}: {len(filtered)} after class filter"
+        )
+
         if not filtered:
             return
 
@@ -370,7 +413,6 @@ class LiveDetectionWorker:
         # This is closer to actual video capture time than current time.
         # The segment mtime is when FFmpeg finished writing it, which is
         # approximately when the video was captured (within a few seconds).
-        segment_mtime = segment_path.stat().st_mtime
         detection_time = datetime.fromtimestamp(segment_mtime, tz=timezone.utc)
         detections_to_save = []
         snapshot_path: Optional[Path] = None
@@ -409,13 +451,13 @@ class LiveDetectionWorker:
     async def _extract_frame(self, segment_path: Path) -> Optional[np.ndarray]:
         """Extract a single frame from an HLS .ts segment using FFmpeg."""
         try:
-            # Extract frame from middle of segment
+            # Extract the first frame from the segment (more reliable than
+            # selecting a specific frame number which may not exist at low fps)
             cmd = [
                 "ffmpeg",
                 "-hide_banner",
                 "-loglevel", "error",
                 "-i", str(segment_path),
-                "-vf", "select='eq(n,30)'",  # ~1 second into segment
                 "-frames:v", "1",
                 "-f", "rawvideo",
                 "-pix_fmt", "bgr24",
@@ -433,9 +475,11 @@ class LiveDetectionWorker:
             )
 
             if proc.returncode != 0:
+                logger.debug(f"FFmpeg failed: {stderr.decode()[:200]}")
                 return None
 
             if not stdout:
+                logger.debug("FFmpeg returned no data")
                 return None
 
             # Get frame dimensions from segment
@@ -454,12 +498,20 @@ class LiveDetectionWorker:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            probe_out, _ = await probe_proc.communicate()
+            probe_out, probe_err = await probe_proc.communicate()
             if not probe_out:
+                logger.debug(f"FFprobe returned no data: {probe_err.decode()[:200]}")
                 return None
 
-            dims = probe_out.decode().strip().split(",")
+            # Parse dimensions - take first valid line (handles multiple stream output)
+            lines = [l.strip() for l in probe_out.decode().strip().split("\n") if l.strip()]
+            if not lines:
+                logger.debug("FFprobe returned empty output")
+                return None
+
+            dims = lines[0].split(",")
             if len(dims) != 2:
+                logger.debug(f"FFprobe unexpected format: {lines[0][:100]}")
                 return None
 
             width, height = int(dims[0]), int(dims[1])

@@ -266,6 +266,47 @@ class TranscodeTracker:
         }
         self._save()
 
+    def is_locked(self, file_path: Path) -> bool:
+        """Check if a file is currently being processed by another worker."""
+        lock_file = file_path.parent / f".lock_{file_path.name}"
+        if not lock_file.exists():
+            return False
+        # Check if lock is stale (older than 2 hours)
+        try:
+            lock_age = datetime.now(timezone.utc) - datetime.fromtimestamp(
+                lock_file.stat().st_mtime, tz=timezone.utc
+            )
+            if lock_age.total_seconds() > 7200:  # 2 hours
+                logger.warning(f"Removing stale lock: {lock_file}")
+                lock_file.unlink()
+                return False
+        except OSError:
+            pass
+        return True
+
+    def lock_file(self, file_path: Path) -> bool:
+        """Try to acquire a lock on a file. Returns True if successful."""
+        lock_file = file_path.parent / f".lock_{file_path.name}"
+        try:
+            # Use O_EXCL for atomic creation - fails if file exists
+            fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return True
+        except FileExistsError:
+            return False
+        except OSError as e:
+            logger.warning(f"Could not create lock file: {e}")
+            return False
+
+    def unlock_file(self, file_path: Path) -> None:
+        """Release the lock on a file."""
+        lock_file = file_path.parent / f".lock_{file_path.name}"
+        try:
+            lock_file.unlink()
+        except OSError:
+            pass
+
     def get_stats(self) -> dict:
         """Get transcoding statistics."""
         transcoded = self._data.get("transcoded", {})
@@ -360,10 +401,12 @@ class TranscodeWorker:
             if mp4_file.name.startswith("."):
                 continue
 
-            # Skip if already transcoded or failed
+            # Skip if already transcoded, failed, or locked by another worker
             if self.tracker.is_transcoded(mp4_file):
                 continue
             if self.tracker.is_failed(mp4_file):
+                continue
+            if self.tracker.is_locked(mp4_file):
                 continue
 
             # Skip if file is too recent (might still be recording)
@@ -374,12 +417,15 @@ class TranscodeWorker:
             except OSError:
                 continue
 
-            # Check if file is already H.265/HEVC
-            if self._is_already_hevc(mp4_file):
+            # Check if file should be skipped (already HEVC or efficiently encoded)
+            should_skip, skip_reason = self._should_skip_transcode(mp4_file)
+            if should_skip:
                 # Mark as transcoded so we skip it next time
                 file_size = mp4_file.stat().st_size
-                self.tracker.mark_transcoded(mp4_file, file_size, file_size, 0, "already_hevc")
-                logger.debug(f"Skipping {mp4_file.name} - already HEVC")
+                self.tracker.mark_transcoded(
+                    mp4_file, file_size, file_size, 0, skip_reason or "skipped"
+                )
+                logger.debug(f"Skipping {mp4_file.name} - {skip_reason}")
                 continue
 
             files_to_process.append(mp4_file)
@@ -388,26 +434,106 @@ class TranscodeWorker:
         files_to_process.sort(key=lambda p: p.stat().st_mtime)
         return files_to_process
 
-    def _is_already_hevc(self, file_path: Path) -> bool:
-        """Check if a video file is already encoded with HEVC/H.265."""
+    def _get_video_info(self, file_path: Path) -> Optional[dict]:
+        """Get video codec, bitrate, resolution, and duration.
+
+        Returns:
+            Dict with codec, bitrate, width, height, duration, or None on error
+        """
         try:
             result = subprocess.run(
                 [
                     "ffprobe",
                     "-v", "quiet",
                     "-select_streams", "v:0",
-                    "-show_entries", "stream=codec_name",
-                    "-of", "csv=p=0",
+                    "-show_entries", "stream=codec_name,bit_rate,width,height",
+                    "-show_entries", "format=duration,bit_rate",
+                    "-of", "json",
                     str(file_path),
                 ],
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=30,
             )
-            codec = result.stdout.strip().lower()
-            return codec in ("hevc", "h265")
-        except (subprocess.TimeoutExpired, subprocess.SubprocessError):
-            return False
+            if result.returncode != 0:
+                return None
+
+            import json
+            data = json.loads(result.stdout)
+
+            stream = data.get("streams", [{}])[0]
+            fmt = data.get("format", {})
+
+            # Get bitrate from stream or fall back to format bitrate
+            bitrate = stream.get("bit_rate") or fmt.get("bit_rate")
+            if bitrate:
+                bitrate = int(bitrate)
+
+            return {
+                "codec": stream.get("codec_name", "").lower(),
+                "width": int(stream.get("width", 0)),
+                "height": int(stream.get("height", 0)),
+                "bitrate": bitrate,
+                "duration": float(fmt.get("duration", 0)),
+            }
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, ValueError):
+            return None
+
+    def _should_skip_transcode(self, file_path: Path) -> tuple[bool, str]:
+        """Check if file should be skipped based on codec and efficiency.
+
+        Returns:
+            Tuple of (should_skip, reason)
+        """
+        info = self._get_video_info(file_path)
+        if not info:
+            return False, ""  # Can't determine, try transcoding
+
+        codec = info["codec"]
+        bitrate = info["bitrate"]
+        width = info["width"]
+        height = info["height"]
+
+        # If we can't determine bitrate, fall back to simple codec check
+        if not bitrate or not width or not height:
+            if codec in ("hevc", "h265"):
+                return True, "already_hevc"
+            return False, ""
+
+        # Calculate bits per pixel per frame (assuming 30fps as baseline)
+        # This normalizes bitrate across different resolutions
+        pixels = width * height
+        bpp = bitrate / (pixels * 30) if pixels > 0 else 0
+
+        # HEVC at reasonable quality is typically 0.05-0.15 bpp
+        # H.264 at reasonable quality is typically 0.1-0.3 bpp
+        # Higher bpp = more bits = higher quality/less compression
+
+        if codec in ("hevc", "h265"):
+            # Skip HEVC files that are already efficiently encoded
+            # Threshold: ~0.1 bpp is good quality HEVC, above that might benefit
+            # from re-encode but risk is high. Be conservative.
+            if bpp < 0.15:
+                return True, "hevc_efficient"
+            else:
+                # High bitrate HEVC - could potentially save space but risky
+                # Log it but still skip to avoid making files larger
+                logger.info(
+                    f"Skipping high-bitrate HEVC {file_path.name}: "
+                    f"{bitrate/1_000_000:.1f} Mbps, {bpp:.3f} bpp"
+                )
+                return True, "hevc_high_bitrate"
+
+        # H.264 - always worth transcoding to HEVC
+        return False, ""
+
+    def _is_already_hevc(self, file_path: Path) -> bool:
+        """Check if a video file is already encoded with HEVC/H.265.
+
+        Deprecated: Use _should_skip_transcode for smarter checks.
+        """
+        should_skip, _ = self._should_skip_transcode(file_path)
+        return should_skip
 
     def _get_video_duration(self, file_path: Path) -> Optional[float]:
         """Get video duration in seconds."""
@@ -442,11 +568,17 @@ class TranscodeWorker:
         Returns:
             FFmpeg command as list of arguments
         """
-        cmd = [
-            "ffmpeg",
-            "-i", str(input_path),
-            "-c:v", self.encoder.encoder_name,
-        ]
+        cmd = ["ffmpeg"]
+
+        if self.encoder.is_gpu:
+            # Enable hardware-accelerated decoding with CUDA
+            # This keeps frames on GPU: decode (NVDEC) -> encode (NVENC)
+            cmd.extend([
+                "-hwaccel", "cuda",
+                "-hwaccel_output_format", "cuda",
+            ])
+
+        cmd.extend(["-i", str(input_path), "-c:v", self.encoder.encoder_name])
 
         if self.encoder.is_gpu:
             # NVENC-specific options
@@ -597,33 +729,41 @@ class TranscodeWorker:
                 processed += 1
                 continue
 
-            result = self.transcode_file(file_path)
+            # Try to acquire lock - another worker may have grabbed it
+            if not self.tracker.lock_file(file_path):
+                logger.debug(f"File locked by another worker: {file_path.name}")
+                continue
 
-            if result.success:
-                self.tracker.mark_transcoded(
-                    file_path,
-                    result.original_size,
-                    result.new_size,
-                    result.duration_seconds,
-                    result.encoder_used,
-                )
-                # Calculate speed relative to video duration
-                video_duration = self._get_video_duration(file_path)
-                speed_str = ""
-                if video_duration and result.duration_seconds > 0:
-                    speed = video_duration / result.duration_seconds
-                    speed_str = f", {speed:.1f}x realtime"
+            try:
+                result = self.transcode_file(file_path)
 
-                logger.info(
-                    f"Transcoded {file_path.name}: "
-                    f"{result.savings_mb:.1f} MB saved ({result.savings_percent:.1f}%) "
-                    f"in {result.duration_seconds:.1f}s{speed_str}"
-                )
-                processed += 1
-                total_savings_mb += result.savings_mb
-            else:
-                self.tracker.mark_failed(file_path, result.error_message or "Unknown")
-                logger.error(f"Failed to transcode {file_path.name}: {result.error_message}")
+                if result.success:
+                    self.tracker.mark_transcoded(
+                        file_path,
+                        result.original_size,
+                        result.new_size,
+                        result.duration_seconds,
+                        result.encoder_used,
+                    )
+                    # Calculate speed relative to video duration
+                    video_duration = self._get_video_duration(file_path)
+                    speed_str = ""
+                    if video_duration and result.duration_seconds > 0:
+                        speed = video_duration / result.duration_seconds
+                        speed_str = f", {speed:.1f}x realtime"
+
+                    logger.info(
+                        f"Transcoded {file_path.name}: "
+                        f"{result.savings_mb:.1f} MB saved ({result.savings_percent:.1f}%) "
+                        f"in {result.duration_seconds:.1f}s{speed_str}"
+                    )
+                    processed += 1
+                    total_savings_mb += result.savings_mb
+                else:
+                    self.tracker.mark_failed(file_path, result.error_message or "Unknown")
+                    logger.error(f"Failed to transcode {file_path.name}: {result.error_message}")
+            finally:
+                self.tracker.unlock_file(file_path)
 
             self._current_file = None
 

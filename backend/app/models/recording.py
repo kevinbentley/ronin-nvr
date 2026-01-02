@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     ForeignKey,
     Integer,
     String,
@@ -60,6 +61,9 @@ class Recording(Base):
     codec: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     resolution: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     fps: Mapped[Optional[float]] = mapped_column(nullable=True)
+
+    # ML processing flag
+    ml_processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
