@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.database import async_session_maker
 from app.models import Camera
-from app.services.camera_stream import stream_manager
+from app.services.stream_client import stream_manager
 
 logger = logging.getLogger(__name__)
 

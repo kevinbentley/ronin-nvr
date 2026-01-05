@@ -14,7 +14,7 @@ from app.api import api_router
 from app.config import get_settings
 from app.database import close_db, get_db, init_db
 from app.rate_limiter import limiter
-from app.services.camera_stream import stream_manager
+from app.services.stream_client import stream_manager
 from app.services.retention import retention_monitor
 from app.services.status_monitor import status_monitor
 from app.services.startup import auto_start_recording_cameras

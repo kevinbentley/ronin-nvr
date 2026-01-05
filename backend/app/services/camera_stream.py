@@ -223,10 +223,36 @@ class CameraStream:
 
         return cmd
 
+    def _is_stream_active_on_filesystem(self) -> bool:
+        """Check if another worker is already streaming this camera.
+
+        With multiple uvicorn workers, each has its own memory space.
+        Use filesystem to detect if stream is already running.
+        """
+        if not self.playlist_path.exists():
+            return False
+
+        # Check if playlist was modified recently (within 10 seconds)
+        try:
+            import time
+            mtime = self.playlist_path.stat().st_mtime
+            age = time.time() - mtime
+            return age < 10  # Consider active if modified in last 10 seconds
+        except OSError:
+            return False
+
     async def start(self, recording_enabled: bool = True) -> bool:
         """Start the camera stream."""
         if self._state == StreamState.RUNNING:
             logger.warning(f"Camera '{self.camera_name}' stream already running")
+            return True
+
+        # Check if another worker is already streaming this camera
+        if self._is_stream_active_on_filesystem():
+            logger.info(
+                f"Stream for '{self.camera_name}' already active (another worker), skipping"
+            )
+            self._state = StreamState.RUNNING  # Mark as running so we don't retry
             return True
 
         self._recording_enabled = recording_enabled

@@ -41,9 +41,35 @@ class HLSStream:
             auth = ""
         return f"rtsp://{auth}{self.camera.host}:{self.camera.port}{self.camera.path}"
 
+    def _is_stream_active_on_filesystem(self) -> bool:
+        """Check if another worker is already streaming this camera.
+
+        With multiple uvicorn workers, each has its own memory space.
+        Use filesystem to detect if stream is already running.
+        """
+        if not self.playlist_path.exists():
+            return False
+
+        # Check if playlist was modified recently (within 10 seconds)
+        try:
+            import time
+            mtime = self.playlist_path.stat().st_mtime
+            age = time.time() - mtime
+            return age < 10  # Consider active if modified in last 10 seconds
+        except OSError:
+            return False
+
     def start(self) -> bool:
         """Start HLS streaming."""
         if self.is_running:
+            return True
+
+        # Check if another worker is already streaming this camera
+        if self._is_stream_active_on_filesystem():
+            logger.debug(
+                f"Stream for camera {self.camera.id} already active (another worker)"
+            )
+            self._running = True  # Mark as "running" so we don't try again
             return True
 
         # Ensure stream directory exists

@@ -83,7 +83,7 @@ class CameraStatusMonitor:
         connections. Many cameras only support 1-2 concurrent connections.
         """
         # Import here to avoid circular import
-        from app.services.camera_stream import stream_manager
+        from app.services.stream_client import stream_manager
 
         # Skip cameras with active streams - FFmpeg is already monitoring them
         # Opening a second RTSP connection via ffprobe can cause the camera

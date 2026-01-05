@@ -269,7 +269,11 @@ class ApiClient {
   }
 
   getRecordingStreamUrl(recordingId: string): string {
-    return `${API_BASE}/playback/recordings/${recordingId}/stream`;
+    // Use direct nginx path for better performance (bypasses Python backend)
+    // Recording ID format: CameraName::2024-01-02::12-30-00.mp4
+    // Convert to: /videos/CameraName/2024-01-02/12-30-00.mp4
+    const path = recordingId.replace(/::/g, '/');
+    return `/videos/${path}`;
   }
 
   getRecordingDownloadUrl(recordingId: string): string {

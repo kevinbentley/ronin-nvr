@@ -46,6 +46,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      stream-manager:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ronin_nvr_user}:${POSTGRES_PASSWORD:-ronin_pass}@postgres:5432/${POSTGRES_DB:-ronin_nvr}
       STORAGE_ROOT: /data/storage
@@ -59,6 +61,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:3000,http://192.168.1.127}
       ML_ENABLED: "true"
       ML_AUTO_PROCESS: "true"
+      STREAM_MANAGER_URL: "http://stream-manager:8001"
     volumes:
       - /opt3/ronin/storage:/data/storage
       - /opt3/ronin/ml_models:/data/storage/.ml/models
@@ -70,6 +73,32 @@ services:
       timeout: 10s
       retries: 3
 
+  # Stream Manager - Single process that owns all ffmpeg streams
+  stream-manager:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ronin-stream-manager
+    restart: unless-stopped
+    user: "1000:1000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ronin_nvr_user}:${POSTGRES_PASSWORD:-ronin_pass}@postgres:5432/${POSTGRES_DB:-ronin_nvr}
+      STORAGE_ROOT: /data/storage
+      STREAM_MANAGER_PORT: "8001"
+      SEGMENT_DURATION_MINUTES: "15"
+      TZ: ${TZ:-America/Denver}
+    volumes:
+      - /opt3/ronin/storage:/data/storage
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: ["python", "stream_manager.py"]
+
   # React Frontend (Nginx)
   frontend:
     build:
@@ -79,6 +108,9 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+    volumes:
+      # Mount storage for direct video serving (bypasses backend for better performance)
+      - /opt3/ronin/storage:/data/storage:ro
     ports:
       - "80:80"
     healthcheck:

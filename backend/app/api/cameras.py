@@ -21,7 +21,7 @@ from app.schemas import (
     CameraUpdate,
 )
 from app.services.camera import CameraService, test_camera_connection
-from app.services.camera_stream import stream_manager
+from app.services.stream_client import stream_manager
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -125,35 +125,32 @@ async def get_stream_debug(
 
     stream_status = stream_manager.get_status(camera_id)
 
-    # Check if HLS files exist
-    from app.services.camera_stream import CameraStream
-    from pathlib import Path
+    # Check if HLS files exist on filesystem
+    from app.config import get_settings
+    settings = get_settings()
 
-    hls_info = {}
-    if stream_status:
-        stream = stream_manager._streams.get(camera_id)
-        if stream:
-            hls_dir = stream.hls_directory
-            playlist = stream.playlist_path
-            hls_info = {
-                "hls_directory": str(hls_dir),
-                "hls_directory_exists": hls_dir.exists(),
-                "playlist_path": str(playlist),
-                "playlist_exists": playlist.exists(),
-                "segments": [],
+    hls_dir = Path(settings.storage_root) / ".streams" / str(camera_id)
+    playlist = hls_dir / "playlist.m3u8"
+
+    hls_info = {
+        "hls_directory": str(hls_dir),
+        "hls_directory_exists": hls_dir.exists(),
+        "playlist_path": str(playlist),
+        "playlist_exists": playlist.exists(),
+        "segments": [],
+    }
+    if hls_dir.exists():
+        segments = sorted(hls_dir.glob("*.ts"))
+        hls_info["segments"] = [
+            {
+                "name": s.name,
+                "size_bytes": s.stat().st_size,
+                "age_seconds": round(
+                    (datetime.now(timezone.utc).timestamp() - s.stat().st_mtime), 1
+                ),
             }
-            if hls_dir.exists():
-                segments = sorted(hls_dir.glob("*.ts"))
-                hls_info["segments"] = [
-                    {
-                        "name": s.name,
-                        "size_bytes": s.stat().st_size,
-                        "age_seconds": round(
-                            (datetime.now(timezone.utc).timestamp() - s.stat().st_mtime), 1
-                        ),
-                    }
-                    for s in segments[-10:]  # Last 10 segments
-                ]
+            for s in segments[-10:]  # Last 10 segments
+        ]
 
     return {
         "camera": {
