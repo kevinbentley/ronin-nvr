@@ -398,6 +398,7 @@ class TranscodeWorker:
         min_age_minutes: int = 20,
         dry_run: bool = False,
         force_gpu: Optional[bool] = None,
+        show_ffmpeg_output: bool = False,
     ):
         """Initialize worker.
 
@@ -408,12 +409,14 @@ class TranscodeWorker:
             min_age_minutes: Minimum file age before transcoding
             dry_run: If True, only show what would be done
             force_gpu: True=require GPU, False=use CPU, None=auto-detect
+            show_ffmpeg_output: If True, stream FFmpeg output to console
         """
         self.storage_root = storage_root
         self.crf = crf
         self.preset = preset
         self.min_age = timedelta(minutes=min_age_minutes)
         self.dry_run = dry_run
+        self.show_ffmpeg_output = show_ffmpeg_output
 
         # Detect and configure encoder
         self.encoder = get_encoder(force_gpu)
@@ -569,12 +572,17 @@ class TranscodeWorker:
         if self.encoder.is_gpu:
             # Enable hardware-accelerated decoding with CUDA
             # This keeps frames on GPU: decode (NVDEC) -> encode (NVENC)
+            # -extra_hw_frames allocates additional surfaces for complex GOPs
+            # and prevents "No decoder surfaces left" errors
             cmd.extend([
                 "-hwaccel", "cuda",
                 "-hwaccel_output_format", "cuda",
+                "-extra_hw_frames", "8",
             ])
 
-        cmd.extend(["-i", str(input_path), "-c:v", self.encoder.encoder_name])
+        # -fflags +genpts regenerates timestamps for files with discontinuities
+        cmd.extend(["-fflags", "+genpts", "-i", str(input_path)])
+        cmd.extend(["-c:v", self.encoder.encoder_name])
 
         if self.encoder.is_gpu:
             # NVENC-specific options
@@ -641,16 +649,50 @@ class TranscodeWorker:
             logger.debug(f"Command: {' '.join(cmd)}")
 
             # Run FFmpeg
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=3600,  # 1 hour timeout
-            )
+            if self.show_ffmpeg_output:
+                # Stream output directly to console for debugging
+                logger.info(f"FFmpeg command: {' '.join(cmd)}")
+                result = subprocess.run(
+                    cmd,
+                    timeout=3600,  # 1 hour timeout
+                )
+                stderr_output = ""
+            else:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=3600,  # 1 hour timeout
+                )
+                stderr_output = result.stderr or ""
 
             if result.returncode != 0:
-                error_msg = result.stderr[-500:] if result.stderr else "Unknown error"
+                error_msg = stderr_output[-500:] if stderr_output else "Unknown error (use --show-ffmpeg-output for details)"
                 raise RuntimeError(f"FFmpeg failed: {error_msg}")
+
+            # Log FFmpeg warnings even on success - these indicate potential issues
+            if stderr_output:
+                stderr_lower = stderr_output.lower()
+                # Check for concerning patterns that warrant logging
+                warning_patterns = [
+                    "no decoder surfaces left",
+                    "invalid dts",
+                    "invalid pts",
+                    "error while decoding",
+                    "discarding",
+                    "discarded",
+                    "av_interleaved_write_frame",
+                ]
+                has_warnings = any(p in stderr_lower for p in warning_patterns)
+                if has_warnings:
+                    # Log at warning level with truncated stderr
+                    stderr_excerpt = stderr_output[-2000:] if len(stderr_output) > 2000 else stderr_output
+                    logger.warning(
+                        f"FFmpeg completed with warnings for {file_path.name}:\n{stderr_excerpt}"
+                    )
+                elif logger.isEnabledFor(logging.DEBUG):
+                    # At debug level, log all stderr
+                    logger.debug(f"FFmpeg stderr for {file_path.name}:\n{stderr_output[-1000:]}")
 
             # Verify output file
             if not temp_path.exists():
@@ -763,6 +805,7 @@ class TranscodeWorker:
         Returns:
             Summary statistics
         """
+        self._running = True
         processed = 0
         total_savings_mb = 0.0
         files_found = 0
@@ -975,6 +1018,11 @@ Examples:
         action="store_true",
         help="Enable debug logging",
     )
+    parser.add_argument(
+        "--show-ffmpeg-output",
+        action="store_true",
+        help="Stream FFmpeg output to console (for debugging encoder issues)",
+    )
 
     args = parser.parse_args()
 
@@ -1061,6 +1109,7 @@ Examples:
             min_age_minutes=min_age,
             dry_run=args.dry_run,
             force_gpu=force_gpu,
+            show_ffmpeg_output=args.show_ffmpeg_output,
         )
     except RuntimeError as e:
         logger.error(str(e))
