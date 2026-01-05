@@ -593,6 +593,7 @@ class TranscodeWorker:
 
         # Common options
         cmd.extend([
+            "-vsync", "vfr",  # Preserve variable frame rate (prevents frame duplication)
             "-c:a", "copy",  # Copy audio without re-encoding
             "-tag:v", "hvc1",  # Apple compatibility tag
             "-y",  # Overwrite output

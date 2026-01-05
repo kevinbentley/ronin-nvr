@@ -1,0 +1,88 @@
+{
+  "sessions": [
+    {
+      "files_touched": [
+        "backend/Dockerfile",
+        "docker-compose.yml",
+        "frontend/nginx.conf",
+        "frontend/src/services/api.ts"
+      ],
+      "id": "c61de208",
+      "logged_at": "2026-01-05T06:25:41.989700",
+      "summary": "Fixed video playback performance: 1) Added 4 uvicorn workers (was 1) for better backend concurrency. 2) Configured nginx to serve video files directly at /videos/ path, bypassing Python entirely - nginx handles Range requests natively and much more efficiently. Frontend API updated to use direct nginx path.",
+      "task_id": "TASK-14"
+    },
+    {
+      "files_touched": [
+        "backend/app/services/streaming.py",
+        "backend/app/services/camera_stream.py"
+      ],
+      "id": "054c298c",
+      "logged_at": "2026-01-05T07:05:34.308238",
+      "summary": "Added filesystem-based check to prevent duplicate ffmpeg processes across uvicorn workers. Each worker now checks if the HLS playlist was recently modified before starting a new stream - if active, it skips starting another ffmpeg process.",
+      "task_id": "TASK-16"
+    },
+    {
+      "files_touched": [
+        "backend/stream_manager.py",
+        "backend/app/services/stream_client.py",
+        "docker-compose.yml",
+        "backend/app/api/cameras.py",
+        "backend/app/main.py",
+        "backend/app/services/startup.py",
+        "backend/app/services/status_monitor.py"
+      ],
+      "id": "7645eb2e",
+      "logged_at": "2026-01-05T07:52:19.426851",
+      "summary": "Implemented dedicated stream manager service to fix duplicate ffmpeg processes. Created stream_manager.py as standalone FastAPI service on port 8001 that owns all camera ffmpeg streams. Added stream_client.py with HTTP client and facade to maintain same interface. Added locking to prevent race conditions when multiple backend workers call start_stream concurrently. Result: 1 ffmpeg per camera (down from 4-8 duplicates).",
+      "task_id": "TASK-16"
+    },
+    {
+      "files_touched": [
+        "backend/app/api/ml.py",
+        "backend/app/schemas/ml.py",
+        "frontend/src/types/camera.ts"
+      ],
+      "id": "d8299286",
+      "logged_at": "2026-01-05T08:13:52.818738",
+      "summary": "Fixed bug where live detection events weren't showing in timeline. The /ml/detections/timeline API was only querying detections linked to recordings (via recording_id), but live detections have recording_id=NULL. Added OR condition to also query live detections by camera_id and detected_at timestamp. Updated TimelineEvent schema to make recording_id optional.",
+      "task_id": "TASK-17"
+    },
+    {
+      "files_touched": [
+        "backend/app/api/ml.py"
+      ],
+      "id": "1249e6bb",
+      "logged_at": "2026-01-05T08:31:45.665088",
+      "summary": "Fixed timezone issue in timeline events. The API was using UTC hour/minute/second directly when calculating event positions, but the timeline displays in local time. Now converts UTC timestamps to local timezone (from TZ env var) before calculating position. Also fixed the date range query to use local midnight boundaries converted to UTC.",
+      "task_id": "TASK-17"
+    },
+    {
+      "files_touched": [
+        "backend/app/models/ml_settings.py",
+        "backend/app/models/__init__.py",
+        "backend/alembic/versions/20250105_add_ml_settings.py",
+        "backend/app/schemas/ml.py",
+        "backend/app/api/ml.py",
+        "backend/live_detection_worker.py",
+        "frontend/src/types/camera.ts",
+        "frontend/src/services/api.ts",
+        "frontend/src/pages/MLStatusPage.tsx",
+        "frontend/src/pages/MLStatusPage.css"
+      ],
+      "id": "cf6f845c",
+      "logged_at": "2026-01-05T09:36:21.752706",
+      "summary": "Implemented configurable ML settings in the UI. Created ml_settings database table with Alembic migration, added GET/PUT API endpoints, updated live detection worker to reload settings from DB every 60 seconds, and built settings editor UI with sliders for confidence thresholds, FPS, cooldown, and checkbox selection for detection classes.",
+      "task_id": "TASK-18"
+    },
+    {
+      "files_touched": [
+        "backend/transcode_worker.py"
+      ],
+      "id": "d477ed16",
+      "logged_at": "2026-01-05T12:34:04.639336",
+      "summary": "Fixed transcode worker VFR bug causing files to grow larger instead of smaller. Root cause: source camera files are VFR (variable frame rate) with r_frame_rate=100fps but actual ~15fps content. FFmpeg was duplicating frames to fill 100fps, causing 2-3x larger output files and 0.3x realtime speed. Fix: added -vsync vfr to preserve original frame timing. Results: files now save ~24% space at 2x realtime speed.",
+      "task_id": "TASK-19"
+    }
+  ]
+}
