@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from app.config import Settings, get_settings
 from app.services.ml.detection_service import DetectionResult, DetectionService
 from app.services.ml.model_manager import ModelManager
+from app.services.ml.motion_detector import MotionDetector
 
 # Configure logging
 logging.basicConfig(
@@ -174,6 +175,7 @@ class SnapshotService:
             "bicycle": (255, 165, 0),
             "dog": (0, 165, 255),  # Orange
             "cat": (0, 165, 255),
+            "motion": (0, 128, 255),  # Orange (BGR) for motion
         }
         return colors.get(class_name, (0, 255, 255))  # Yellow default
 
@@ -212,6 +214,10 @@ class LiveDetectionWorker:
         self.debounce = DebounceTracker(cooldown_seconds=self.cooldown)
         self._running = False
         self._pool = None
+
+        # Motion detection
+        self._motion_enabled = settings.motion_detection_enabled
+        self._motion_detectors: dict[int, MotionDetector] = {}
 
         # Initialize ML components
         self.model_manager = ModelManager()
@@ -283,6 +289,10 @@ class LiveDetectionWorker:
         for cam_id in list(self.cameras.keys()):
             if cam_id not in active_ids:
                 del self.cameras[cam_id]
+                # Clean up motion detector for this camera
+                if cam_id in self._motion_detectors:
+                    del self._motion_detectors[cam_id]
+                    logger.info(f"Removed motion detector for camera {cam_id}")
 
         # Add new cameras, preserving existing state
         for row in rows:
@@ -293,6 +303,16 @@ class LiveDetectionWorker:
                 )
 
         logger.info(f"Loaded {len(self.cameras)} active cameras")
+
+    def _get_motion_detector(self, camera_id: int) -> MotionDetector:
+        """Get or create motion detector for a camera.
+
+        Each camera needs its own detector to maintain background model state.
+        """
+        if camera_id not in self._motion_detectors:
+            self._motion_detectors[camera_id] = MotionDetector.from_settings()
+            logger.info(f"Created motion detector for camera {camera_id}")
+        return self._motion_detectors[camera_id]
 
     async def _run_loop(self) -> None:
         """Main worker loop: round-robin through cameras."""
@@ -385,6 +405,56 @@ class LiveDetectionWorker:
 
         logger.debug(f"Camera {state.camera_id}: extracted frame {frame.shape}")
 
+        # Use segment modification time as detection timestamp
+        # This is closer to actual video capture time than current time.
+        detection_time = datetime.fromtimestamp(segment_mtime, tz=timezone.utc)
+        detections_to_save = []
+        all_detections: list[DetectionResult] = []
+        snapshot_path: Optional[Path] = None
+
+        # Run motion detection (if enabled)
+        if self._motion_enabled:
+            motion_detector = self._get_motion_detector(state.camera_id)
+            motion_result = motion_detector.detect(frame)
+
+            if motion_result.has_motion:
+                logger.debug(
+                    f"Camera {state.camera_id}: motion detected "
+                    f"({motion_result.motion_percent:.1f}%)"
+                )
+
+                if self.debounce.should_notify(state.camera_id, "motion"):
+                    # Use largest bounding box or full frame if none
+                    if motion_result.bounding_boxes:
+                        bbox = motion_result.bounding_boxes[0]
+                    else:
+                        bbox = (0.0, 0.0, 1.0, 1.0)
+
+                    # Create DetectionResult for snapshot drawing
+                    motion_det = DetectionResult(
+                        class_name="motion",
+                        confidence=min(motion_result.motion_percent / 100.0, 1.0),
+                        x=bbox[0],
+                        y=bbox[1],
+                        width=bbox[2],
+                        height=bbox[3],
+                    )
+                    all_detections.append(motion_det)
+
+                    detections_to_save.append({
+                        "camera_id": state.camera_id,
+                        "class_name": "motion",
+                        "confidence": motion_det.confidence,
+                        "bbox_x": motion_det.x,
+                        "bbox_y": motion_det.y,
+                        "bbox_width": motion_det.width,
+                        "bbox_height": motion_det.height,
+                        "model_name": "motion_detector",
+                        "detected_at": detection_time,
+                        "snapshot_path": None,  # Will be set later
+                    })
+                    self.debounce.mark_notified(state.camera_id, "motion")
+
         # Run YOLO inference
         results = self.detector.detect(
             frame, self.model_name, confidence_threshold=self.confidence
@@ -393,9 +463,6 @@ class LiveDetectionWorker:
         logger.debug(
             f"Camera {state.camera_id}: {len(results)} raw detections"
         )
-
-        if not results:
-            return
 
         # Filter by class
         filtered = [
@@ -406,28 +473,9 @@ class LiveDetectionWorker:
             f"Camera {state.camera_id}: {len(filtered)} after class filter"
         )
 
-        if not filtered:
-            return
-
-        # Use segment modification time as detection timestamp
-        # This is closer to actual video capture time than current time.
-        # The segment mtime is when FFmpeg finished writing it, which is
-        # approximately when the video was captured (within a few seconds).
-        detection_time = datetime.fromtimestamp(segment_mtime, tz=timezone.utc)
-        detections_to_save = []
-        snapshot_path: Optional[Path] = None
-
         for det in filtered:
             if self.debounce.should_notify(state.camera_id, det.class_name):
-                # Save snapshot on first notification
-                if snapshot_path is None:
-                    snapshot_path = self.snapshot_service.save_snapshot(
-                        frame, state.camera_id, filtered, detection_time
-                    )
-                    logger.info(
-                        f"Detection on {state.camera_name}: "
-                        f"{', '.join(d.class_name for d in filtered)}"
-                    )
+                all_detections.append(det)
 
                 detections_to_save.append({
                     "camera_id": state.camera_id,
@@ -439,13 +487,24 @@ class LiveDetectionWorker:
                     "bbox_height": det.height,
                     "model_name": self.model_name,
                     "detected_at": detection_time,
-                    "snapshot_path": str(snapshot_path) if snapshot_path else None,
+                    "snapshot_path": None,  # Will be set later
                 })
-
                 self.debounce.mark_notified(state.camera_id, det.class_name)
 
-        # Save to database and notify
+        # Save snapshot and update paths if we have detections
         if detections_to_save:
+            snapshot_path = self.snapshot_service.save_snapshot(
+                frame, state.camera_id, all_detections, detection_time
+            )
+            logger.info(
+                f"Detection on {state.camera_name}: "
+                f"{', '.join(d.class_name for d in all_detections)}"
+            )
+
+            # Update snapshot path for all detections
+            for det in detections_to_save:
+                det["snapshot_path"] = str(snapshot_path)
+
             await self._save_detections(detections_to_save, state.camera_name)
 
     async def _extract_frame(self, segment_path: Path) -> Optional[np.ndarray]:

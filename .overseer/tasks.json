@@ -62,10 +62,10 @@
       "id": "TASK-5",
       "jira_key": "KAN-11",
       "linked_files": [],
-      "status": "backlog",
+      "status": "done",
       "title": "Make left camera panel collapsible",
       "type": "feature",
-      "updated_at": "2026-01-02T16:28:17.992088"
+      "updated_at": "2026-01-04T19:01:03.042905"
     },
     {
       "context": "Test the new fragmented MP4 recording feature that enables playback of in-progress recordings:\n\n1. Wait for current recording segment to complete and new one to start (or restart recording service)\n2. Go to Playback page, select today's date\n3. Click on the in-progress recording (orange block on timeline)\n4. Verify:\n   - Video plays immediately with red \"LIVE\" badge\n   - Seeking works within recorded portion\n   - Duration updates as recording grows (every 3 seconds)\n5. Test in Chrome, Firefox, Safari\n6. Verify completed recordings still play normally\n\nNote: Only NEW recordings after the backend change will use fMP4 format. Existing in-progress recordings are still old MP4 format and won't be playable until complete.",
@@ -163,6 +163,53 @@
       "title": "Fix live playback of in-progress recordings",
       "type": "bug",
       "updated_at": "2026-01-04T18:40:38.890729"
+    },
+    {
+      "context": "Enable motion detection on live camera streams. The MotionDetector class already exists (MOG2 background subtraction) but only runs in historical ml_worker. Need to integrate it into live_detection_worker.py with per-camera detector instances, cooldown handling, and proper cleanup.",
+      "created_at": "2026-01-04T19:52:23.263595",
+      "created_by": "agent",
+      "id": "TASK-13",
+      "jira_key": null,
+      "linked_files": [
+        "backend/live_detection_worker.py",
+        "backend/app/services/ml/motion_detector.py"
+      ],
+      "status": "done",
+      "title": "Add real-time motion detection to live detection worker",
+      "type": "feature",
+      "updated_at": "2026-01-04T20:02:45.600596"
+    },
+    {
+      "context": "User reports performance issues with video playback/download. Need to investigate:\n- Streaming latency for recorded video\n- Download speed bottlenecks\n- Potential issues with segment serving, range requests, or transcoding\n- Database query performance for playback metadata",
+      "created_at": "2026-01-04T22:20:12.124311",
+      "created_by": "agent",
+      "id": "TASK-14",
+      "jira_key": null,
+      "linked_files": [
+        "backend/app/api/playback.py",
+        "backend/app/services/playback.py",
+        "backend/transcode_worker.py"
+      ],
+      "status": "backlog",
+      "title": "Investigate performance problems when downloading or streaming recorded video",
+      "type": "bug",
+      "updated_at": "2026-01-04T22:20:12.124311"
+    },
+    {
+      "context": "When playing an in-progress recording (e.g., 5 minutes long), the video shows only ~10 seconds then jumps back to 0 repeatedly. Likely issue with fragmented MP4 serving or how the player handles growing files.",
+      "created_at": "2026-01-04T22:20:45.779577",
+      "created_by": "agent",
+      "id": "TASK-15",
+      "jira_key": "KAN-14",
+      "linked_files": [
+        "backend/app/services/playback.py",
+        "backend/app/api/playback.py",
+        "frontend/src/components/RecordingPlayer.tsx"
+      ],
+      "status": "done",
+      "title": "Fix in-progress recording playback - timeline jumps erratically",
+      "type": "bug",
+      "updated_at": "2026-01-04T22:36:02.410368"
     }
   ],
   "version": "0.1"

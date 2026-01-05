@@ -109,7 +109,10 @@ class CameraRecorder:
             "-segment_time", str(self.segment_duration),
             "-segment_format", "mp4",
             # Use fragmented MP4 so files are playable while being written
-            "-movflags", "frag_keyframe+empty_moov",
+            # - frag_keyframe: Start new fragment on each keyframe
+            # - empty_moov: Write empty moov atom first (enables streaming)
+            # - default_base_moof: Makes fragments self-contained for seeking
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
             "-reset_timestamps", "1",
             "-strftime", "1",
             # Output pattern

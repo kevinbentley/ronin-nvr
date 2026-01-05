@@ -35,6 +35,10 @@ function AppContent() {
     }
     return new Set();
   });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    const saved = localStorage.getItem('sidebarCollapsed');
+    return saved === 'true';
+  });
 
   useEffect(() => {
     localStorage.setItem('gridLayout', layout);
@@ -43,6 +47,14 @@ function AppContent() {
   useEffect(() => {
     localStorage.setItem('hiddenCameras', JSON.stringify([...hiddenCameraIds]));
   }, [hiddenCameraIds]);
+
+  useEffect(() => {
+    localStorage.setItem('sidebarCollapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
+  const handleToggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => !prev);
+  }, []);
 
   const handleToggleVisibility = useCallback((cameraId: number) => {
     setHiddenCameraIds((prev) => {
@@ -101,6 +113,8 @@ function AppContent() {
               onToggleVisibility={handleToggleVisibility}
               onShowAll={handleShowAll}
               onHideAll={handleHideAll}
+              isCollapsed={sidebarCollapsed}
+              onToggleCollapse={handleToggleSidebar}
             />
             <main className="main-content">
               {error && (

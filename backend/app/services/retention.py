@@ -268,13 +268,29 @@ class RetentionService:
 class RetentionMonitor:
     """Background service for periodic retention enforcement."""
 
-    def __init__(self, check_interval_minutes: Optional[int] = None):
+    def __init__(
+        self,
+        service: Optional["RetentionService"] = None,
+        check_interval_minutes: Optional[int] = None,
+    ):
         self.check_interval = (
             check_interval_minutes or settings.retention_check_interval_minutes
         ) * 60  # Convert to seconds
-        self.service = RetentionService()
+        # Use provided service or will be set later via set_service()
+        self._service: Optional["RetentionService"] = service
         self._task: Optional[asyncio.Task] = None
         self._running = False
+
+    def set_service(self, service: "RetentionService") -> None:
+        """Set the retention service instance to use."""
+        self._service = service
+
+    @property
+    def service(self) -> "RetentionService":
+        """Get the retention service, creating default if needed."""
+        if self._service is None:
+            self._service = RetentionService()
+        return self._service
 
     async def start(self) -> None:
         """Start the background retention task."""
@@ -324,6 +340,6 @@ class RetentionMonitor:
                 break
 
 
-# Global instances
+# Global instances - monitor uses the same service instance so settings updates are shared
 retention_service = RetentionService()
-retention_monitor = RetentionMonitor()
+retention_monitor = RetentionMonitor(service=retention_service)

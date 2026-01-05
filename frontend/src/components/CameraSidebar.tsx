@@ -1,5 +1,6 @@
 /**
  * Sidebar showing camera list with show/hide controls.
+ * Can be collapsed to save screen space.
  */
 
 import type { Camera, RecordingStatus } from '../types/camera';
@@ -12,6 +13,8 @@ interface CameraSidebarProps {
   onToggleVisibility: (cameraId: number) => void;
   onShowAll: () => void;
   onHideAll: () => void;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 export function CameraSidebar({
@@ -21,11 +24,51 @@ export function CameraSidebar({
   onToggleVisibility,
   onShowAll,
   onHideAll,
+  isCollapsed,
+  onToggleCollapse,
 }: CameraSidebarProps) {
+  const visibleCount = cameras.length - hiddenCameraIds.size;
+
+  if (isCollapsed) {
+    return (
+      <aside className="camera-sidebar collapsed">
+        <button
+          className="collapse-toggle"
+          onClick={onToggleCollapse}
+          title="Expand sidebar"
+        >
+          <span className="collapse-icon">&#9654;</span>
+        </button>
+        <div className="collapsed-cameras">
+          {cameras.map((camera) => {
+            const isHidden = hiddenCameraIds.has(camera.id);
+            const status = recordingStatus.get(camera.id);
+            return (
+              <div
+                key={camera.id}
+                className={`collapsed-camera-dot ${camera.status} ${isHidden ? 'hidden-camera' : ''}`}
+                title={`${camera.name}${status?.is_recording ? ' (Recording)' : ''}`}
+              >
+                {status?.is_recording && <span className="mini-rec" />}
+              </div>
+            );
+          })}
+        </div>
+      </aside>
+    );
+  }
+
   if (cameras.length === 0) {
     return (
       <aside className="camera-sidebar">
         <div className="sidebar-header">
+          <button
+            className="collapse-toggle"
+            onClick={onToggleCollapse}
+            title="Collapse sidebar"
+          >
+            <span className="collapse-icon">&#9664;</span>
+          </button>
           <h3>Cameras</h3>
         </div>
         <div className="no-cameras">
@@ -36,11 +79,16 @@ export function CameraSidebar({
     );
   }
 
-  const visibleCount = cameras.length - hiddenCameraIds.size;
-
   return (
     <aside className="camera-sidebar">
       <div className="sidebar-header">
+        <button
+          className="collapse-toggle"
+          onClick={onToggleCollapse}
+          title="Collapse sidebar"
+        >
+          <span className="collapse-icon">&#9664;</span>
+        </button>
         <h3>Cameras</h3>
         <span className="camera-count">{visibleCount}/{cameras.length}</span>
       </div>

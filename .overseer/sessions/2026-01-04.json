@@ -10,6 +10,36 @@
       "logged_at": "2026-01-04T18:26:47.323931",
       "summary": "Fixed live playback of in-progress recordings. Root cause: camera_stream.py was missing -movflags frag_keyframe+empty_moov FFmpeg flags, causing MP4 files to be unplayable until complete. Added fragmented MP4 flags and implemented StreamingResponse for in-progress files in playback API.",
       "task_id": "TASK-12"
+    },
+    {
+      "files_touched": [
+        "frontend/src/App.tsx",
+        "frontend/src/components/CameraSidebar.tsx",
+        "frontend/src/components/CameraSidebar.css"
+      ],
+      "id": "97c326e0",
+      "logged_at": "2026-01-04T19:01:09.462958",
+      "summary": "Implemented collapsible camera sidebar for Live View. Added collapsed state with status dots, localStorage persistence, and toggle button. Sidebar collapses to 48px width showing only camera status indicators.",
+      "task_id": "TASK-5"
+    },
+    {
+      "files_touched": [
+        "backend/live_detection_worker.py"
+      ],
+      "id": "1bc74146",
+      "logged_at": "2026-01-04T20:02:45.663124",
+      "summary": "Implemented real-time motion detection in the live detection worker. Added per-camera MotionDetector pool using MOG2 background subtraction, integrated motion detection into the segment processing pipeline with cooldown/debouncing, added cleanup for removed cameras, and added orange color for motion bounding boxes in snapshots.",
+      "task_id": "TASK-13"
+    },
+    {
+      "files_touched": [
+        "backend/app/api/playback.py",
+        "backend/app/services/recorder.py"
+      ],
+      "id": "65dc4421",
+      "logged_at": "2026-01-04T22:30:49.447068",
+      "summary": "Fixed in-progress recording playback issue where timeline would jump erratically. Root cause: Range requests were not being handled for in-progress recordings - the endpoint advertised Accept-Ranges: bytes but always streamed from beginning. Also improved fMP4 movflags with default_base_moof for better browser seeking support.",
+      "task_id": "TASK-15"
     }
   ]
 }

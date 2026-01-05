@@ -5,13 +5,92 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: width 0.2s ease;
+}
+
+.camera-sidebar.collapsed {
+  width: 48px;
+}
+
+.collapse-toggle {
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+  flex-shrink: 0;
+}
+
+.collapse-toggle:hover {
+  color: #fff;
+}
+
+.collapse-icon {
+  font-size: 10px;
+}
+
+.camera-sidebar.collapsed .collapse-toggle {
+  width: 100%;
+  padding: 12px;
+  border-bottom: 1px solid #333;
+}
+
+.collapsed-cameras {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.collapsed-camera-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  position: relative;
+  cursor: default;
+}
+
+.collapsed-camera-dot.online {
+  background: #4caf50;
+  box-shadow: 0 0 4px #4caf50;
+}
+
+.collapsed-camera-dot.offline {
+  background: #e53935;
+}
+
+.collapsed-camera-dot.unknown {
+  background: #ff9800;
+}
+
+.collapsed-camera-dot.hidden-camera {
+  opacity: 0.3;
+}
+
+.collapsed-camera-dot .mini-rec {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 6px;
+  height: 6px;
+  background: #e53935;
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
 }
 
 .sidebar-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 12px 16px;
+  padding-left: 8px;
   border-bottom: 1px solid #333;
 }
 
@@ -20,6 +99,7 @@
   font-size: 14px;
   font-weight: 600;
   color: #fff;
+  flex: 1;
 }
 
 .camera-count {

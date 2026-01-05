@@ -233,12 +233,13 @@ async def get_recording(
 @router.get("/recordings/{recording_id}/stream", response_model=None)
 async def stream_recording(
     recording_id: str,
+    request: Request,
 ) -> Union[FileResponse, StreamingResponse]:
-    """Stream a recording file.
+    """Stream a recording file with Range request support.
 
     Note: No auth required - video players can't send Authorization headers.
 
-    For in-progress recordings, uses StreamingResponse to handle growing files.
+    For in-progress recordings, uses StreamingResponse with Range support.
     For completed recordings, uses FileResponse for better efficiency.
     """
     rec = playback_service.get_recording_by_id(recording_id)
@@ -249,25 +250,64 @@ async def stream_recording(
             detail=f"Recording {recording_id} not found",
         )
 
-    # For in-progress recordings, use streaming response (handles growing files)
+    # For in-progress recordings, handle Range requests manually
     if rec.is_in_progress:
+        # Get current file size (may grow during streaming)
+        file_size = rec.path.stat().st_size
 
-        async def stream_file():
+        # Parse Range header
+        range_header = request.headers.get("range")
+        start = 0
+        end = file_size - 1
+
+        if range_header:
+            # Parse "bytes=start-end" format
+            range_match = range_header.replace("bytes=", "").split("-")
+            if range_match[0]:
+                start = int(range_match[0])
+            if len(range_match) > 1 and range_match[1]:
+                end = min(int(range_match[1]), file_size - 1)
+
+        # Ensure valid range
+        if start >= file_size:
+            raise HTTPException(
+                status_code=416,
+                detail="Range not satisfiable",
+                headers={"Content-Range": f"bytes */{file_size}"},
+            )
+
+        content_length = end - start + 1
+
+        async def stream_range():
             async with aiofiles.open(rec.path, "rb") as f:
-                while chunk := await f.read(64 * 1024):  # 64KB chunks
+                await f.seek(start)
+                remaining = content_length
+                while remaining > 0:
+                    chunk_size = min(64 * 1024, remaining)
+                    chunk = await f.read(chunk_size)
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
                     yield chunk
 
+        # Return 206 Partial Content for Range requests, 200 for full file
+        status_code = 206 if range_header else 200
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(content_length),
+            "Content-Disposition": f'inline; filename="{rec.filename}"',
+        }
+        if range_header:
+            headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+
         return StreamingResponse(
-            stream_file(),
+            stream_range(),
+            status_code=status_code,
             media_type="video/mp4",
-            headers={
-                "Accept-Ranges": "bytes",
-                "Content-Disposition": f'inline; filename="{rec.filename}"',
-                # No Content-Length - file is growing
-            },
+            headers=headers,
         )
 
-    # For completed recordings, use FileResponse (more efficient)
+    # For completed recordings, use FileResponse (more efficient, handles Range)
     return FileResponse(
         rec.path,
         media_type="video/mp4",
