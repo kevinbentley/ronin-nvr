@@ -94,7 +94,7 @@ class TimelineEvent(BaseModel):
     timestamp_ms: int  # Milliseconds from start of day
     class_name: str
     confidence: float
-    recording_id: int
+    recording_id: Optional[int] = None  # None for live detections
     count: int = 1  # Number of detections at this time
 
 
@@ -193,3 +193,31 @@ class CameraMLSettingsRequest(BaseModel):
     model_name: Optional[str] = None
     confidence_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
     classes_filter: Optional[list[str]] = None
+
+
+# === Global ML Settings ===
+
+
+class MLSettingsResponse(BaseModel):
+    """Response for global ML settings."""
+
+    live_detection_enabled: bool
+    live_detection_fps: float
+    live_detection_cooldown: float
+    live_detection_confidence: float
+    live_detection_classes: list[str]
+    historical_confidence: float
+    historical_classes: list[str]
+    updated_at: Optional[datetime]
+
+
+class MLSettingsUpdateRequest(BaseModel):
+    """Request to update global ML settings."""
+
+    live_detection_enabled: Optional[bool] = None
+    live_detection_fps: Optional[float] = Field(None, ge=0.1, le=10.0)
+    live_detection_cooldown: Optional[float] = Field(None, ge=1.0, le=300.0)
+    live_detection_confidence: Optional[float] = Field(None, ge=0.1, le=1.0)
+    live_detection_classes: Optional[list[str]] = None
+    historical_confidence: Optional[float] = Field(None, ge=0.1, le=1.0)
+    historical_classes: Optional[list[str]] = None

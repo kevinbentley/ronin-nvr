@@ -197,17 +197,21 @@ class LiveDetectionWorker:
         self.storage_root = storage_root
         self.settings = settings
 
-        # Configuration from environment
+        # Configuration from environment (defaults, will be overridden by DB)
         self.fps = float(os.getenv("LIVE_DETECTION_FPS", "1.0"))
         self.cooldown = float(os.getenv("LIVE_DETECTION_COOLDOWN", "30.0"))
         self.confidence = float(os.getenv("LIVE_DETECTION_CONFIDENCE", "0.6"))
         self.model_name = settings.ml_default_model
+        self._live_detection_enabled = True
 
         # Parse class filter
         class_str = os.getenv(
             "LIVE_DETECTION_CLASSES", "person,car,truck"
         )
         self.class_filter = set(c.strip().lower() for c in class_str.split(","))
+
+        # Track settings for change detection
+        self._last_settings_hash: Optional[str] = None
 
         # State
         self.cameras: dict[int, CameraState] = {}
@@ -242,6 +246,9 @@ class LiveDetectionWorker:
         self._pool = await asyncpg.create_pool(
             self.database_url, min_size=2, max_size=5, ssl=False
         )
+
+        # Load settings from database (or use defaults)
+        await self._load_settings()
 
         # Load active cameras from database
         await self._load_cameras()
@@ -304,6 +311,83 @@ class LiveDetectionWorker:
 
         logger.info(f"Loaded {len(self.cameras)} active cameras")
 
+    async def _load_settings(self) -> None:
+        """Load ML settings from database for runtime configuration.
+
+        This is called every 60 seconds to pick up config changes without
+        requiring a worker restart.
+        """
+        if not self._pool:
+            return
+
+        try:
+            async with self._pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT
+                        live_detection_enabled,
+                        live_detection_fps,
+                        live_detection_cooldown,
+                        live_detection_confidence,
+                        live_detection_classes,
+                        updated_at
+                    FROM ml_settings
+                    WHERE id = 1
+                    """
+                )
+
+            if not row:
+                logger.debug("No ml_settings row found, using defaults")
+                return
+
+            # Create hash to detect changes
+            settings_hash = (
+                f"{row['live_detection_enabled']}"
+                f"{row['live_detection_fps']}"
+                f"{row['live_detection_cooldown']}"
+                f"{row['live_detection_confidence']}"
+                f"{row['live_detection_classes']}"
+            )
+
+            if settings_hash == self._last_settings_hash:
+                return  # No changes
+
+            # Apply new settings
+            old_fps = self.fps
+            old_confidence = self.confidence
+            old_classes = self.class_filter.copy()
+            old_cooldown = self.cooldown
+
+            self._live_detection_enabled = row["live_detection_enabled"]
+            self.fps = row["live_detection_fps"]
+            self.confidence = row["live_detection_confidence"]
+            self.cooldown = row["live_detection_cooldown"]
+            self.class_filter = set(
+                c.strip().lower() for c in row["live_detection_classes"].split(",")
+            )
+
+            # Update debounce tracker cooldown
+            self.debounce.cooldown_seconds = self.cooldown
+
+            self._last_settings_hash = settings_hash
+
+            # Log changes
+            changes = []
+            if old_fps != self.fps:
+                changes.append(f"fps: {old_fps} -> {self.fps}")
+            if old_confidence != self.confidence:
+                changes.append(f"confidence: {old_confidence} -> {self.confidence}")
+            if old_cooldown != self.cooldown:
+                changes.append(f"cooldown: {old_cooldown} -> {self.cooldown}")
+            if old_classes != self.class_filter:
+                changes.append(f"classes: {old_classes} -> {self.class_filter}")
+
+            if changes:
+                logger.info(f"Settings updated: {', '.join(changes)}")
+
+        except Exception as e:
+            logger.error(f"Error loading settings from database: {e}")
+
     def _get_motion_detector(self, camera_id: int) -> MotionDetector:
         """Get or create motion detector for a camera.
 
@@ -316,14 +400,22 @@ class LiveDetectionWorker:
 
     async def _run_loop(self) -> None:
         """Main worker loop: round-robin through cameras."""
-        cycle_time = 1.0 / self.fps if self.fps > 0 else 1.0
+        last_refresh = 0
 
         while self._running:
             cycle_start = asyncio.get_event_loop().time()
+            cycle_time = 1.0 / self.fps if self.fps > 0 else 1.0
 
-            # Refresh camera list periodically (every 60 seconds)
-            if int(cycle_start) % 60 == 0:
+            # Refresh settings and camera list periodically (every 60 seconds)
+            if cycle_start - last_refresh >= 60:
+                await self._load_settings()
                 await self._load_cameras()
+                last_refresh = cycle_start
+
+            # Skip processing if live detection is disabled
+            if not self._live_detection_enabled:
+                await asyncio.sleep(5.0)  # Check again in 5 seconds
+                continue
 
             # Process each camera
             for camera_id, state in list(self.cameras.items()):

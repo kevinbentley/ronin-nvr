@@ -214,7 +214,7 @@ export interface TimelineEvent {
   timestamp_ms: number;  // Milliseconds from start of day
   class_name: string;
   confidence: number;
-  recording_id: number;
+  recording_id: number | null;  // null for live detections
   count: number;
 }
 
@@ -259,6 +259,28 @@ export interface LiveDetection {
 export interface LiveDetectionsResponse {
   detections: LiveDetection[];
   count: number;
+}
+
+// Global ML Settings types
+export interface MLSettings {
+  live_detection_enabled: boolean;
+  live_detection_fps: number;
+  live_detection_cooldown: number;
+  live_detection_confidence: number;
+  live_detection_classes: string[];
+  historical_confidence: number;
+  historical_classes: string[];
+  updated_at: string | null;
+}
+
+export interface MLSettingsUpdate {
+  live_detection_enabled?: boolean;
+  live_detection_fps?: number;
+  live_detection_cooldown?: number;
+  live_detection_confidence?: number;
+  live_detection_classes?: string[];
+  historical_confidence?: number;
+  historical_classes?: string[];
 }
 
 // Transcode types

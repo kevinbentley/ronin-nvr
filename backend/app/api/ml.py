@@ -17,6 +17,7 @@ from app.models.camera import Camera
 from app.models.detection import Detection
 from app.models.ml_job import JobStatus, MLJob
 from app.models.ml_model import MLModel
+from app.models.ml_settings import MLSettings
 from app.models.recording import Recording
 from app.models.user import User
 from app.schemas.ml import (
@@ -29,6 +30,8 @@ from app.schemas.ml import (
     DetectionSummaryResponse,
     JobListResponse,
     JobResponse,
+    MLSettingsResponse,
+    MLSettingsUpdateRequest,
     MLStatusResponse,
     ModelConfigRequest,
     ModelListResponse,
@@ -331,23 +334,61 @@ async def get_timeline_events(
     )
     recordings = recordings_result.all()
 
-    if not recordings:
-        return TimelineEventsResponse(events=[], total=0, class_counts={})
-
     recording_ids = [r.id for r in recordings]
     recording_times = {r.id: r.start_time for r in recordings}
 
-    # Query detections for these recordings
+    # Query detections for these recordings AND live detections for this camera/date
+    # Live detections have recording_id=NULL and use detected_at for timestamp
+    import os
+    from sqlalchemy import or_
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+
+    # Get local timezone from environment for date range queries
+    tz_name = os.environ.get("TZ", "UTC")
+    try:
+        local_tz = ZoneInfo(tz_name)
+    except Exception:
+        local_tz = ZoneInfo("UTC")
+
+    # Build timezone-aware datetime range: local midnight to local midnight in UTC
+    # This ensures we query for the correct UTC range for the user's local date
+    start_of_day_local = datetime.combine(target_date, datetime.min.time()).replace(
+        tzinfo=local_tz
+    )
+    end_of_day_local = datetime.combine(target_date, datetime.max.time()).replace(
+        tzinfo=local_tz
+    )
+    start_of_day_utc = start_of_day_local.astimezone(timezone.utc)
+    end_of_day_utc = end_of_day_local.astimezone(timezone.utc)
+
+    # Live detections: no recording_id, but camera_id matches and detected_at in date range
+    live_condition = (
+        (Detection.recording_id.is_(None))
+        & (Detection.camera_id == camera.id)
+        & (Detection.detected_at >= start_of_day_utc)
+        & (Detection.detected_at <= end_of_day_utc)
+    )
+
+    # Build query conditions
+    if recording_ids:
+        # Historical detections: linked to recordings for this date
+        historical_condition = Detection.recording_id.in_(recording_ids)
+        combined_condition = or_(historical_condition, live_condition)
+    else:
+        # No recordings, only query live detections
+        combined_condition = live_condition
+
     query = (
         select(Detection)
-        .where(Detection.recording_id.in_(recording_ids))
+        .where(combined_condition)
         .where(Detection.confidence >= min_confidence)
     )
 
     if class_filter:
         query = query.where(Detection.class_name == class_filter)
 
-    query = query.order_by(Detection.timestamp_ms)
+    query = query.order_by(Detection.detected_at.nullslast(), Detection.timestamp_ms)
 
     result = await db.execute(query)
     detections = result.scalars().all()
@@ -357,18 +398,32 @@ async def get_timeline_events(
     buckets: dict[tuple[int, str], dict] = {}  # (bucket_time, class) -> data
     class_counts: dict[str, int] = {}
 
+    def to_local_time_ms(dt: datetime) -> int:
+        """Convert datetime to milliseconds from midnight in local timezone."""
+        if dt.tzinfo is None:
+            # Naive datetime, assume UTC
+            dt = dt.replace(tzinfo=timezone.utc)
+        local_dt = dt.astimezone(local_tz)
+        return (
+            local_dt.hour * 3600000
+            + local_dt.minute * 60000
+            + local_dt.second * 1000
+            + local_dt.microsecond // 1000
+        )
+
     for det in detections:
-        # Calculate absolute time in day (ms from midnight)
-        recording_start = recording_times.get(det.recording_id)
-        if recording_start:
-            recording_start_ms = (
-                recording_start.hour * 3600000
-                + recording_start.minute * 60000
-                + recording_start.second * 1000
-            )
-            abs_time_ms = recording_start_ms + det.timestamp_ms
+        # Calculate absolute time in day (ms from midnight in local timezone)
+        if det.recording_id is None and det.detected_at:
+            # Live detection: use detected_at converted to local time
+            abs_time_ms = to_local_time_ms(det.detected_at)
         else:
-            abs_time_ms = det.timestamp_ms
+            # Historical detection: use recording start time + offset
+            recording_start = recording_times.get(det.recording_id)
+            if recording_start:
+                recording_start_ms = to_local_time_ms(recording_start)
+                abs_time_ms = recording_start_ms + det.timestamp_ms
+            else:
+                abs_time_ms = det.timestamp_ms
 
         # Round to bucket
         bucket_time = (abs_time_ms // bucket_size_ms) * bucket_size_ms
@@ -534,6 +589,78 @@ async def get_ml_status(
         ],
         queue=QueueStatusResponse(**status_data["queue"]),
         models_loaded=status_data["models_loaded"],
+    )
+
+
+# === Settings ===
+
+
+@router.get("/settings", response_model=MLSettingsResponse)
+async def get_ml_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MLSettingsResponse:
+    """Get global ML settings."""
+    result = await db.execute(select(MLSettings).where(MLSettings.id == 1))
+    settings = result.scalar_one_or_none()
+
+    if not settings:
+        # Create default settings if none exist
+        settings = MLSettings(id=1)
+        db.add(settings)
+        await db.commit()
+        await db.refresh(settings)
+
+    return MLSettingsResponse(
+        live_detection_enabled=settings.live_detection_enabled,
+        live_detection_fps=settings.live_detection_fps,
+        live_detection_cooldown=settings.live_detection_cooldown,
+        live_detection_confidence=settings.live_detection_confidence,
+        live_detection_classes=settings.live_detection_classes.split(","),
+        historical_confidence=settings.historical_confidence,
+        historical_classes=settings.historical_classes.split(","),
+        updated_at=settings.updated_at,
+    )
+
+
+@router.put("/settings", response_model=MLSettingsResponse)
+async def update_ml_settings(
+    request: MLSettingsUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MLSettingsResponse:
+    """Update global ML settings.
+
+    Settings changes are picked up by workers within 60 seconds.
+    """
+    result = await db.execute(select(MLSettings).where(MLSettings.id == 1))
+    settings = result.scalar_one_or_none()
+
+    if not settings:
+        settings = MLSettings(id=1)
+        db.add(settings)
+
+    # Update fields from request
+    update_data = request.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        if value is not None:
+            # Convert class lists to comma-separated strings
+            if key in ("live_detection_classes", "historical_classes"):
+                value = ",".join(value)
+            setattr(settings, key, value)
+
+    await db.commit()
+    await db.refresh(settings)
+
+    return MLSettingsResponse(
+        live_detection_enabled=settings.live_detection_enabled,
+        live_detection_fps=settings.live_detection_fps,
+        live_detection_cooldown=settings.live_detection_cooldown,
+        live_detection_confidence=settings.live_detection_confidence,
+        live_detection_classes=settings.live_detection_classes.split(","),
+        historical_confidence=settings.historical_confidence,
+        historical_classes=settings.historical_classes.split(","),
+        updated_at=settings.updated_at,
     )
 
 

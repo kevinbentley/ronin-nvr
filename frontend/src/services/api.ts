@@ -22,6 +22,8 @@ import type {
   TimelineEventsResponse,
   LiveDetectionStatus,
   LiveDetectionsResponse,
+  MLSettings,
+  MLSettingsUpdate,
   TranscodeStatus,
   RetentionSettings,
   RetentionSettingsUpdate,
@@ -395,6 +397,17 @@ class ApiClient {
     limit?: number;
   }): Promise<LiveDetectionsResponse> {
     const response = await this.client.get('/ml/live-detections', { params });
+    return response.data;
+  }
+
+  // ML Settings API
+  async getMLSettings(): Promise<MLSettings> {
+    const response = await this.client.get('/ml/settings');
+    return response.data;
+  }
+
+  async updateMLSettings(settings: MLSettingsUpdate): Promise<MLSettings> {
+    const response = await this.client.put('/ml/settings', settings);
     return response.data;
   }
 }

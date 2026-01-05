@@ -14,8 +14,15 @@ import type {
   MLModel,
   LiveDetectionStatus,
   LiveDetection,
+  MLSettings,
 } from '../types/camera';
 import './MLStatusPage.css';
+
+// Available detection classes from YOLO COCO dataset
+const AVAILABLE_CLASSES = [
+  'person', 'car', 'truck', 'bus', 'motorcycle', 'bicycle',
+  'dog', 'cat', 'bird', 'backpack', 'handbag', 'suitcase',
+];
 
 export function MLStatusPage() {
   const [mlStatus, setMlStatus] = useState<MLStatus | null>(null);
@@ -29,16 +36,23 @@ export function MLStatusPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionInProgress, setActionInProgress] = useState(false);
 
+  // Settings state
+  const [settings, setSettings] = useState<MLSettings | null>(null);
+  const [editedSettings, setEditedSettings] = useState<MLSettings | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
     try {
       setError(null);
-      const [status, live, detections, jobsResponse, summary, modelsResponse] = await Promise.all([
+      const [status, live, detections, jobsResponse, summary, modelsResponse, settingsResponse] = await Promise.all([
         api.getMLStatus(),
         api.getLiveDetectionStatus(),
         api.getLiveDetections({ limit: 10 }),
         api.getMLJobs({ limit: 20 }),
         api.getMLDetectionSummary(),
         api.getMLModels(),
+        api.getMLSettings(),
       ]);
       setMlStatus(status);
       setLiveStatus(live);
@@ -47,12 +61,17 @@ export function MLStatusPage() {
       setJobsTotal(jobsResponse.total);
       setDetectionSummary(summary);
       setModels(modelsResponse.models);
+      setSettings(settingsResponse);
+      // Only set edited settings if not currently editing
+      if (!editedSettings) {
+        setEditedSettings(settingsResponse);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ML status');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [editedSettings]);
 
   useEffect(() => {
     loadData();
@@ -172,6 +191,57 @@ export function MLStatusPage() {
     }
   };
 
+  const handleSaveSettings = async () => {
+    if (!editedSettings) return;
+
+    try {
+      setSettingsSaving(true);
+      setSettingsError(null);
+      const updated = await api.updateMLSettings({
+        live_detection_enabled: editedSettings.live_detection_enabled,
+        live_detection_fps: editedSettings.live_detection_fps,
+        live_detection_cooldown: editedSettings.live_detection_cooldown,
+        live_detection_confidence: editedSettings.live_detection_confidence,
+        live_detection_classes: editedSettings.live_detection_classes,
+        historical_confidence: editedSettings.historical_confidence,
+        historical_classes: editedSettings.historical_classes,
+      });
+      setSettings(updated);
+      setEditedSettings(updated);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : 'Failed to save settings');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const handleResetSettings = () => {
+    if (settings) {
+      setEditedSettings(settings);
+      setSettingsError(null);
+    }
+  };
+
+  const hasSettingsChanges = (): boolean => {
+    if (!settings || !editedSettings) return false;
+    return (
+      settings.live_detection_enabled !== editedSettings.live_detection_enabled ||
+      settings.live_detection_fps !== editedSettings.live_detection_fps ||
+      settings.live_detection_cooldown !== editedSettings.live_detection_cooldown ||
+      settings.live_detection_confidence !== editedSettings.live_detection_confidence ||
+      JSON.stringify(settings.live_detection_classes) !== JSON.stringify(editedSettings.live_detection_classes) ||
+      settings.historical_confidence !== editedSettings.historical_confidence ||
+      JSON.stringify(settings.historical_classes) !== JSON.stringify(editedSettings.historical_classes)
+    );
+  };
+
+  const toggleClass = (classList: string[], className: string): string[] => {
+    if (classList.includes(className)) {
+      return classList.filter(c => c !== className);
+    }
+    return [...classList, className];
+  };
+
   if (loading) {
     return (
       <div className="ml-status-page loading">
@@ -254,7 +324,7 @@ export function MLStatusPage() {
           </div>
           {liveStatus?.config && (
             <div className="config-section">
-              <h4>Configuration</h4>
+              <h4>Current Configuration</h4>
               <div className="config-items">
                 <span className="config-item">
                   <strong>Model:</strong> {liveStatus.config.model}
@@ -276,6 +346,199 @@ export function MLStatusPage() {
                     {cls}{i < liveStatus.config.classes.length - 1 ? ', ' : ''}
                   </span>
                 ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ML Settings Editor */}
+        <div className="ml-status-card settings-card">
+          <div className="settings-header">
+            <h3>ML Settings</h3>
+            <div className="settings-actions">
+              {hasSettingsChanges() && (
+                <button
+                  className="reset-button"
+                  onClick={handleResetSettings}
+                  disabled={settingsSaving}
+                >
+                  Reset
+                </button>
+              )}
+              <button
+                className="save-button"
+                onClick={handleSaveSettings}
+                disabled={settingsSaving || !hasSettingsChanges()}
+              >
+                {settingsSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+
+          {settingsError && <div className="settings-error">{settingsError}</div>}
+
+          {editedSettings && (
+            <div className="settings-content">
+              {/* Live Detection Settings */}
+              <div className="settings-section">
+                <h4>Live Detection</h4>
+
+                <div className="setting-row">
+                  <label className="setting-label">
+                    <input
+                      type="checkbox"
+                      checked={editedSettings.live_detection_enabled}
+                      onChange={(e) =>
+                        setEditedSettings({
+                          ...editedSettings,
+                          live_detection_enabled: e.target.checked,
+                        })
+                      }
+                    />
+                    Enabled
+                  </label>
+                </div>
+
+                <div className="setting-row">
+                  <label className="setting-label">
+                    Confidence Threshold
+                    <span className="setting-value">
+                      {(editedSettings.live_detection_confidence * 100).toFixed(0)}%
+                    </span>
+                  </label>
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    value={editedSettings.live_detection_confidence * 100}
+                    onChange={(e) =>
+                      setEditedSettings({
+                        ...editedSettings,
+                        live_detection_confidence: parseInt(e.target.value) / 100,
+                      })
+                    }
+                    className="setting-slider"
+                  />
+                </div>
+
+                <div className="setting-row">
+                  <label className="setting-label">
+                    FPS
+                    <span className="setting-value">{editedSettings.live_detection_fps.toFixed(1)}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="50"
+                    value={editedSettings.live_detection_fps * 10}
+                    onChange={(e) =>
+                      setEditedSettings({
+                        ...editedSettings,
+                        live_detection_fps: parseInt(e.target.value) / 10,
+                      })
+                    }
+                    className="setting-slider"
+                  />
+                </div>
+
+                <div className="setting-row">
+                  <label className="setting-label">
+                    Cooldown
+                    <span className="setting-value">{editedSettings.live_detection_cooldown.toFixed(0)}s</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="5"
+                    max="120"
+                    value={editedSettings.live_detection_cooldown}
+                    onChange={(e) =>
+                      setEditedSettings({
+                        ...editedSettings,
+                        live_detection_cooldown: parseInt(e.target.value),
+                      })
+                    }
+                    className="setting-slider"
+                  />
+                </div>
+
+                <div className="setting-row classes-row">
+                  <label className="setting-label">Detection Classes</label>
+                  <div className="class-checkboxes">
+                    {AVAILABLE_CLASSES.map((cls) => (
+                      <label key={cls} className="class-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={editedSettings.live_detection_classes.includes(cls)}
+                          onChange={() =>
+                            setEditedSettings({
+                              ...editedSettings,
+                              live_detection_classes: toggleClass(
+                                editedSettings.live_detection_classes,
+                                cls
+                              ),
+                            })
+                          }
+                        />
+                        {cls}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Historical Processing Settings */}
+              <div className="settings-section">
+                <h4>Historical Processing</h4>
+
+                <div className="setting-row">
+                  <label className="setting-label">
+                    Confidence Threshold
+                    <span className="setting-value">
+                      {(editedSettings.historical_confidence * 100).toFixed(0)}%
+                    </span>
+                  </label>
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    value={editedSettings.historical_confidence * 100}
+                    onChange={(e) =>
+                      setEditedSettings({
+                        ...editedSettings,
+                        historical_confidence: parseInt(e.target.value) / 100,
+                      })
+                    }
+                    className="setting-slider"
+                  />
+                </div>
+
+                <div className="setting-row classes-row">
+                  <label className="setting-label">Detection Classes</label>
+                  <div className="class-checkboxes">
+                    {AVAILABLE_CLASSES.map((cls) => (
+                      <label key={cls} className="class-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={editedSettings.historical_classes.includes(cls)}
+                          onChange={() =>
+                            setEditedSettings({
+                              ...editedSettings,
+                              historical_classes: toggleClass(
+                                editedSettings.historical_classes,
+                                cls
+                              ),
+                            })
+                          }
+                        />
+                        {cls}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-note">
+                Changes take effect within 60 seconds
               </div>
             </div>
           )}

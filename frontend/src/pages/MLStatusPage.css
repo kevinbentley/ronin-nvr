@@ -544,3 +544,214 @@
   font-size: 12px;
   color: #888;
 }
+
+/* ML Settings Card */
+.settings-card {
+  min-width: 350px;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.settings-header h3 {
+  margin: 0;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-actions .save-button,
+.settings-actions .reset-button {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-actions .save-button {
+  background: #4caf50;
+  color: #fff;
+}
+
+.settings-actions .save-button:hover:not(:disabled) {
+  background: #43a047;
+}
+
+.settings-actions .save-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-actions .reset-button {
+  background: #3a3a3a;
+  color: #aaa;
+  border: 1px solid #444;
+}
+
+.settings-actions .reset-button:hover:not(:disabled) {
+  background: #444;
+  color: #fff;
+}
+
+.settings-error {
+  background: rgba(229, 57, 53, 0.2);
+  border: 1px solid #e53935;
+  color: #ef9a9a;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-section {
+  padding-bottom: 16px;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.settings-section:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.settings-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  color: #888;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.setting-row {
+  margin-bottom: 14px;
+}
+
+.setting-row:last-child {
+  margin-bottom: 0;
+}
+
+.setting-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #ccc;
+  margin-bottom: 6px;
+}
+
+.setting-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #4caf50;
+  cursor: pointer;
+}
+
+.setting-value {
+  margin-left: auto;
+  font-weight: 500;
+  color: #4caf50;
+  min-width: 45px;
+  text-align: right;
+}
+
+.setting-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #3a3a3a;
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.setting-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #4caf50;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.setting-slider::-webkit-slider-thumb:hover {
+  background: #43a047;
+}
+
+.setting-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #4caf50;
+  cursor: pointer;
+  border: none;
+}
+
+.setting-slider::-moz-range-thumb:hover {
+  background: #43a047;
+}
+
+.classes-row .setting-label {
+  margin-bottom: 10px;
+}
+
+.class-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.class-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #333;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #bbb;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.class-checkbox:hover {
+  background: #3a3a3a;
+  color: #fff;
+}
+
+.class-checkbox input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: #4caf50;
+  cursor: pointer;
+}
+
+.class-checkbox:has(input:checked) {
+  background: rgba(76, 175, 80, 0.15);
+  color: #4caf50;
+}
+
+.settings-note {
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+  text-align: center;
+  margin-top: 8px;
+}
