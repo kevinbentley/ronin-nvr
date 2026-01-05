@@ -60,8 +60,8 @@ services:
       ML_ENABLED: "true"
       ML_AUTO_PROCESS: "true"
     volumes:
-      - /opt2/ronin/storage:/data/storage
-      - /opt2/ronin/ml_models:/data/storage/.ml/models
+      - /opt3/ronin/storage:/data/storage
+      - /opt3/ronin/ml_models:/data/storage/.ml/models
     ports:
       - "8000:8000"
     healthcheck:
@@ -109,8 +109,8 @@ services:
       ML_CONFIDENCE_THRESHOLD: ${ML_CONFIDENCE_THRESHOLD:-0.5}
       ML_CLASS_FILTER: ${ML_CLASS_FILTER:-person,car,truck,bus,motorcycle,bicycle,dog,cat}
     volumes:
-      - /opt2/ronin/storage:/data/storage
-      - /opt2/ronin/ml_models:/data/storage/.ml/models
+      - /opt3/ronin/storage:/data/storage
+      - /opt3/ronin/ml_models:/data/storage/.ml/models
     command: ["python", "ml_worker.py", "--workers", "1"]
     deploy:
       resources:
@@ -148,8 +148,8 @@ services:
       ML_CONFIDENCE_THRESHOLD: ${ML_CONFIDENCE_THRESHOLD:-0.5}
       ML_CLASS_FILTER: ${ML_CLASS_FILTER:-person,car,truck,bus,motorcycle,bicycle,dog,cat}
     volumes:
-      - /opt2/ronin/storage:/data/storage
-      - /opt2/ronin/ml_models:/data/storage/.ml/models
+      - /opt3/ronin/storage:/data/storage
+      - /opt3/ronin/ml_models:/data/storage/.ml/models
     command: ["python", "live_detection_worker.py"]
     deploy:
       resources:
@@ -162,7 +162,7 @@ services:
               count: all
               capabilities: [gpu]
 
-  # Transcode Worker (can scale)
+  # Transcode Worker (runs 3 replicas)
   transcode-worker:
     build:
       context: ./backend
@@ -177,9 +177,10 @@ services:
       TRANSCODE_CRF: ${TRANSCODE_CRF:-28}
       TRANSCODE_PRESET: ${TRANSCODE_PRESET:-medium}
     volumes:
-      - /opt2/ronin/storage:/data/storage
+      - /opt3/ronin/storage:/data/storage
     command: ["python", "transcode_worker.py", "--continuous"]
     deploy:
+      replicas: 3
       resources:
         limits:
           cpus: '4'

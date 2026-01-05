@@ -1,0 +1,15 @@
+{
+  "sessions": [
+    {
+      "files_touched": [
+        "backend/app/services/camera_stream.py",
+        "backend/app/api/playback.py",
+        "backend/requirements.txt"
+      ],
+      "id": "0752424c",
+      "logged_at": "2026-01-04T18:26:47.323931",
+      "summary": "Fixed live playback of in-progress recordings. Root cause: camera_stream.py was missing -movflags frag_keyframe+empty_moov FFmpeg flags, causing MP4 files to be unplayable until complete. Added fragmented MP4 flags and implemented StreamingResponse for in-progress files in playback API.",
+      "task_id": "TASK-12"
+    }
+  ]
+}

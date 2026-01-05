@@ -1,0 +1,18 @@
+{
+  "sessions": [
+    {
+      "files_touched": [
+        "backend/app/api/storage.py",
+        "backend/app/services/retention.py",
+        "frontend/src/types/camera.ts",
+        "frontend/src/services/api.ts",
+        "frontend/src/pages/SetupPage.tsx",
+        "frontend/src/pages/SetupPage.css"
+      ],
+      "id": "aa963861",
+      "logged_at": "2026-01-02T08:55:00.769201",
+      "summary": "Implemented file retention policy configuration on the setup page. Added backend API endpoints (GET/PUT /storage/retention/settings), frontend types and API methods, and a complete UI component with form inputs for retention days and max storage size, including \"unlimited\" checkbox options. Settings are persisted to a JSON file in the storage root and the RetentionService reloads them dynamically.",
+      "task_id": "TASK-7"
+    }
+  ]
+}

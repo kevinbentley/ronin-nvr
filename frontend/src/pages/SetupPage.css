@@ -271,3 +271,127 @@
 .settings-placeholder li {
   margin-bottom: 8px;
 }
+
+/* Retention Settings Styles */
+.success-banner {
+  background: rgba(76, 175, 80, 0.2);
+  border: 1px solid #4caf50;
+  color: #81c784;
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.settings-loading {
+  color: #888;
+  padding: 20px;
+  text-align: center;
+}
+
+.retention-settings {
+  padding: 0 4px;
+}
+
+.settings-description {
+  color: #aaa;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.settings-form {
+  max-width: 500px;
+}
+
+.form-group {
+  margin-bottom: 24px;
+}
+
+.form-group > label {
+  display: block;
+  color: #ddd;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.input-with-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-with-checkbox input[type="number"] {
+  width: 100px;
+  padding: 10px 12px;
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.input-with-checkbox input[type="number"]:focus {
+  outline: none;
+  border-color: #1976d2;
+}
+
+.input-with-checkbox input[type="number"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input-suffix {
+  color: #888;
+  font-size: 14px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #aaa;
+  font-size: 14px;
+  margin-left: 16px;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #1976d2;
+}
+
+.form-hint {
+  display: block;
+  color: #666;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.form-actions {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid #3a3a3a;
+}
+
+.save-button {
+  padding: 10px 20px;
+  background: #1976d2;
+  border: 1px solid #1976d2;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.save-button:hover:not(:disabled) {
+  background: #1565c0;
+}
+
+.save-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

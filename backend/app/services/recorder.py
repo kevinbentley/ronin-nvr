@@ -108,6 +108,8 @@ class CameraRecorder:
             "-f", "segment",
             "-segment_time", str(self.segment_duration),
             "-segment_format", "mp4",
+            # Use fragmented MP4 so files are playable while being written
+            "-movflags", "frag_keyframe+empty_moov",
             "-reset_timestamps", "1",
             "-strftime", "1",
             # Output pattern

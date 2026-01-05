@@ -85,6 +85,7 @@ export interface RecordingFile {
   duration_seconds: number | null;
   size_bytes: number;
   filename: string;
+  is_in_progress?: boolean;  // True if recording is currently being written
 }
 
 export interface DayRecordings {
@@ -258,4 +259,43 @@ export interface LiveDetection {
 export interface LiveDetectionsResponse {
   detections: LiveDetection[];
   count: number;
+}
+
+// Transcode types
+export interface TranscodeQueueStatus {
+  pending_files: number;
+  pending_size_bytes: number;
+  pending_size_gb: number;
+}
+
+export interface TranscodeWorkerInfo {
+  worker_id: string;
+  is_active: boolean;
+  current_file: string | null;
+  last_seen: string | null;
+}
+
+export interface TranscodeStatus {
+  enabled: boolean;
+  files_transcoded: number;
+  files_failed: number;
+  total_original_gb: number;
+  total_new_gb: number;
+  total_savings_gb: number;
+  average_savings_percent: number;
+  by_encoder: Record<string, number>;
+  queue: TranscodeQueueStatus;
+  workers: TranscodeWorkerInfo[];
+}
+
+// Retention Settings types
+export interface RetentionSettings {
+  retention_days: number | null;
+  retention_max_gb: number | null;
+  retention_check_interval_minutes: number;
+}
+
+export interface RetentionSettingsUpdate {
+  retention_days?: number | null;
+  retention_max_gb?: number | null;
 }

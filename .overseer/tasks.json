@@ -1,0 +1,169 @@
+{
+  "tasks": [
+    {
+      "context": "Detection events (people, motion, etc.) are not appearing on the playback timeline. Need to investigate why events aren't displaying - could be an issue with the API response, event positioning calculation, or how the Timeline component renders event markers. The events should appear on the timeline-events-track as colored markers corresponding to when detections occurred.",
+      "created_at": "2026-01-01T22:30:31.766807",
+      "created_by": "agent",
+      "id": "TASK-1",
+      "linked_files": [
+        "frontend/src/components/Timeline.tsx",
+        "frontend/src/components/Timeline.css",
+        "frontend/src/pages/PlaybackPage.tsx"
+      ],
+      "status": "done",
+      "title": "Fix timeline view of events",
+      "type": "bug",
+      "updated_at": "2026-01-02T07:06:12.585076"
+    },
+    {
+      "context": "ML historical detection processing is too slow. Need to investigate bottlenecks and optimize. Potential areas to look at: frame extraction rate, batch processing, GPU utilization, model inference speed, database write performance, and worker scaling.",
+      "created_at": "2026-01-01T22:33:28.723008",
+      "created_by": "agent",
+      "id": "TASK-2",
+      "jira_key": "KAN-8",
+      "linked_files": [
+        "backend/app/services/ml_worker.py",
+        "backend/app/services/ml_inference.py",
+        "docker-compose.yml"
+      ],
+      "status": "backlog",
+      "title": "Speed up ML historical detection processing",
+      "type": "feature",
+      "updated_at": "2026-01-02T16:28:09.181259"
+    },
+    {
+      "context": "Automatic migration of recordings between storage tiers based on age/access patterns:\n- Hot: Recent recordings on fast SSD/NVMe for quick access\n- Warm: Older recordings on standard HDD storage  \n- Cold: Archive storage (compressed, possibly external/network storage)\n\nConsiderations:\n- Define retention policies per tier\n- Background worker for migration\n- Transparent access (seamless playback regardless of tier)\n- Storage usage monitoring and alerts\n- Database tracking of recording locations",
+      "created_at": "2026-01-01T22:41:23.791523",
+      "created_by": "agent",
+      "id": "TASK-3",
+      "jira_key": "KAN-9",
+      "linked_files": [],
+      "status": "backlog",
+      "title": "Implement tiered storage for recordings (hot/warm/cold)",
+      "type": "feature",
+      "updated_at": "2026-01-02T16:28:12.924757"
+    },
+    {
+      "context": "Verify the web frontend works correctly on mobile browsers:\n- Responsive layout testing\n- Touch interactions (timeline scrubbing, video controls)\n- Video playback on iOS Safari and Android Chrome\n- Performance on mobile networks\n- UI/UX issues on smaller screens",
+      "created_at": "2026-01-01T22:43:31.890164",
+      "created_by": "agent",
+      "id": "TASK-4",
+      "jira_key": "KAN-10",
+      "linked_files": [],
+      "status": "backlog",
+      "title": "Test frontend on mobile devices",
+      "type": "chore",
+      "updated_at": "2026-01-02T16:28:15.395090"
+    },
+    {
+      "context": "Add ability to collapse/expand the left sidebar that shows the camera list. This would give more screen space for the video player, especially useful on smaller screens or when viewing a single camera. Should include:\n- Toggle button to collapse/expand\n- Smooth animation for collapse transition\n- Persist collapsed state (localStorage or user preference)\n- Keyboard shortcut consideration",
+      "created_at": "2026-01-01T22:52:26.488173",
+      "created_by": "agent",
+      "id": "TASK-5",
+      "jira_key": "KAN-11",
+      "linked_files": [],
+      "status": "backlog",
+      "title": "Make left camera panel collapsible",
+      "type": "feature",
+      "updated_at": "2026-01-02T16:28:17.992088"
+    },
+    {
+      "context": "Test the new fragmented MP4 recording feature that enables playback of in-progress recordings:\n\n1. Wait for current recording segment to complete and new one to start (or restart recording service)\n2. Go to Playback page, select today's date\n3. Click on the in-progress recording (orange block on timeline)\n4. Verify:\n   - Video plays immediately with red \"LIVE\" badge\n   - Seeking works within recorded portion\n   - Duration updates as recording grows (every 3 seconds)\n5. Test in Chrome, Firefox, Safari\n6. Verify completed recordings still play normally\n\nNote: Only NEW recordings after the backend change will use fMP4 format. Existing in-progress recordings are still old MP4 format and won't be playable until complete.",
+      "created_at": "2026-01-02T06:45:32.499128",
+      "created_by": "agent",
+      "id": "TASK-6",
+      "jira_key": "KAN-12",
+      "linked_files": [
+        "backend/app/services/recorder.py",
+        "frontend/src/components/RecordingPlayer.tsx"
+      ],
+      "status": "backlog",
+      "title": "Test fMP4 in-progress recording playback",
+      "type": "chore",
+      "updated_at": "2026-01-02T16:28:20.482089"
+    },
+    {
+      "context": "Allow users to configure how long recordings are retained before automatic cleanup",
+      "created_at": "2026-01-02T08:25:56.150847",
+      "created_by": "agent",
+      "id": "TASK-7",
+      "linked_files": [],
+      "status": "done",
+      "title": "Add file retention policy configuration to setup page",
+      "type": "feature",
+      "updated_at": "2026-01-02T08:54:59.289861"
+    },
+    {
+      "context": "Transcoding worker is significantly slower when running in Docker compared to command line execution:\n- Command line: ~5x realtime speed\n- Docker worker: Much slower (needs measurement)\n\nInvestigation areas:\n1. Add detailed logging including ffmpeg output to diagnose bottlenecks\n2. Compare GPU utilization between CLI and Docker environments\n3. Check for I/O bottlenecks (volume mounts, network storage)\n4. Verify NVENC encoder is being used in both cases\n5. Check for resource contention with other services\n6. Review Docker resource limits and GPU passthrough settings\n\nDebugging steps:\n- Add ffmpeg stderr/stdout logging to worker\n- Log transcoding speed metrics (input duration vs processing time)\n- Add GPU utilization logging during transcode jobs\n- Compare identical file transcoding in both environments",
+      "created_at": "2026-01-02T16:16:48.613518",
+      "created_by": "agent",
+      "id": "TASK-8",
+      "jira_key": "KAN-5",
+      "linked_files": [
+        "backend/transcode_worker.py",
+        "docker-compose.yml"
+      ],
+      "status": "backlog",
+      "title": "Debug and optimize transcoding worker performance",
+      "type": "bug",
+      "updated_at": "2026-01-02T16:27:05.704983"
+    },
+    {
+      "context": "In-progress recordings should be playable (allowing users to view footage from minutes ago while still recording), but the player shows \"couldn't load the video\" error.\n\nThis is related to TASK-6 (test fMP4 in-progress recording playback) but is a bug fix rather than testing.\n\nInvestigation areas:\n1. Verify fMP4 fragmented recording format is being used correctly\n2. Check if the backend is serving partial files correctly\n3. Verify Content-Range headers for streaming incomplete files\n4. Check frontend RecordingPlayer handling of in-progress recordings\n5. Verify the recording is detectable as \"in_progress\" vs \"completed\"\n6. Check browser compatibility with fragmented MP4 streaming\n\nSymptoms:\n- In-progress recordings appear on timeline (orange block)\n- Clicking to play shows error \"couldn't load the video\"\n- Completed recordings play normally",
+      "created_at": "2026-01-02T16:19:57.689020",
+      "created_by": "agent",
+      "id": "TASK-9",
+      "jira_key": "KAN-6",
+      "linked_files": [
+        "backend/app/services/recorder.py",
+        "backend/app/api/playback.py",
+        "frontend/src/components/RecordingPlayer.tsx"
+      ],
+      "status": "backlog",
+      "title": "Fix playback of in-progress recordings",
+      "type": "bug",
+      "updated_at": "2026-01-02T16:27:08.856617"
+    },
+    {
+      "context": "Detection events (from ML processing) should display as markers on the bottom of the playback screen timeline, but this feature is currently broken.\n\nExpected behavior:\n- When an object/event is detected in a recording, a marker should appear on the timeline\n- User can see at a glance where interesting events occurred\n- Clicking markers could jump to that timestamp\n\nInvestigation areas:\n1. Check if detection events are being saved to the database correctly\n2. Verify the API endpoint returns detection events for recordings\n3. Check if frontend is fetching and rendering the markers\n4. Look for recent changes that may have broken this feature\n5. Verify the Timeline component still has marker rendering code\n\nThis was working previously, so likely a regression from recent changes.",
+      "created_at": "2026-01-02T16:21:28.533013",
+      "created_by": "agent",
+      "id": "TASK-10",
+      "jira_key": "KAN-7",
+      "linked_files": [
+        "frontend/src/components/Timeline.tsx",
+        "frontend/src/pages/PlaybackPage.tsx",
+        "backend/app/api/playback.py"
+      ],
+      "status": "backlog",
+      "title": "Fix detection event markers on playback timeline",
+      "type": "bug",
+      "updated_at": "2026-01-02T16:27:20.217765"
+    },
+    {
+      "context": "Add ability to send SMS alerts when live detection identifies objects/events. Needs to integrate with live-detection worker and support configurable notification rules.",
+      "created_at": "2026-01-04T17:16:29.085436",
+      "created_by": "agent",
+      "id": "TASK-11",
+      "jira_key": null,
+      "linked_files": [],
+      "status": "active",
+      "title": "SMS notifications for real-time event detection",
+      "type": "feature",
+      "updated_at": "2026-01-04T17:16:29.085436"
+    },
+    {
+      "context": "Video player shows \"Failed to load video\" when trying to view a recording that is still in progress. The UI correctly shows \"Recording in progress...\" with size (76.3 MB) but the video stream fails to load. Users need this to review recent footage without waiting for 15-minute segment completion.",
+      "created_at": "2026-01-04T18:13:22.991065",
+      "created_by": "agent",
+      "id": "TASK-12",
+      "jira_key": "KAN-13",
+      "linked_files": [],
+      "status": "done",
+      "title": "Fix live playback of in-progress recordings",
+      "type": "bug",
+      "updated_at": "2026-01-04T18:40:38.890729"
+    }
+  ],
+  "version": "0.1"
+}

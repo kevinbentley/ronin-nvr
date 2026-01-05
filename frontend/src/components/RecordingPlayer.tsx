@@ -8,9 +8,10 @@ import './RecordingPlayer.css';
 interface RecordingPlayerProps {
   src: string;
   title?: string;
+  isInProgress?: boolean;
 }
 
-export function RecordingPlayer({ src, title }: RecordingPlayerProps) {
+export function RecordingPlayer({ src, title, isInProgress }: RecordingPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -59,6 +60,20 @@ export function RecordingPlayer({ src, title }: RecordingPlayerProps) {
       setIsPlaying(false);
     }
   }, [src]);
+
+  // Poll duration for in-progress recordings (fMP4 duration grows as file is written)
+  useEffect(() => {
+    if (!isInProgress) return;
+
+    const interval = setInterval(() => {
+      const video = videoRef.current;
+      if (video && !isNaN(video.duration) && isFinite(video.duration)) {
+        setDuration(video.duration);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [isInProgress]);
 
   const togglePlay = () => {
     const video = videoRef.current;
@@ -126,7 +141,12 @@ export function RecordingPlayer({ src, title }: RecordingPlayerProps) {
 
   return (
     <div className="recording-player">
-      {title && <div className="player-title">{title}</div>}
+      {title && (
+        <div className="player-title">
+          {title}
+          {isInProgress && <span className="live-badge">LIVE</span>}
+        </div>
+      )}
 
       <div className="video-wrapper">
         <video

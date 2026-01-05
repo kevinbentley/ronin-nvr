@@ -267,6 +267,9 @@ export function PlaybackPage() {
         {selectedRecording && (
           <div className="sidebar-section">
             <h3>Current Clip</h3>
+            {selectedRecording.is_in_progress && (
+              <div className="in-progress-badge">Recording in progress...</div>
+            )}
             <div className="clip-info">
               <p>
                 <strong>Time:</strong>{' '}
@@ -274,9 +277,11 @@ export function PlaybackPage() {
               </p>
               <p>
                 <strong>Duration:</strong>{' '}
-                {selectedRecording.duration_seconds
-                  ? `${Math.floor(selectedRecording.duration_seconds / 60)}m`
-                  : 'Unknown'}
+                {selectedRecording.is_in_progress
+                  ? 'Recording...'
+                  : selectedRecording.duration_seconds
+                    ? `${Math.floor(selectedRecording.duration_seconds / 60)}m`
+                    : 'Unknown'}
               </p>
               <p>
                 <strong>Size:</strong>{' '}
@@ -321,6 +326,7 @@ export function PlaybackPage() {
             <RecordingPlayer
               src={api.getRecordingStreamUrl(selectedRecording.id)}
               title={`${selectedCamera} - ${formatRecordingTime(selectedRecording.start_time)}`}
+              isInProgress={selectedRecording.is_in_progress}
             />
           ) : (
             <div className="no-selection">

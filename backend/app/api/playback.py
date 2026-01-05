@@ -1,8 +1,9 @@
 """Playback API endpoints for viewing recorded videos."""
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, Union
 
+import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
@@ -25,6 +26,7 @@ class RecordingFileResponse(BaseModel):
     duration_seconds: Optional[int]
     size_bytes: int
     filename: str
+    is_in_progress: bool = False  # True if recording is currently being written
 
 
 class DayRecordingsResponse(BaseModel):
@@ -122,6 +124,7 @@ async def get_day_recordings(
             duration_seconds=f.duration_seconds,
             size_bytes=f.size,
             filename=f.filename,
+            is_in_progress=f.is_in_progress,
         )
         for f in day_recs.files
     ]
@@ -188,6 +191,7 @@ async def list_recordings(
             duration_seconds=f.duration_seconds,
             size_bytes=f.size,
             filename=f.filename,
+            is_in_progress=f.is_in_progress,
         )
         for f in recordings
     ]
@@ -222,16 +226,20 @@ async def get_recording(
         duration_seconds=rec.duration_seconds,
         size_bytes=rec.size,
         filename=rec.filename,
+        is_in_progress=rec.is_in_progress,
     )
 
 
-@router.get("/recordings/{recording_id}/stream")
+@router.get("/recordings/{recording_id}/stream", response_model=None)
 async def stream_recording(
     recording_id: str,
-) -> FileResponse:
+) -> Union[FileResponse, StreamingResponse]:
     """Stream a recording file.
 
     Note: No auth required - video players can't send Authorization headers.
+
+    For in-progress recordings, uses StreamingResponse to handle growing files.
+    For completed recordings, uses FileResponse for better efficiency.
     """
     rec = playback_service.get_recording_by_id(recording_id)
 
@@ -241,6 +249,25 @@ async def stream_recording(
             detail=f"Recording {recording_id} not found",
         )
 
+    # For in-progress recordings, use streaming response (handles growing files)
+    if rec.is_in_progress:
+
+        async def stream_file():
+            async with aiofiles.open(rec.path, "rb") as f:
+                while chunk := await f.read(64 * 1024):  # 64KB chunks
+                    yield chunk
+
+        return StreamingResponse(
+            stream_file(),
+            media_type="video/mp4",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Disposition": f'inline; filename="{rec.filename}"',
+                # No Content-Length - file is growing
+            },
+        )
+
+    # For completed recordings, use FileResponse (more efficient)
     return FileResponse(
         rec.path,
         media_type="video/mp4",

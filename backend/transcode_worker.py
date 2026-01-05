@@ -294,6 +294,23 @@ class TranscodeTracker:
             os.close(fd)
             return True
         except FileExistsError:
+            # Lock exists - check if it's stale (older than 30 minutes)
+            # This handles workers that crashed or were restarted
+            try:
+                lock_age = datetime.now(timezone.utc) - datetime.fromtimestamp(
+                    lock_file.stat().st_mtime, tz=timezone.utc
+                )
+                if lock_age.total_seconds() > 1800:  # 30 minutes
+                    logger.warning(f"Removing stale lock: {lock_file}")
+                    lock_file.unlink()
+                    # Try again after removing stale lock
+                    fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                    os.write(fd, str(os.getpid()).encode())
+                    os.close(fd)
+                    return True
+            except (OSError, FileExistsError):
+                # Another worker beat us to it, or other error
+                pass
             return False
         except OSError as e:
             logger.warning(f"Could not create lock file: {e}")
@@ -340,6 +357,35 @@ class TranscodeTracker:
         self._save()
         return count
 
+    def cleanup_stale_locks(self, max_age_seconds: int = 1800) -> int:
+        """Remove all stale lock files from storage.
+
+        This should be called on worker startup to clean up locks from
+        workers that crashed or were restarted.
+
+        Args:
+            max_age_seconds: Consider locks older than this as stale (default 30 min)
+
+        Returns:
+            Number of stale locks removed
+        """
+        removed = 0
+        now = datetime.now(timezone.utc)
+
+        for lock_file in self.tracking_file.parent.rglob(".lock_*.mp4"):
+            try:
+                lock_age = now - datetime.fromtimestamp(
+                    lock_file.stat().st_mtime, tz=timezone.utc
+                )
+                if lock_age.total_seconds() > max_age_seconds:
+                    logger.info(f"Removing stale lock: {lock_file}")
+                    lock_file.unlink()
+                    removed += 1
+            except OSError:
+                pass
+
+        return removed
+
 
 class TranscodeWorker:
     """Worker that transcodes video files to save storage."""
@@ -383,56 +429,6 @@ class TranscodeWorker:
             # Map CPU preset to NVENC preset
             return NVENC_PRESET_MAP.get(self.preset, "p4")
         return self.preset
-
-    def find_files_to_transcode(self) -> list[Path]:
-        """Find all MP4 files that need transcoding.
-
-        Returns:
-            List of file paths to transcode
-        """
-        files_to_process = []
-        now = datetime.now(timezone.utc)
-
-        # Scan all .mp4 files in storage (excluding hidden directories)
-        for mp4_file in self.storage_root.rglob("*.mp4"):
-            # Skip hidden directories and temp files
-            if any(part.startswith(".") for part in mp4_file.parts):
-                continue
-            if mp4_file.name.startswith("."):
-                continue
-
-            # Skip if already transcoded, failed, or locked by another worker
-            if self.tracker.is_transcoded(mp4_file):
-                continue
-            if self.tracker.is_failed(mp4_file):
-                continue
-            if self.tracker.is_locked(mp4_file):
-                continue
-
-            # Skip if file is too recent (might still be recording)
-            try:
-                mtime = datetime.fromtimestamp(mp4_file.stat().st_mtime, tz=timezone.utc)
-                if now - mtime < self.min_age:
-                    continue
-            except OSError:
-                continue
-
-            # Check if file should be skipped (already HEVC or efficiently encoded)
-            should_skip, skip_reason = self._should_skip_transcode(mp4_file)
-            if should_skip:
-                # Mark as transcoded so we skip it next time
-                file_size = mp4_file.stat().st_size
-                self.tracker.mark_transcoded(
-                    mp4_file, file_size, file_size, 0, skip_reason or "skipped"
-                )
-                logger.debug(f"Skipping {mp4_file.name} - {skip_reason}")
-                continue
-
-            files_to_process.append(mp4_file)
-
-        # Sort by modification time (oldest first)
-        files_to_process.sort(key=lambda p: p.stat().st_mtime)
-        return files_to_process
 
     def _get_video_info(self, file_path: Path) -> Optional[dict]:
         """Get video codec, bitrate, resolution, and duration.
@@ -699,76 +695,138 @@ class TranscodeWorker:
                 error_message=str(e),
             )
 
+    def _try_claim_file(self, mp4_file: Path) -> bool:
+        """Try to claim a file for transcoding with lock-first approach.
+
+        This method attempts to acquire a lock BEFORE checking other conditions,
+        preventing race conditions when multiple workers are running.
+
+        Args:
+            mp4_file: Path to the video file
+
+        Returns:
+            True if this worker should process the file, False otherwise
+        """
+        # Skip hidden directories and temp files
+        if any(part.startswith(".") for part in mp4_file.parts):
+            return False
+        if mp4_file.name.startswith("."):
+            return False
+
+        # Skip if already transcoded or failed
+        if self.tracker.is_transcoded(mp4_file):
+            return False
+        if self.tracker.is_failed(mp4_file):
+            return False
+
+        # Try to acquire lock FIRST - this is the key to preventing races
+        # If another worker is checking this file, only one will succeed
+        if not self.tracker.lock_file(mp4_file):
+            return False
+
+        # Now we have the lock - do remaining checks
+        # If any fail, we release the lock
+
+        # Check file age
+        now = datetime.now(timezone.utc)
+        try:
+            mtime = datetime.fromtimestamp(mp4_file.stat().st_mtime, tz=timezone.utc)
+            if now - mtime < self.min_age:
+                self.tracker.unlock_file(mp4_file)
+                return False
+        except OSError:
+            self.tracker.unlock_file(mp4_file)
+            return False
+
+        # Check if file should be skipped (already HEVC or efficiently encoded)
+        should_skip, skip_reason = self._should_skip_transcode(mp4_file)
+        if should_skip:
+            # Mark as transcoded so we skip it next time
+            try:
+                file_size = mp4_file.stat().st_size
+                self.tracker.mark_transcoded(
+                    mp4_file, file_size, file_size, 0, skip_reason or "skipped"
+                )
+            except OSError:
+                pass
+            logger.debug(f"Skipping {mp4_file.name} - {skip_reason}")
+            self.tracker.unlock_file(mp4_file)
+            return False
+
+        # File is claimed and ready for transcoding
+        return True
+
     async def run_once(self) -> dict:
         """Run one pass of transcoding.
 
         Returns:
             Summary statistics
         """
-        files = self.find_files_to_transcode()
-
-        if not files:
-            logger.info("No files to transcode")
-            return {"files_found": 0, "files_processed": 0}
-
-        logger.info(f"Found {len(files)} files to transcode")
-
         processed = 0
         total_savings_mb = 0.0
+        files_found = 0
 
-        for file_path in files:
+        # Scan all .mp4 files and try to claim them one at a time
+        # This lock-first approach prevents multiple workers from
+        # grabbing the same file
+        for mp4_file in self.storage_root.rglob("*.mp4"):
             if not self._running:
                 logger.info("Worker stopped, exiting")
                 break
 
-            self._current_file = file_path
-
-            if self.dry_run:
-                size_mb = file_path.stat().st_size / (1024 * 1024)
-                logger.info(f"[DRY RUN] Would transcode: {file_path} ({size_mb:.1f} MB)")
-                processed += 1
+            # Try to claim this file (acquires lock if successful)
+            if not self._try_claim_file(mp4_file):
                 continue
 
-            # Try to acquire lock - another worker may have grabbed it
-            if not self.tracker.lock_file(file_path):
-                logger.debug(f"File locked by another worker: {file_path.name}")
+            files_found += 1
+            self._current_file = mp4_file
+
+            if self.dry_run:
+                size_mb = mp4_file.stat().st_size / (1024 * 1024)
+                logger.info(f"[DRY RUN] Would transcode: {mp4_file} ({size_mb:.1f} MB)")
+                self.tracker.unlock_file(mp4_file)
+                processed += 1
+                self._current_file = None
                 continue
 
             try:
-                result = self.transcode_file(file_path)
+                result = self.transcode_file(mp4_file)
 
                 if result.success:
                     self.tracker.mark_transcoded(
-                        file_path,
+                        mp4_file,
                         result.original_size,
                         result.new_size,
                         result.duration_seconds,
                         result.encoder_used,
                     )
                     # Calculate speed relative to video duration
-                    video_duration = self._get_video_duration(file_path)
+                    video_duration = self._get_video_duration(mp4_file)
                     speed_str = ""
                     if video_duration and result.duration_seconds > 0:
                         speed = video_duration / result.duration_seconds
                         speed_str = f", {speed:.1f}x realtime"
 
                     logger.info(
-                        f"Transcoded {file_path.name}: "
+                        f"Transcoded {mp4_file.name}: "
                         f"{result.savings_mb:.1f} MB saved ({result.savings_percent:.1f}%) "
                         f"in {result.duration_seconds:.1f}s{speed_str}"
                     )
                     processed += 1
                     total_savings_mb += result.savings_mb
                 else:
-                    self.tracker.mark_failed(file_path, result.error_message or "Unknown")
-                    logger.error(f"Failed to transcode {file_path.name}: {result.error_message}")
+                    self.tracker.mark_failed(mp4_file, result.error_message or "Unknown")
+                    logger.error(f"Failed to transcode {mp4_file.name}: {result.error_message}")
             finally:
-                self.tracker.unlock_file(file_path)
+                self.tracker.unlock_file(mp4_file)
 
             self._current_file = None
 
+        if files_found == 0:
+            logger.info("No files to transcode")
+
         return {
-            "files_found": len(files),
+            "files_found": files_found,
             "files_processed": processed,
             "total_savings_mb": round(total_savings_mb, 1),
             "encoder": self.encoder.encoder_name,
@@ -1014,6 +1072,11 @@ Examples:
 
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
+
+    # Clean up stale locks on startup
+    stale_removed = worker.tracker.cleanup_stale_locks()
+    if stale_removed > 0:
+        logger.info(f"Cleaned up {stale_removed} stale lock(s) from previous run")
 
     # Run
     if args.continuous:

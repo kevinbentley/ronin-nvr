@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
-import type { StorageStats, RecordingStatus, Camera } from '../types/camera';
+import type { StorageStats, RecordingStatus, Camera, TranscodeStatus } from '../types/camera';
 import './StatusPage.css';
 
 interface StatusPageProps {
@@ -20,6 +20,7 @@ interface HealthStatus {
 export function StatusPage({ cameras, recordingStatus }: StatusPageProps) {
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
+  const [transcodeStatus, setTranscodeStatus] = useState<TranscodeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cleanupResult, setCleanupResult] = useState<string | null>(null);
@@ -28,12 +29,14 @@ export function StatusPage({ cameras, recordingStatus }: StatusPageProps) {
   const loadData = useCallback(async () => {
     try {
       setError(null);
-      const [storage, health] = await Promise.all([
+      const [storage, health, transcode] = await Promise.all([
         api.getStorageStats(),
         api.getHealth(),
+        api.getTranscodeStatus(),
       ]);
       setStorageStats(storage);
       setHealthStatus(health);
+      setTranscodeStatus(transcode);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load status');
     } finally {
@@ -183,6 +186,78 @@ export function StatusPage({ cameras, recordingStatus }: StatusPageProps) {
               <span className="cleanup-result">{cleanupResult}</span>
             )}
           </div>
+        </div>
+
+        {/* Transcoding Status */}
+        <div className="status-card wide">
+          <h3>Transcoding</h3>
+          <div className="status-items">
+            <div className="status-item">
+              <span className="label">Status</span>
+              <span className={`value ${transcodeStatus?.enabled ? 'good' : 'warning'}`}>
+                {transcodeStatus?.enabled ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>
+            <div className="status-item">
+              <span className="label">Active Workers</span>
+              <span className={`value ${(transcodeStatus?.workers.filter(w => w.is_active).length ?? 0) > 0 ? 'good' : ''}`}>
+                {transcodeStatus?.workers.filter(w => w.is_active).length ?? 0}
+              </span>
+            </div>
+            <div className="status-item">
+              <span className="label">Queue Backlog</span>
+              <span className={`value ${(transcodeStatus?.queue.pending_files ?? 0) > 0 ? 'warning' : 'good'}`}>
+                {transcodeStatus?.queue.pending_files ?? 0} files ({transcodeStatus?.queue.pending_size_gb.toFixed(2) ?? '0.00'} GB)
+              </span>
+            </div>
+            <div className="status-item">
+              <span className="label">Files Processed</span>
+              <span className="value">{transcodeStatus?.files_transcoded ?? 0}</span>
+            </div>
+            <div className="status-item">
+              <span className="label">Files Failed</span>
+              <span className={`value ${(transcodeStatus?.files_failed ?? 0) > 0 ? 'bad' : ''}`}>
+                {transcodeStatus?.files_failed ?? 0}
+              </span>
+            </div>
+            <div className="status-item">
+              <span className="label">Space Saved</span>
+              <span className="value good">
+                {transcodeStatus?.total_savings_gb.toFixed(2) ?? '0.00'} GB ({transcodeStatus?.average_savings_percent.toFixed(1) ?? '0'}%)
+              </span>
+            </div>
+          </div>
+          {transcodeStatus?.workers && transcodeStatus.workers.filter(w => w.is_active).length > 0 && (
+            <div className="transcode-workers">
+              <h4>Active Workers</h4>
+              <table className="workers-table">
+                <thead>
+                  <tr>
+                    <th>Worker</th>
+                    <th>Current File</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transcodeStatus.workers.filter(w => w.is_active).map((worker) => (
+                    <tr key={worker.worker_id}>
+                      <td>{worker.worker_id}</td>
+                      <td>{worker.current_file ?? '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {transcodeStatus?.by_encoder && Object.keys(transcodeStatus.by_encoder).length > 0 && (
+            <div className="encoder-stats">
+              <span className="encoder-label">Encoder breakdown:</span>
+              {Object.entries(transcodeStatus.by_encoder).map(([encoder, count]) => (
+                <span key={encoder} className="encoder-item">
+                  {encoder}: {count}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Per-Camera Storage */}

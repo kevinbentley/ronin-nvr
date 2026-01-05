@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "overseer": {
+      "command": "overseer",
+      "args": ["serve"],
+      "env": {
+        "OVERSEER_ROOT": "."
+      }
+    }
+  }
+}

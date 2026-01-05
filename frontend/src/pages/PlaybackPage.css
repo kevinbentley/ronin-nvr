@@ -61,6 +61,27 @@
   border-color: #1976d2;
 }
 
+.in-progress-badge {
+  background: linear-gradient(90deg, #ff9800 0%, #ffc107 100%);
+  color: #000;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  text-align: center;
+  animation: pulse-badge 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-badge {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
 .clip-info {
   background: #2a2a2a;
   border-radius: 4px;

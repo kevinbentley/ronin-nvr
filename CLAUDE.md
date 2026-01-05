@@ -9,6 +9,52 @@ When writing a project plan, always create a TODO.md with the tasks and phases. 
 
 Each time a major feature or phase is developed, make sure to thoroughly test it, then commit it to a local git repo (do not push).
 
+## Overseer Integration
+
+You have access to Overseer project management tools. Use them to stay focused and prevent scope drift.
+## Required: Use Overseer MCP for Task Management
+
+**You MUST use the Overseer MCP tools instead of the built-in TodoWrite tool for all task tracking in this project.**
+
+### Before Starting Any Work
+
+1. **Check active tasks first**: Call `mcp__overseer__read_active_tasks` to see what's currently being worked on
+2. **Check for scope drift**: Call `mcp__overseer__check_drift` with the user's request to verify the work aligns with tracked tasks
+   - If no match is found, ask the user if they want to create a new task before proceeding
+   - If a weak match (40-80%), confirm which task this relates to
+
+### During Work
+
+3. **Create tasks for new work**: Use `mcp__overseer__create_task` to track new features, bugs, or chores
+   - Always specify `type`: `feature`, `bug`, `debt`, or `chore`
+   - Include `context` with implementation notes
+   - Add `linked_files` for relevant source files
+
+4. **Update task status**: Use `mcp__overseer__update_task_status` to mark tasks as:
+   - `active` - currently being worked on
+   - `blocked` - waiting on something
+   - `done` - completed
+
+### After Completing Work
+
+5. **Log work sessions**: Call `mcp__overseer__log_work_session` with:
+   - A brief `summary` of what was accomplished
+   - The `task_id` if work was for a specific task
+   - List of `files_touched` that were modified
+
+### Jira Integration (if configured)
+
+- Use `mcp__overseer__pull_jira_issues` to see assigned Jira issues
+- Use `mcp__overseer__link_jira_issue` to connect local tasks to Jira
+- Use `mcp__overseer__sync_jira_status` to push status updates to Jira
+- Use `mcp__overseer__push_task_to_jira` to create a Jira issue from a local task
+
+**Automatic Jira sync workflow:**
+1. When you create a new task locally, ask the user if they want it pushed to Jira
+2. When marking a task as `done`, automatically call `sync_jira_status` if the task has a `jira_key`
+3. For significant features or bugs, proactively suggest pushing to Jira for team visibility
+
+
 ## Safety
 When deleting files, make sure to stash or commit them to the repository first, so they can be recovered if something goes awry.
 

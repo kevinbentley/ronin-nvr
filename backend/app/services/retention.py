@@ -50,6 +50,34 @@ class RetentionService:
 
     def __init__(self, storage_root: Optional[Path] = None):
         self.storage_root = storage_root or Path(settings.storage_root)
+        self._retention_days: Optional[int] = None
+        self._retention_max_gb: Optional[float] = None
+        self._load_saved_settings()
+
+    def _load_saved_settings(self) -> None:
+        """Load saved settings from file if they exist."""
+        settings_path = self.storage_root / ".retention_settings.json"
+        if settings_path.exists():
+            try:
+                import json
+                with open(settings_path) as f:
+                    data = json.load(f)
+                    self._retention_days = data.get("retention_days")
+                    self._retention_max_gb = data.get("retention_max_gb")
+            except (json.JSONDecodeError, IOError):
+                pass
+
+    def reload_settings(
+        self,
+        retention_days: Optional[int] = None,
+        retention_max_gb: Optional[float] = None,
+    ) -> None:
+        """Reload retention settings (called when settings are updated)."""
+        self._retention_days = retention_days
+        self._retention_max_gb = retention_max_gb
+        logger.info(
+            f"Retention settings updated: days={retention_days}, max_gb={retention_max_gb}"
+        )
 
     def scan_storage(self) -> tuple[list[FileInfo], StorageStats]:
         """Scan storage directory and return file list and stats."""
@@ -137,10 +165,19 @@ class RetentionService:
         """Determine which files should be deleted based on retention policy."""
         to_delete: list[FileInfo] = []
 
+        # Priority: method args > saved settings > config defaults
         if retention_days is None:
-            retention_days = settings.retention_days
+            retention_days = (
+                self._retention_days
+                if self._retention_days is not None
+                else settings.retention_days
+            )
         if max_size_gb is None:
-            max_size_gb = settings.retention_max_gb
+            max_size_gb = (
+                self._retention_max_gb
+                if self._retention_max_gb is not None
+                else settings.retention_max_gb
+            )
 
         # First pass: delete files older than retention_days
         if retention_days is not None:

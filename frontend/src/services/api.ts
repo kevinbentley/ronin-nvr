@@ -22,6 +22,9 @@ import type {
   TimelineEventsResponse,
   LiveDetectionStatus,
   LiveDetectionsResponse,
+  TranscodeStatus,
+  RetentionSettings,
+  RetentionSettingsUpdate,
 } from '../types/camera';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -192,6 +195,25 @@ class ApiClient {
     gb_freed: number;
   }> {
     const response = await this.client.post('/storage/cleanup');
+    return response.data;
+  }
+
+  // Transcode status
+  async getTranscodeStatus(): Promise<TranscodeStatus> {
+    const response = await this.client.get('/storage/transcode/status');
+    return response.data;
+  }
+
+  // Retention settings
+  async getRetentionSettings(): Promise<RetentionSettings> {
+    const response = await this.client.get('/storage/retention/settings');
+    return response.data;
+  }
+
+  async updateRetentionSettings(
+    settings: RetentionSettingsUpdate
+  ): Promise<RetentionSettings> {
+    const response = await this.client.put('/storage/retention/settings', settings);
     return response.data;
   }
 

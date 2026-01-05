@@ -27,6 +27,7 @@ class RecordingFile:
     start_time: datetime
     size: int
     duration_seconds: Optional[int] = None
+    is_in_progress: bool = False  # True if this recording is currently being written
 
     @property
     def id(self) -> str:
@@ -150,12 +151,31 @@ class PlaybackService:
                             start_time=start_dt,
                             size=stat.st_size,
                             duration_seconds=settings.segment_duration_minutes * 60,
+                            is_in_progress=False,  # Will be set below
                         ))
                     except OSError:
                         continue
 
         # Sort by start time
         recordings.sort(key=lambda r: (r.camera_name, r.start_time))
+
+        # Mark only the most recent recording per camera as in-progress
+        # if it was modified recently (within 2x segment duration)
+        now = datetime.now(timezone.utc)
+        threshold_seconds = settings.segment_duration_minutes * 60 * 2
+        latest_per_camera: dict[str, RecordingFile] = {}
+        for rec in recordings:
+            latest_per_camera[rec.camera_name] = rec
+
+        for rec in latest_per_camera.values():
+            try:
+                mtime = datetime.fromtimestamp(rec.path.stat().st_mtime, tz=timezone.utc)
+                age_seconds = (now - mtime).total_seconds()
+                if age_seconds < threshold_seconds:
+                    rec.is_in_progress = True
+            except OSError:
+                pass
+
         return recordings
 
     def get_recording_by_id(self, recording_id: str) -> Optional[RecordingFile]:
@@ -184,6 +204,31 @@ class PlaybackService:
 
         try:
             stat = full_path.stat()
+            mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+            now = datetime.now(timezone.utc)
+            age_seconds = (now - mtime).total_seconds()
+            threshold_seconds = settings.segment_duration_minutes * 60 * 2
+
+            # Only mark as in-progress if recently modified AND is the latest file
+            is_in_progress = False
+            if age_seconds < threshold_seconds:
+                # Check if this is the most recent recording for this camera
+                camera_dir = self.storage_root / camera_name
+                latest_file = None
+                latest_mtime = None
+                for date_dir in camera_dir.iterdir():
+                    if not date_dir.is_dir():
+                        continue
+                    for mp4 in date_dir.glob("*.mp4"):
+                        try:
+                            mp4_mtime = mp4.stat().st_mtime
+                            if latest_mtime is None or mp4_mtime > latest_mtime:
+                                latest_mtime = mp4_mtime
+                                latest_file = mp4
+                        except OSError:
+                            continue
+                is_in_progress = latest_file == full_path
+
             return RecordingFile(
                 path=full_path,
                 camera_name=camera_name,
@@ -191,6 +236,7 @@ class PlaybackService:
                 start_time=start_dt,
                 size=stat.st_size,
                 duration_seconds=settings.segment_duration_minutes * 60,
+                is_in_progress=is_in_progress,
             )
         except OSError:
             return None

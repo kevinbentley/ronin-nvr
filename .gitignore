@@ -38,3 +38,9 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Overseer sensitive config
+.overseer/config.json
+
+# Test files
+backend/test.mp4

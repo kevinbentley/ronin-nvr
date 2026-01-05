@@ -149,6 +149,11 @@ A multi-phase implementation plan for building a Network Video Recorder system.
 - [x] Create API client service (axios-based)
 - [x] Build camera list/grid component
 - [x] Implement HLS.js player integration
+- [x] Add DVR-style rewind capability (15-minute buffer):
+  - [x] Extended HLS segment retention (450 segments instead of 10)
+  - [x] HLS cleanup service for buffer management
+  - [x] DVRControls component with seek bar and quick-rewind buttons
+  - [x] "Go Live" button to return to live edge
 - [x] Add Low-Latency HLS stream generation endpoint:
   - [x] `GET /api/cameras/{id}/stream/hls/playlist.m3u8`
   - [x] `GET /api/cameras/{id}/stream/hls/{segment}.ts`
@@ -246,6 +251,16 @@ A multi-phase implementation plan for building a Network Video Recorder system.
 - [ ] Document deployment process in README.md
 
 ### Known Issues / Technical Debt
+- [ ] **Playback date pagination** - Currently the playback page loads all recordings
+      for a camera at once (paginating through the API in chunks of 1000). For cameras
+      with years of recordings, this could become slow. Future options:
+      - **Date-range based loading**: Load recordings for a configurable date range
+        (e.g., last 30 days) initially, with a "Load older recordings" button
+      - **Virtual scrolling in DatePicker**: Only render visible dates, load more as
+        user scrolls back in time
+      - **Server-side date grouping**: Add API endpoint that returns available dates
+        with recording counts, then load recordings on-demand per selected date
+
 - [ ] **Video streaming endpoints have no authentication** - Video players (HLS.js,
       native `<video>` elements) cannot send Authorization headers when fetching
       media files. Affected endpoints:

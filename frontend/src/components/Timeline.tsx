@@ -126,13 +126,15 @@ export function Timeline({
             key={recording.id}
             className={`recording-block ${
               selectedRecording?.id === recording.id ? 'selected' : ''
-            }`}
+            } ${recording.is_in_progress ? 'in-progress' : ''}`}
             style={{ left, width }}
             onClick={() => onSelectRecording(recording)}
             title={`${formatTimeFromISO(recording.start_time)} - ${
-              recording.duration_seconds
-                ? `${Math.floor(recording.duration_seconds / 60)} min`
-                : 'Unknown duration'
+              recording.is_in_progress
+                ? 'Recording in progress...'
+                : recording.duration_seconds
+                  ? `${Math.floor(recording.duration_seconds / 60)} min`
+                  : 'Unknown duration'
             }`}
           />
         ))}

@@ -213,6 +213,9 @@ class CameraStream:
                 "-f", "segment",
                 "-segment_time", str(self.segment_duration),
                 "-segment_format", "mp4",
+                # Use fragmented MP4 so files are playable while being written
+                # Must use segment_format_options to pass movflags to the mp4 muxer
+                "-segment_format_options", "movflags=frag_keyframe+empty_moov",
                 "-reset_timestamps", "1",
                 "-strftime", "1",
                 recording_pattern,
