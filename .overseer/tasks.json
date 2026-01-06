@@ -184,16 +184,16 @@
       "created_at": "2026-01-04T22:20:12.124311",
       "created_by": "agent",
       "id": "TASK-14",
-      "jira_key": null,
+      "jira_key": "KAN-15",
       "linked_files": [
         "backend/app/api/playback.py",
         "backend/app/services/playback.py",
         "backend/transcode_worker.py"
       ],
-      "status": "backlog",
+      "status": "done",
       "title": "Investigate performance problems when downloading or streaming recorded video",
       "type": "bug",
-      "updated_at": "2026-01-04T22:20:12.124311"
+      "updated_at": "2026-01-05T06:25:52.166306"
     },
     {
       "context": "When playing an in-progress recording (e.g., 5 minutes long), the video shows only ~10 seconds then jumps back to 0 repeatedly. Likely issue with fragmented MP4 serving or how the player handles growing files.",
@@ -210,6 +210,63 @@
       "title": "Fix in-progress recording playback - timeline jumps erratically",
       "type": "bug",
       "updated_at": "2026-01-04T22:36:02.410368"
+    },
+    {
+      "context": "With 4 uvicorn workers, each worker has its own memory space and starts its own ffmpeg processes per camera. This causes 4x the connections to each camera. Need to either: 1) Use shared state (Redis/file locks), 2) Run streaming in a separate singleton process, or 3) Reduce to 1 worker for now",
+      "created_at": "2026-01-05T06:57:39.370652",
+      "created_by": "agent",
+      "id": "TASK-16",
+      "jira_key": "KAN-16",
+      "linked_files": [
+        "backend/Dockerfile",
+        "backend/app/services/streaming.py",
+        "backend/app/services/recorder.py"
+      ],
+      "status": "done",
+      "title": "Fix duplicate ffmpeg processes with multiple uvicorn workers",
+      "type": "bug",
+      "updated_at": "2026-01-05T07:58:08.313034"
+    },
+    {
+      "context": "User reports motion and object detection events aren't appearing in the timeline UI. Need to investigate the data flow from detection storage to timeline display.",
+      "created_at": "2026-01-05T08:03:16.106618",
+      "created_by": "agent",
+      "id": "TASK-17",
+      "jira_key": null,
+      "linked_files": [],
+      "status": "done",
+      "title": "Detection events not showing in timeline",
+      "type": "bug",
+      "updated_at": "2026-01-05T08:31:45.613451"
+    },
+    {
+      "context": "Add UI controls to the ML tab to configure:\n1. Confidence threshold (both historical and live detection)\n2. Which object classes to detect (person, car, dog, etc.)\n\nCurrently these are env-only settings. Need to:\n- Create database table for persistent settings (or use existing ml_models table)\n- Add API endpoints to get/update ML configuration\n- Build UI components with sliders/checkboxes for the settings",
+      "created_at": "2026-01-05T08:45:45.612951",
+      "created_by": "agent",
+      "id": "TASK-18",
+      "jira_key": null,
+      "linked_files": [
+        "backend/app/api/ml.py",
+        "backend/app/config.py",
+        "frontend/src/pages/MLStatusPage.tsx",
+        "backend/app/schemas/ml.py"
+      ],
+      "status": "done",
+      "title": "Make ML confidence level and detected features configurable in UI",
+      "type": "feature",
+      "updated_at": "2026-01-05T09:36:21.699134"
+    },
+    {
+      "context": "User reports: 1) Status page shows negative space saved (incorrect), 2) Transcode worker much slower than manual CLI runs (5x speedup manually), 3) 3 workers should keep up but falling behind, 4) CPU/GPU stats look fine. Need to investigate transcode worker code and space calculation logic.",
+      "created_at": "2026-01-05T09:50:00.692654",
+      "created_by": "agent",
+      "id": "TASK-19",
+      "jira_key": null,
+      "linked_files": [],
+      "status": "done",
+      "title": "Transcode worker showing negative space saved and running slower than expected",
+      "type": "bug",
+      "updated_at": "2026-01-05T12:34:04.695674"
     }
   ],
   "version": "0.1"

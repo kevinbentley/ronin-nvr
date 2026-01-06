@@ -395,6 +395,7 @@ class ApiClient {
     class_name?: string;
     since?: string;
     limit?: number;
+    offset?: number;
   }): Promise<LiveDetectionsResponse> {
     const response = await this.client.get('/ml/live-detections', { params });
     return response.data;

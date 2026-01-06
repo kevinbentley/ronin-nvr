@@ -24,10 +24,16 @@ const AVAILABLE_CLASSES = [
   'dog', 'cat', 'bird', 'backpack', 'handbag', 'suitcase',
 ];
 
+const DETECTIONS_PER_PAGE = 100;
+
 export function MLStatusPage() {
   const [mlStatus, setMlStatus] = useState<MLStatus | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveDetectionStatus | null>(null);
   const [recentDetections, setRecentDetections] = useState<LiveDetection[]>([]);
+  const [detectionsTotal, setDetectionsTotal] = useState(0);
+  const [detectionsPage, setDetectionsPage] = useState(0);
+  const [selectedDetection, setSelectedDetection] = useState<LiveDetection | null>(null);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [jobs, setJobs] = useState<MLJob[]>([]);
   const [jobsTotal, setJobsTotal] = useState(0);
   const [detectionSummary, setDetectionSummary] = useState<MLDetectionSummary | null>(null);
@@ -48,7 +54,10 @@ export function MLStatusPage() {
       const [status, live, detections, jobsResponse, summary, modelsResponse, settingsResponse] = await Promise.all([
         api.getMLStatus(),
         api.getLiveDetectionStatus(),
-        api.getLiveDetections({ limit: 10 }),
+        api.getLiveDetections({
+          limit: DETECTIONS_PER_PAGE,
+          offset: detectionsPage * DETECTIONS_PER_PAGE,
+        }),
         api.getMLJobs({ limit: 20 }),
         api.getMLDetectionSummary(),
         api.getMLModels(),
@@ -57,6 +66,7 @@ export function MLStatusPage() {
       setMlStatus(status);
       setLiveStatus(live);
       setRecentDetections(detections.detections);
+      setDetectionsTotal(detections.total);
       setJobs(jobsResponse.jobs);
       setJobsTotal(jobsResponse.total);
       setDetectionSummary(summary);
@@ -71,7 +81,7 @@ export function MLStatusPage() {
     } finally {
       setLoading(false);
     }
-  }, [editedSettings]);
+  }, [editedSettings, detectionsPage]);
 
   useEffect(() => {
     loadData();
@@ -599,12 +609,50 @@ export function MLStatusPage() {
         </div>
 
         {/* Recent Live Detections */}
-        <div className="ml-status-card">
-          <h3>Recent Live Detections</h3>
+        <div className="ml-status-card detections-card">
+          <div className="detections-header">
+            <h3>Live Detections ({detectionsTotal} total)</h3>
+            {detectionsTotal > DETECTIONS_PER_PAGE && (
+              <div className="pagination-controls">
+                <button
+                  className="pagination-button"
+                  onClick={() => setDetectionsPage((p) => Math.max(0, p - 1))}
+                  disabled={detectionsPage === 0}
+                >
+                  Previous
+                </button>
+                <span className="pagination-info">
+                  Page {detectionsPage + 1} of{' '}
+                  {Math.ceil(detectionsTotal / DETECTIONS_PER_PAGE)}
+                </span>
+                <button
+                  className="pagination-button"
+                  onClick={() =>
+                    setDetectionsPage((p) =>
+                      Math.min(
+                        Math.ceil(detectionsTotal / DETECTIONS_PER_PAGE) - 1,
+                        p + 1
+                      )
+                    )
+                  }
+                  disabled={
+                    detectionsPage >=
+                    Math.ceil(detectionsTotal / DETECTIONS_PER_PAGE) - 1
+                  }
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
           {recentDetections.length > 0 ? (
             <div className="recent-detections">
               {recentDetections.map((det) => (
-                <div key={det.id} className="detection-item">
+                <div
+                  key={det.id}
+                  className={`detection-item ${selectedDetection?.id === det.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedDetection(det)}
+                >
                   <div className="detection-summary">
                     <span className="detection-camera">{det.camera_name}</span>
                     <span className="detection-timestamp">
@@ -622,6 +670,46 @@ export function MLStatusPage() {
             </div>
           ) : (
             <p className="no-data">No recent detections</p>
+          )}
+        </div>
+
+        {/* Detection Snapshot Preview */}
+        <div className="ml-status-card snapshot-preview-card">
+          <h3>Detection Snapshot</h3>
+          {selectedDetection ? (
+            <div className="snapshot-preview">
+              {selectedDetection.snapshot_url ? (
+                <img
+                  src={selectedDetection.snapshot_url}
+                  alt={`Detection: ${selectedDetection.class_name}`}
+                  className="snapshot-image clickable"
+                  onClick={() => setZoomedImage(selectedDetection.snapshot_url)}
+                  title="Click to enlarge"
+                />
+              ) : (
+                <div className="no-snapshot">No snapshot available</div>
+              )}
+              <div className="snapshot-info">
+                <div className="snapshot-detail">
+                  <span className="snapshot-label">Camera</span>
+                  <span className="snapshot-value">{selectedDetection.camera_name}</span>
+                </div>
+                <div className="snapshot-detail">
+                  <span className="snapshot-label">Detected</span>
+                  <span className="snapshot-value">{selectedDetection.class_name}</span>
+                </div>
+                <div className="snapshot-detail">
+                  <span className="snapshot-label">Confidence</span>
+                  <span className="snapshot-value">{(selectedDetection.confidence * 100).toFixed(0)}%</span>
+                </div>
+                <div className="snapshot-detail">
+                  <span className="snapshot-label">Time</span>
+                  <span className="snapshot-value">{formatDetectionTime(selectedDetection.detected_at)}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="no-data">Select a detection to view snapshot</p>
           )}
         </div>
 
@@ -732,6 +820,22 @@ export function MLStatusPage() {
           )}
         </div>
       </div>
+
+      {/* Image Lightbox */}
+      {zoomedImage && (
+        <div className="image-lightbox" onClick={() => setZoomedImage(null)}>
+          <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
+            <img src={zoomedImage} alt="Zoomed detection snapshot" />
+            <button
+              className="lightbox-close"
+              onClick={() => setZoomedImage(null)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

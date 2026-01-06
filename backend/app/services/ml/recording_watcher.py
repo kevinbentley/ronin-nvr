@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional, Set, TYPE_CHECKING
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -201,7 +202,7 @@ class RecordingWatcher:
         result = await session.execute(
             select(Recording).where(Recording.file_path == str(rec_file.path))
         )
-        recording = result.scalar_one_or_none()
+        recording = result.scalars().first()
 
         if not recording:
             # Create new recording record
@@ -215,9 +216,21 @@ class RecordingWatcher:
                 status=RecordingStatus.COMPLETED.value,
             )
             session.add(recording)
-            await session.commit()
-            await session.refresh(recording)
-            logger.info(f"Created recording record for {rec_file.path}")
+            try:
+                await session.commit()
+                await session.refresh(recording)
+                logger.info(f"Created recording record for {rec_file.path}")
+            except IntegrityError:
+                # Recording was inserted by another process between our check and insert
+                await session.rollback()
+                result = await session.execute(
+                    select(Recording).where(Recording.file_path == str(rec_file.path))
+                )
+                recording = result.scalars().first()
+                if not recording:
+                    logger.error(f"Recording {rec_file.path} not found after IntegrityError")
+                    return
+                logger.debug(f"Recording {rec_file.path} already exists (race condition)")
 
         # Submit for ML processing
         job = await self.coordinator.process_recording(

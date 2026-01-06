@@ -102,7 +102,7 @@ class LiveDetectionListener:
                 camera_name=data["camera_name"],
                 class_name=data["class_name"],
                 confidence=data["confidence"],
-                snapshot_url=f"/api/snapshots/{data['snapshot_path']}"
+                snapshot_url=f"/api/ml/snapshots/{data['snapshot_path'].removeprefix('.snapshots/')}"
                 if data.get("snapshot_path")
                 else None,
             )
