@@ -8,6 +8,9 @@ should be run. Unlike MOG2, this works well with sparse frames
 The gate is designed to be fast (~8ms per frame at 720p) so that
 skipping YOLO inference (~121ms) on static scenes provides a
 significant performance benefit.
+
+Also includes corruption detection to filter out false motion from
+video decode errors (vertical banding from UDP packet loss).
 """
 
 import logging
@@ -20,6 +23,74 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+def detect_frame_corruption(
+    frame: np.ndarray,
+    min_band_ratio: float = 0.08,
+    min_thin_bands: int = 20,
+) -> bool:
+    """Detect if a frame has vertical banding corruption from decode errors.
+
+    UDP packet loss causes characteristic vertical striping patterns where
+    entire columns of pixels become uniform (solid color). This function
+    detects such patterns by finding columns with abnormally low variance.
+
+    Corruption characteristics:
+    1. Very thin vertical bands (1-10 pixels wide)
+    2. Bands have uniform or near-uniform color down their length
+    3. Multiple bands appear in clusters
+    4. Typically affects only part of the frame (bottom portion)
+
+    Args:
+        frame: BGR image to check
+        min_band_ratio: Minimum ratio of frame width with uniform columns (0-1).
+                       Default 0.08 (8% of width must be uniform bands).
+        min_thin_bands: Minimum number of thin uniform band clusters.
+                       Default 20 distinct thin bands.
+
+    Returns:
+        True if corruption detected, False otherwise
+    """
+    # Convert to grayscale
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
+    height, width = gray.shape[:2]
+
+    # Focus on bottom 40% of frame where corruption typically appears
+    # (corruption from packet loss usually affects lower portions)
+    bottom_start = int(height * 0.6)
+    bottom_region = gray[bottom_start:, :]
+
+    # For each column, calculate variance - corrupted bands are nearly solid
+    # Normal image columns have variance > 20, corrupted bands have < 15
+    column_stds = np.std(bottom_region.astype(float), axis=0)
+
+    # Find columns with suspiciously low variance (uniform color)
+    uniform_columns = column_stds < 15
+
+    # Count clusters of uniform columns (corruption comes in thin bands)
+    # Find runs of consecutive uniform columns
+    uniform_run_lengths = []
+    current_run = 0
+    for is_uniform in uniform_columns:
+        if is_uniform:
+            current_run += 1
+        else:
+            if current_run > 0:
+                uniform_run_lengths.append(current_run)
+            current_run = 0
+    if current_run > 0:
+        uniform_run_lengths.append(current_run)
+
+    # Count thin uniform bands (corruption creates bands 1-10 pixels wide)
+    thin_band_count = sum(1 for run in uniform_run_lengths if 1 <= run <= 10)
+
+    # Calculate ratio of frame width that is uniform
+    total_uniform = np.sum(uniform_columns)
+    uniform_ratio = total_uniform / width
+
+    # Corruption detected if: many thin uniform bands covering significant width
+    return thin_band_count >= min_thin_bands and uniform_ratio >= min_band_ratio
+
+
 @dataclass
 class MotionGateResult:
     """Result from motion gate check."""
@@ -29,6 +100,7 @@ class MotionGateResult:
     motion_percent: float  # Percentage of frame with motion (0-100)
     contour_count: int  # Number of motion regions found
     reason: str  # Human-readable reason for decision
+    frame_corrupted: bool = False  # True if frame corruption detected
 
 
 class MotionGate:
@@ -87,6 +159,19 @@ class MotionGate:
         Returns:
             MotionGateResult with decision and details
         """
+        # Check for frame corruption (vertical banding from decode errors)
+        is_corrupted = detect_frame_corruption(current_frame)
+        if is_corrupted:
+            logger.debug("Frame corruption detected, skipping motion detection")
+            return MotionGateResult(
+                should_run_inference=False,
+                motion_detected=False,
+                motion_percent=0.0,
+                contour_count=0,
+                reason="frame_corrupted",
+                frame_corrupted=True,
+            )
+
         # First frame: always run YOLO (no previous to compare)
         if previous_frame is None:
             return MotionGateResult(

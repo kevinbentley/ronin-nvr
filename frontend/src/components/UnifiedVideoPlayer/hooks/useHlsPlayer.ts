@@ -78,6 +78,7 @@ export function useHlsPlayer({
   const stallCheckerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const directPlayerCleanupRef = useRef<(() => void) | null>(null);
+  const hlsVideoCleanupRef = useRef<(() => void) | null>(null);
   const connectionStateRef = useRef<ConnectionState>('connecting');
 
   const [connectionState, setConnectionStateInternal] = useState<ConnectionState>('connecting');
@@ -109,6 +110,10 @@ export function useHlsPlayer({
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
+    }
+    if (hlsVideoCleanupRef.current) {
+      hlsVideoCleanupRef.current();
+      hlsVideoCleanupRef.current = null;
     }
     if (directPlayerCleanupRef.current) {
       directPlayerCleanupRef.current();
@@ -174,28 +179,42 @@ export function useHlsPlayer({
       if (!mountedRef.current) return;
       console.warn('HLS error:', data.type, data.details, data.fatal);
 
-      if (data.fatal) {
-        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-          console.log('Attempting media error recovery...');
-          hls.recoverMediaError();
-          return;
+      // Handle non-fatal errors gracefully (e.g., decode errors from corrupted segments)
+      // These are transient and the stream usually recovers on its own
+      if (!data.fatal) {
+        // For decode errors, try to recover by seeking slightly
+        if (data.details === 'fragParsingError' || data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          console.log('Non-fatal decode error, attempting recovery...');
+          // Seek forward slightly to skip corrupted segment
+          if (video.currentTime > 0 && video.duration > 0) {
+            const newTime = Math.min(video.currentTime + 2, video.duration - 1);
+            video.currentTime = newTime;
+          }
         }
+        return;
+      }
 
-        if (retryCountRef.current < MAX_AUTO_RETRIES) {
-          retryCountRef.current++;
-          setConnectionState('reconnecting');
-          setErrorMessage(`Reconnecting... (${retryCountRef.current}/${MAX_AUTO_RETRIES})`);
+      // Fatal error handling
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        console.log('Attempting media error recovery...');
+        hls.recoverMediaError();
+        return;
+      }
 
-          reconnectTimeoutRef.current = window.setTimeout(() => {
-            if (mountedRef.current) {
-              console.log(`Auto-reconnect attempt ${retryCountRef.current}`);
-              initializeHlsPlayer(true);
-            }
-          }, RETRY_DELAY_MS);
-        } else {
-          setConnectionState('error');
-          setErrorMessage('Connection lost. Click to reconnect.');
-        }
+      if (retryCountRef.current < MAX_AUTO_RETRIES) {
+        retryCountRef.current++;
+        setConnectionState('reconnecting');
+        setErrorMessage(`Reconnecting... (${retryCountRef.current}/${MAX_AUTO_RETRIES})`);
+
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          if (mountedRef.current) {
+            console.log(`Auto-reconnect attempt ${retryCountRef.current}`);
+            initializeHlsPlayer(true);
+          }
+        }, RETRY_DELAY_MS);
+      } else {
+        setConnectionState('error');
+        setErrorMessage('Connection lost. Click to reconnect.');
       }
     });
 
@@ -227,11 +246,49 @@ export function useHlsPlayer({
       }
     };
 
+    // Handle video element errors (decode errors from corrupted segments)
+    const handleVideoError = () => {
+      if (!mountedRef.current || !hlsRef.current) return;
+      const error = video.error;
+
+      // MEDIA_ERR_DECODE (3) often happens with corrupted segments
+      // Try to recover by seeking forward and reloading
+      if (error?.code === MediaError.MEDIA_ERR_DECODE) {
+        console.warn('Video decode error, attempting recovery...');
+
+        // Try HLS.js recovery first
+        hlsRef.current.recoverMediaError();
+
+        // Also seek forward slightly to skip corrupted segment
+        if (video.currentTime > 0 && video.duration > 0) {
+          const newTime = Math.min(video.currentTime + 2, video.duration - 1);
+          video.currentTime = newTime;
+        }
+
+        // Don't show error state for recoverable errors
+        return;
+      }
+
+      // For other errors, fall through to normal error handling
+      console.error('Video error:', error?.code, error?.message);
+    };
+
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('durationchange', handleDurationChange);
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
     video.addEventListener('progress', handleProgress);
+    video.addEventListener('error', handleVideoError);
+
+    // Store cleanup function for video element listeners
+    hlsVideoCleanupRef.current = () => {
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+      video.removeEventListener('durationchange', handleDurationChange);
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+      video.removeEventListener('progress', handleProgress);
+      video.removeEventListener('error', handleVideoError);
+    };
 
     // Monitor for video stalls
     let lastTime = 0;
