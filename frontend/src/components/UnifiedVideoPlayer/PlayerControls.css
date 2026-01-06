@@ -1,0 +1,275 @@
+/**
+ * Styles for PlayerControls component.
+ */
+
+.player-controls {
+  --accent-color: #3b82f6;
+  --track-color: rgba(255, 255, 255, 0.2);
+  --control-bg: rgba(0, 0, 0, 0.7);
+
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 16px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 5;
+}
+
+/* Position controls above the MiniTimeline when timeline is shown */
+.unified-player.has-timeline .player-controls {
+  bottom: 40px;
+}
+
+.unified-player:hover .player-controls,
+.unified-player.controls-visible .player-controls {
+  opacity: 1;
+}
+
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.controls-main {
+  flex-wrap: nowrap;
+}
+
+/* Control buttons */
+.control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.control-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.control-btn:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.control-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+.control-btn.active {
+  color: var(--accent-color);
+}
+
+.play-pause-btn {
+  width: 42px;
+  height: 42px;
+}
+
+.play-pause-btn svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* Time display */
+.time-display {
+  font-size: 13px;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  color: #fff;
+  white-space: nowrap;
+  min-width: 90px;
+}
+
+/* Live indicator */
+.live-time-display {
+  display: flex;
+  align-items: center;
+  min-width: 70px;
+}
+
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: none;
+  cursor: default;
+}
+
+.live-badge.active {
+  background: #ef4444;
+  color: #fff;
+  animation: pulse-live 2s ease-in-out infinite;
+}
+
+.live-badge.behind {
+  background: rgba(251, 191, 36, 0.9);
+  color: #000;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.live-badge.behind:hover {
+  background: #fbbf24;
+}
+
+@keyframes pulse-live {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Seek bar container */
+.seek-container {
+  flex: 1;
+  min-width: 100px;
+  display: flex;
+  align-items: center;
+}
+
+/* Range inputs (seek and volume) */
+.seek-bar,
+.volume-bar {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track-color);
+  cursor: pointer;
+}
+
+.seek-bar {
+  width: 100%;
+}
+
+.volume-bar {
+  width: 80px;
+}
+
+.seek-bar::-webkit-slider-thumb,
+.volume-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s ease;
+}
+
+.seek-bar::-webkit-slider-thumb:hover,
+.volume-bar::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.seek-bar::-moz-range-thumb,
+.volume-bar::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Speed selector */
+.speed-select {
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  min-width: 55px;
+}
+
+.speed-select:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.speed-select:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.speed-select option {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+/* Detection button */
+.detection-btn svg rect {
+  transition: stroke-opacity 0.15s ease;
+}
+
+.detection-btn.active svg rect:last-child {
+  stroke: var(--accent-color);
+  stroke-dasharray: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  .player-controls {
+    padding: 8px 12px;
+  }
+
+  .controls-row {
+    gap: 8px;
+  }
+
+  .control-btn {
+    width: 32px;
+    height: 32px;
+    padding: 4px;
+  }
+
+  .control-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .play-pause-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .play-pause-btn svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .time-display {
+    font-size: 11px;
+    min-width: 70px;
+  }
+
+  .volume-bar {
+    width: 60px;
+  }
+
+  .speed-select {
+    min-width: 48px;
+    font-size: 11px;
+  }
+}
