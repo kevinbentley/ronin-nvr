@@ -887,7 +887,7 @@ async def get_live_detections(
                 "class_name": d.class_name,
                 "confidence": d.confidence,
                 "detected_at": d.detected_at.isoformat() if d.detected_at else None,
-                "snapshot_url": f"/api/snapshots/{d.snapshot_path}"
+                "snapshot_url": f"/api/ml/snapshots/{d.snapshot_path.removeprefix('.snapshots/')}"
                 if d.snapshot_path
                 else None,
                 "bbox": {
@@ -953,7 +953,6 @@ async def get_live_detection_status(
 @router.get("/snapshots/{path:path}")
 async def get_snapshot(
     path: str,
-    current_user: User = Depends(get_current_user),
 ) -> FileResponse:
     """Serve snapshot images.
 

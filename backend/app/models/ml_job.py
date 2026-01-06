@@ -12,6 +12,7 @@ from sqlalchemy import (
     JSON,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import TIMESTAMP
@@ -81,13 +82,15 @@ class MLJob(Base):
     # Relationships
     recording: Mapped["Recording"] = relationship("Recording", back_populates="ml_jobs")
 
-    # Indexes
+    # Indexes and constraints
     __table_args__ = (
         Index("ix_ml_jobs_status", "status"),
         Index("ix_ml_jobs_recording_id", "recording_id"),
         Index("ix_ml_jobs_created_at", "created_at"),
         # Composite index for efficient job claiming: ORDER BY priority DESC, created_at ASC
         Index("ix_ml_jobs_pending_queue", "status", "priority", "created_at"),
+        # Prevent duplicate jobs for same recording/model
+        UniqueConstraint("recording_id", "model_name", name="ml_jobs_recording_model_unique"),
     )
 
     def __repr__(self) -> str:
