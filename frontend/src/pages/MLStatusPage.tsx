@@ -28,6 +28,8 @@ export function MLStatusPage() {
   const [mlStatus, setMlStatus] = useState<MLStatus | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveDetectionStatus | null>(null);
   const [recentDetections, setRecentDetections] = useState<LiveDetection[]>([]);
+  const [selectedDetection, setSelectedDetection] = useState<LiveDetection | null>(null);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [jobs, setJobs] = useState<MLJob[]>([]);
   const [jobsTotal, setJobsTotal] = useState(0);
   const [detectionSummary, setDetectionSummary] = useState<MLDetectionSummary | null>(null);
@@ -604,7 +606,11 @@ export function MLStatusPage() {
           {recentDetections.length > 0 ? (
             <div className="recent-detections">
               {recentDetections.map((det) => (
-                <div key={det.id} className="detection-item">
+                <div
+                  key={det.id}
+                  className={`detection-item ${selectedDetection?.id === det.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedDetection(det)}
+                >
                   <div className="detection-summary">
                     <span className="detection-camera">{det.camera_name}</span>
                     <span className="detection-timestamp">
@@ -622,6 +628,46 @@ export function MLStatusPage() {
             </div>
           ) : (
             <p className="no-data">No recent detections</p>
+          )}
+        </div>
+
+        {/* Detection Snapshot Preview */}
+        <div className="ml-status-card snapshot-preview-card">
+          <h3>Detection Snapshot</h3>
+          {selectedDetection ? (
+            <div className="snapshot-preview">
+              {selectedDetection.snapshot_url ? (
+                <img
+                  src={selectedDetection.snapshot_url}
+                  alt={`Detection: ${selectedDetection.class_name}`}
+                  className="snapshot-image clickable"
+                  onClick={() => setZoomedImage(selectedDetection.snapshot_url)}
+                  title="Click to enlarge"
+                />
+              ) : (
+                <div className="no-snapshot">No snapshot available</div>
+              )}
+              <div className="snapshot-info">
+                <div className="snapshot-detail">
+                  <span className="snapshot-label">Camera</span>
+                  <span className="snapshot-value">{selectedDetection.camera_name}</span>
+                </div>
+                <div className="snapshot-detail">
+                  <span className="snapshot-label">Detected</span>
+                  <span className="snapshot-value">{selectedDetection.class_name}</span>
+                </div>
+                <div className="snapshot-detail">
+                  <span className="snapshot-label">Confidence</span>
+                  <span className="snapshot-value">{(selectedDetection.confidence * 100).toFixed(0)}%</span>
+                </div>
+                <div className="snapshot-detail">
+                  <span className="snapshot-label">Time</span>
+                  <span className="snapshot-value">{formatDetectionTime(selectedDetection.detected_at)}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="no-data">Select a detection to view snapshot</p>
           )}
         </div>
 
@@ -732,6 +778,22 @@ export function MLStatusPage() {
           )}
         </div>
       </div>
+
+      {/* Image Lightbox */}
+      {zoomedImage && (
+        <div className="image-lightbox" onClick={() => setZoomedImage(null)}>
+          <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
+            <img src={zoomedImage} alt="Zoomed detection snapshot" />
+            <button
+              className="lightbox-close"
+              onClick={() => setZoomedImage(null)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
