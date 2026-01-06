@@ -259,6 +259,9 @@ export interface LiveDetection {
 export interface LiveDetectionsResponse {
   detections: LiveDetection[];
   count: number;
+  total: number;
+  offset: number;
+  limit: number;
 }
 
 // Global ML Settings types
