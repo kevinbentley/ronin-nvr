@@ -5,15 +5,17 @@ This worker monitors HLS segments from active camera streams and runs YOLO
 inference to detect objects in near real-time (2-5 second latency).
 
 Key features:
-- Single process handles multiple cameras (efficient at 1-2 fps)
-- Taps existing HLS segments (no extra RTSP connections)
+- Extracts multiple frames per segment at configurable FPS (default 3fps)
+- Uses motion gate (frame differencing) to skip YOLO on static scenes
+- Scales frames to 720p for efficient ML processing
+- Processes cameras in parallel for better throughput
 - Debounces notifications to prevent spam
 - Saves snapshots with bounding boxes for previews
 - Writes to unified detections table
 
 Usage:
     ./live_detection_worker.py              # Run with defaults from .env
-    ./live_detection_worker.py --fps 2.0    # 2 frames per second
+    ./live_detection_worker.py --fps 3.0    # 3 frames per second
 """
 
 import argparse
@@ -39,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from app.config import Settings, get_settings
 from app.services.ml.detection_service import DetectionResult, DetectionService
 from app.services.ml.model_manager import ModelManager
-from app.services.ml.motion_detector import MotionDetector
+from app.services.ml.motion_gate import MotionGate
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +61,9 @@ class CameraState:
     last_processed_segment: Optional[str] = None
     last_segment_mtime: float = 0.0
     enabled: bool = True
+    # Motion gate state
+    previous_frame: Optional[np.ndarray] = None
+    last_frame_time: float = 0.0
 
 
 @dataclass
@@ -198,11 +203,14 @@ class LiveDetectionWorker:
         self.settings = settings
 
         # Configuration from environment (defaults, will be overridden by DB)
-        self.fps = float(os.getenv("LIVE_DETECTION_FPS", "1.0"))
+        self.fps = float(os.getenv("LIVE_DETECTION_FPS", "3.0"))
         self.cooldown = float(os.getenv("LIVE_DETECTION_COOLDOWN", "30.0"))
         self.confidence = float(os.getenv("LIVE_DETECTION_CONFIDENCE", "0.6"))
         self.model_name = settings.ml_default_model
         self._live_detection_enabled = True
+
+        # Scale height for ML processing (reduces 4K to 720p for efficiency)
+        self._scale_height = settings.live_detection_scale_height
 
         # Parse class filter
         class_str = os.getenv(
@@ -219,9 +227,16 @@ class LiveDetectionWorker:
         self._running = False
         self._pool = None
 
-        # Motion detection
-        self._motion_enabled = settings.motion_detection_enabled
-        self._motion_detectors: dict[int, MotionDetector] = {}
+        # Motion gate (replaces broken MOG2 motion detection)
+        self._motion_gate_enabled = settings.motion_gate_enabled
+        self._motion_gate = MotionGate(
+            threshold=settings.motion_gate_threshold,
+            min_percent=settings.motion_gate_min_percent,
+            min_area=settings.motion_gate_min_area,
+        )
+        self._motion_gate_stale_seconds = settings.motion_gate_stale_seconds
+        # Store motion detections in database
+        self._store_motion_detections = settings.motion_detection_enabled
 
         # Initialize ML components
         self.model_manager = ModelManager()
@@ -295,11 +310,8 @@ class LiveDetectionWorker:
         # Remove cameras that are no longer active
         for cam_id in list(self.cameras.keys()):
             if cam_id not in active_ids:
+                logger.info(f"Removing camera {cam_id} (no longer active)")
                 del self.cameras[cam_id]
-                # Clean up motion detector for this camera
-                if cam_id in self._motion_detectors:
-                    del self._motion_detectors[cam_id]
-                    logger.info(f"Removed motion detector for camera {cam_id}")
 
         # Add new cameras, preserving existing state
         for row in rows:
@@ -388,23 +400,12 @@ class LiveDetectionWorker:
         except Exception as e:
             logger.error(f"Error loading settings from database: {e}")
 
-    def _get_motion_detector(self, camera_id: int) -> MotionDetector:
-        """Get or create motion detector for a camera.
-
-        Each camera needs its own detector to maintain background model state.
-        """
-        if camera_id not in self._motion_detectors:
-            self._motion_detectors[camera_id] = MotionDetector.from_settings()
-            logger.info(f"Created motion detector for camera {camera_id}")
-        return self._motion_detectors[camera_id]
-
     async def _run_loop(self) -> None:
-        """Main worker loop: round-robin through cameras."""
-        last_refresh = 0
+        """Main worker loop: process cameras in parallel."""
+        last_refresh = 0.0
 
         while self._running:
-            cycle_start = asyncio.get_event_loop().time()
-            cycle_time = 1.0 / self.fps if self.fps > 0 else 1.0
+            cycle_start = time.time()
 
             # Refresh settings and camera list periodically (every 60 seconds)
             if cycle_start - last_refresh >= 60:
@@ -417,21 +418,24 @@ class LiveDetectionWorker:
                 await asyncio.sleep(5.0)  # Check again in 5 seconds
                 continue
 
-            # Process each camera
-            for camera_id, state in list(self.cameras.items()):
-                if not state.enabled:
-                    continue
+            # Process all cameras in parallel
+            tasks = []
+            for state in self.cameras.values():
+                if state.enabled:
+                    tasks.append(self._process_camera_safe(state))
 
-                try:
-                    await self._process_camera(state)
-                except Exception as e:
-                    logger.error(f"Error processing camera {camera_id}: {e}")
+            if tasks:
+                await asyncio.gather(*tasks)
 
-            # Sleep to maintain target FPS
-            elapsed = asyncio.get_event_loop().time() - cycle_start
-            sleep_time = max(0, cycle_time - elapsed)
-            if sleep_time > 0:
-                await asyncio.sleep(sleep_time)
+            # Brief pause to avoid tight loop when all segments are up to date
+            await asyncio.sleep(0.5)
+
+    async def _process_camera_safe(self, state: CameraState) -> None:
+        """Process camera with exception handling for parallel execution."""
+        try:
+            await self._process_camera(state)
+        except Exception as e:
+            logger.error(f"Error processing camera {state.camera_id}: {e}")
 
     async def _process_camera(self, state: CameraState) -> None:
         """Process the latest HLS segment for a camera."""
@@ -482,49 +486,90 @@ class LiveDetectionWorker:
     async def _process_segment(
         self, state: CameraState, segment_path: Path, segment_mtime: float
     ) -> None:
-        """Extract frame from segment and run detection.
+        """Extract multiple frames from segment and run motion-gated detection.
 
         Args:
             state: Camera state for this camera
             segment_path: Path to the HLS segment file
             segment_mtime: Modification time of the segment (avoids race condition)
         """
-        # Extract a frame from the segment
-        frame = await self._extract_frame(segment_path)
-        if frame is None:
-            logger.debug(f"Camera {state.camera_id}: frame extraction failed")
+        # Extract multiple frames at target FPS, scaled to processing resolution
+        frames = await self._extract_frames(segment_path)
+        if not frames:
+            logger.warning(f"Camera {state.camera_id}: frame extraction failed for {segment_path.name}")
             return
 
-        logger.debug(f"Camera {state.camera_id}: extracted frame {frame.shape}")
+        logger.debug(
+            f"Camera {state.camera_id}: extracted {len(frames)} frames "
+            f"({frames[0].shape[1]}x{frames[0].shape[0]})"
+        )
 
-        # Use segment modification time as detection timestamp
-        # This is closer to actual video capture time than current time.
-        detection_time = datetime.fromtimestamp(segment_mtime, tz=timezone.utc)
-        detections_to_save = []
-        all_detections: list[DetectionResult] = []
-        snapshot_path: Optional[Path] = None
+        # Base detection timestamp from segment modification time
+        base_time = datetime.fromtimestamp(segment_mtime, tz=timezone.utc)
+        current_time = time.time()
 
-        # Run motion detection (if enabled)
-        if self._motion_enabled:
-            motion_detector = self._get_motion_detector(state.camera_id)
-            motion_result = motion_detector.detect(frame)
-
-            if motion_result.has_motion:
-                logger.debug(
-                    f"Camera {state.camera_id}: motion detected "
-                    f"({motion_result.motion_percent:.1f}%)"
+        # Check if previous frame is stale (camera reconnect scenario)
+        previous_frame = state.previous_frame
+        if previous_frame is not None:
+            frame_age = current_time - state.last_frame_time
+            if frame_age > self._motion_gate_stale_seconds:
+                logger.info(
+                    f"Camera {state.camera_id}: previous frame stale "
+                    f"({frame_age:.1f}s old), treating as first frame"
                 )
+                previous_frame = None
 
+        # Process each frame
+        yolo_runs = 0
+        yolo_skipped = 0
+
+        for frame_idx, frame in enumerate(frames):
+            # Calculate timestamp for this frame within the segment
+            # Spread frames evenly across segment duration (~2 seconds)
+            frame_offset_ms = int((frame_idx / max(len(frames), 1)) * 2000)
+            detection_time = base_time
+
+            # Motion gate check
+            # Always run YOLO on first frame of segment to catch stationary objects
+            # Use motion gate only for subsequent frames within the segment
+            should_run_yolo = True
+            motion_result = None
+
+            if self._motion_gate_enabled and previous_frame is not None:
+                motion_result = self._motion_gate.check(frame, previous_frame)
+
+                # Only use motion gate to skip YOLO on non-first frames within segment
+                # First frame (frame_idx == 0) always runs YOLO to catch stationary objects
+                if frame_idx > 0:
+                    should_run_yolo = motion_result.should_run_inference
+
+                if motion_result.motion_detected:
+                    logger.debug(
+                        f"Camera {state.camera_id}: motion detected "
+                        f"({motion_result.motion_percent:.1f}%)"
+                    )
+
+            # Collect detections for this frame
+            detections_to_save: list[dict] = []
+            all_detections: list[DetectionResult] = []
+
+            # Store motion detection if detected and enabled
+            # This creates a "motion" event even if YOLO doesn't find any objects
+            if (
+                motion_result
+                and motion_result.motion_detected
+                and self._store_motion_detections
+            ):
                 if self.debounce.should_notify(state.camera_id, "motion"):
-                    # Use largest bounding box or full frame if none
-                    if motion_result.bounding_boxes:
-                        bbox = motion_result.bounding_boxes[0]
-                    else:
-                        bbox = (0.0, 0.0, 1.0, 1.0)
+                    # Get bounding boxes for motion regions (use previous_frame before updating)
+                    bboxes = self._motion_gate.get_bounding_boxes(
+                        frame, previous_frame if previous_frame is not None else frame
+                    )
+                    bbox = bboxes[0] if bboxes else (0.0, 0.0, 1.0, 1.0)
 
-                    # Create DetectionResult for snapshot drawing
                     motion_det = DetectionResult(
                         class_name="motion",
+                        class_id=-1,  # Special ID for motion (not a YOLO class)
                         confidence=min(motion_result.motion_percent / 100.0, 1.0),
                         x=bbox[0],
                         y=bbox[1],
@@ -541,75 +586,99 @@ class LiveDetectionWorker:
                         "bbox_y": motion_det.y,
                         "bbox_width": motion_det.width,
                         "bbox_height": motion_det.height,
-                        "model_name": "motion_detector",
+                        "model_name": "motion_gate",
                         "detected_at": detection_time,
-                        "snapshot_path": None,  # Will be set later
+                        "snapshot_path": None,
                     })
                     self.debounce.mark_notified(state.camera_id, "motion")
 
-        # Run YOLO inference
-        results = self.detector.detect(
-            frame, self.model_name, confidence_threshold=self.confidence
-        )
+            # Run YOLO inference (only if motion gate passed)
+            if should_run_yolo:
+                yolo_runs += 1
+                results = self.detector.detect(
+                    frame, self.model_name, confidence_threshold=self.confidence
+                )
 
-        logger.debug(
-            f"Camera {state.camera_id}: {len(results)} raw detections"
-        )
+                # Filter by class
+                filtered = [
+                    r for r in results if r.class_name.lower() in self.class_filter
+                ]
 
-        # Filter by class
-        filtered = [
-            r for r in results if r.class_name.lower() in self.class_filter
-        ]
+                logger.debug(
+                    f"Camera {state.camera_id}: YOLO found {len(results)} objects, "
+                    f"{len(filtered)} after class filter (conf={self.confidence})"
+                )
 
-        logger.debug(
-            f"Camera {state.camera_id}: {len(filtered)} after class filter"
-        )
+                for det in filtered:
+                    if self.debounce.should_notify(state.camera_id, det.class_name):
+                        all_detections.append(det)
 
-        for det in filtered:
-            if self.debounce.should_notify(state.camera_id, det.class_name):
-                all_detections.append(det)
+                        detections_to_save.append({
+                            "camera_id": state.camera_id,
+                            "class_name": det.class_name,
+                            "confidence": det.confidence,
+                            "bbox_x": det.x,
+                            "bbox_y": det.y,
+                            "bbox_width": det.width,
+                            "bbox_height": det.height,
+                            "model_name": self.model_name,
+                            "detected_at": detection_time,
+                            "snapshot_path": None,
+                        })
+                        self.debounce.mark_notified(state.camera_id, det.class_name)
+            else:
+                yolo_skipped += 1
 
-                detections_to_save.append({
-                    "camera_id": state.camera_id,
-                    "class_name": det.class_name,
-                    "confidence": det.confidence,
-                    "bbox_x": det.x,
-                    "bbox_y": det.y,
-                    "bbox_width": det.width,
-                    "bbox_height": det.height,
-                    "model_name": self.model_name,
-                    "detected_at": detection_time,
-                    "snapshot_path": None,  # Will be set later
-                })
-                self.debounce.mark_notified(state.camera_id, det.class_name)
+            # Save snapshot and detections if any
+            if detections_to_save:
+                snapshot_path = self.snapshot_service.save_snapshot(
+                    frame, state.camera_id, all_detections, detection_time
+                )
+                logger.info(
+                    f"Detection on {state.camera_name}: "
+                    f"{', '.join(d.class_name for d in all_detections)}"
+                )
 
-        # Save snapshot and update paths if we have detections
-        if detections_to_save:
-            snapshot_path = self.snapshot_service.save_snapshot(
-                frame, state.camera_id, all_detections, detection_time
+                for det in detections_to_save:
+                    det["snapshot_path"] = str(snapshot_path)
+
+                await self._save_detections(detections_to_save, state.camera_name)
+
+            # Update previous frame for next iteration within segment
+            previous_frame = frame
+
+        # Update state with last frame for next segment's motion comparison
+        if frames:
+            state.previous_frame = frames[-1].copy()
+            state.last_frame_time = current_time
+
+        if yolo_skipped > 0:
+            logger.debug(
+                f"Camera {state.camera_id}: processed {len(frames)} frames, "
+                f"YOLO ran {yolo_runs}, skipped {yolo_skipped}"
             )
-            logger.info(
-                f"Detection on {state.camera_name}: "
-                f"{', '.join(d.class_name for d in all_detections)}"
-            )
 
-            # Update snapshot path for all detections
-            for det in detections_to_save:
-                det["snapshot_path"] = str(snapshot_path)
+    async def _extract_frames(self, segment_path: Path) -> list[np.ndarray]:
+        """Extract multiple frames from an HLS segment at target FPS, scaled to 720p.
 
-            await self._save_detections(detections_to_save, state.camera_name)
+        Args:
+            segment_path: Path to the HLS .ts segment file
 
-    async def _extract_frame(self, segment_path: Path) -> Optional[np.ndarray]:
-        """Extract a single frame from an HLS .ts segment using FFmpeg."""
+        Returns:
+            List of BGR frames as numpy arrays, scaled to processing resolution
+        """
         try:
-            # Extract the first frame from the segment (more reliable than
-            # selecting a specific frame number which may not exist at low fps)
+            # Calculate output dimensions maintaining aspect ratio
+            # Scale to target height (default 720p) for efficient ML processing
+            scale_filter = f"scale=-2:{self._scale_height}"
+
+            # Extract frames at target FPS, scaled down for ML efficiency
             cmd = [
                 "ffmpeg",
                 "-hide_banner",
                 "-loglevel", "error",
                 "-i", str(segment_path),
-                "-frames:v", "1",
+                "-vf", f"{scale_filter},fps={self.fps}",
                 "-f", "rawvideo",
                 "-pix_fmt", "bgr24",
                 "pipe:1",
@@ -622,18 +691,19 @@ class LiveDetectionWorker:
             )
 
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=10.0
+                proc.communicate(), timeout=15.0
             )
 
             if proc.returncode != 0:
                 logger.debug(f"FFmpeg failed: {stderr.decode()[:200]}")
-                return None
+                return []
 
             if not stdout:
                 logger.debug("FFmpeg returned no data")
-                return None
+                return []
 
-            # Get frame dimensions from segment
+            # Get output dimensions after scaling
+            # We need to probe the segment to calculate the scaled dimensions
             probe_cmd = [
                 "ffprobe",
                 "-v", "error",
@@ -649,37 +719,55 @@ class LiveDetectionWorker:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            probe_out, probe_err = await probe_proc.communicate()
+            probe_out, _ = await probe_proc.communicate()
             if not probe_out:
-                logger.debug(f"FFprobe returned no data: {probe_err.decode()[:200]}")
-                return None
+                logger.debug("FFprobe returned no data")
+                return []
 
-            # Parse dimensions - take first valid line (handles multiple stream output)
-            lines = [l.strip() for l in probe_out.decode().strip().split("\n") if l.strip()]
+            # Parse source dimensions
+            lines = [line.strip() for line in probe_out.decode().strip().split("\n") if line.strip()]
             if not lines:
-                logger.debug("FFprobe returned empty output")
-                return None
+                return []
 
             dims = lines[0].split(",")
             if len(dims) != 2:
-                logger.debug(f"FFprobe unexpected format: {lines[0][:100]}")
-                return None
+                return []
 
-            width, height = int(dims[0]), int(dims[1])
-            expected_size = width * height * 3
+            src_width, src_height = int(dims[0]), int(dims[1])
 
-            if len(stdout) != expected_size:
-                return None
+            # Calculate scaled dimensions (scale=-2:720 maintains aspect ratio)
+            scale_ratio = self._scale_height / src_height
+            scaled_width = int(src_width * scale_ratio)
+            # FFmpeg -2 rounds to nearest even number
+            scaled_width = scaled_width + (scaled_width % 2)
+            scaled_height = self._scale_height
 
-            frame = np.frombuffer(stdout, dtype=np.uint8).reshape((height, width, 3))
-            return frame
+            frame_size = scaled_width * scaled_height * 3
+            if len(stdout) < frame_size:
+                logger.debug(f"Not enough data for even one frame: {len(stdout)} < {frame_size}")
+                return []
+
+            # Split raw data into frames
+            num_frames = len(stdout) // frame_size
+            frames = []
+
+            for i in range(num_frames):
+                start = i * frame_size
+                end = start + frame_size
+                frame_data = stdout[start:end]
+                frame = np.frombuffer(frame_data, dtype=np.uint8).reshape(
+                    (scaled_height, scaled_width, 3)
+                )
+                frames.append(frame)
+
+            return frames
 
         except asyncio.TimeoutError:
-            logger.warning(f"Timeout extracting frame from {segment_path}")
-            return None
+            logger.warning(f"Timeout extracting frames from {segment_path}")
+            return []
         except Exception as e:
-            logger.error(f"Error extracting frame: {e}")
-            return None
+            logger.error(f"Error extracting frames: {e}")
+            return []
 
     async def _save_detections(
         self, detections: list[dict], camera_name: str
@@ -744,7 +832,7 @@ def main() -> None:
         "--fps",
         type=float,
         default=None,
-        help="Target frames per second (default: from LIVE_DETECTION_FPS or 1.0)",
+        help="Target frames per second (default: from LIVE_DETECTION_FPS or 3.0)",
     )
     parser.add_argument(
         "--cooldown",

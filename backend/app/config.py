@@ -104,10 +104,18 @@ class Settings(BaseSettings):
 
     # Live Detection settings (for live_detection_worker.py)
     live_detection_enabled: bool = True
-    live_detection_fps: float = 1.0  # Frames per second per camera
+    live_detection_fps: float = 3.0  # Frames per second per camera (extracted from segments)
     live_detection_cooldown: float = 30.0  # Seconds between same-class notifications
     live_detection_confidence: float = 0.6  # Higher threshold for real-time alerts
     live_detection_classes: str = "person,car,truck"  # Classes that trigger alerts
+    live_detection_scale_height: int = 720  # Scale frames to this height for ML processing
+
+    # Motion Gate settings (for live detection)
+    motion_gate_enabled: bool = True  # Use motion detection as gate before YOLO
+    motion_gate_threshold: float = 25.0  # Pixel difference threshold (0-255)
+    motion_gate_min_percent: float = 0.1  # Minimum % of frame that must change
+    motion_gate_min_area: int = 500  # Minimum contour area in pixels
+    motion_gate_stale_seconds: float = 30.0  # Reset previous frame if older than this
 
 
 @lru_cache

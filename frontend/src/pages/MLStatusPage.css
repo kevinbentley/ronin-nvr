@@ -884,3 +884,61 @@
 .lightbox-close:hover {
   background: #555;
 }
+
+/* Detections card with pagination */
+.detections-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.detections-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.detections-header h3 {
+  margin: 0;
+}
+
+.detections-card .pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.detections-card .pagination-button {
+  width: auto;
+  height: auto;
+  padding: 4px 10px;
+  background: #3a3a3a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #aaa;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.detections-card .pagination-button:hover:not(:disabled) {
+  background: #444;
+  color: #fff;
+}
+
+.detections-card .pagination-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.detections-card .pagination-info {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+  flex-shrink: 0;
+}

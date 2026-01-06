@@ -853,28 +853,36 @@ async def get_live_detections(
     class_name: Optional[str] = None,
     since: Optional[datetime] = None,
     limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """Get recent live detections.
+    """Get recent live detections with pagination.
 
     Live detections are those with recording_id=NULL, meaning they came
     from real-time stream analysis rather than historical file processing.
     """
-    query = (
-        select(Detection)
-        .where(Detection.recording_id.is_(None))
-        .options(selectinload(Detection.camera))
-    )
+    base_query = select(Detection).where(Detection.recording_id.is_(None))
 
     if camera_id:
-        query = query.where(Detection.camera_id == camera_id)
+        base_query = base_query.where(Detection.camera_id == camera_id)
     if class_name:
-        query = query.where(Detection.class_name == class_name)
+        base_query = base_query.where(Detection.class_name == class_name)
     if since:
-        query = query.where(Detection.detected_at >= since)
+        base_query = base_query.where(Detection.detected_at >= since)
 
-    query = query.order_by(Detection.detected_at.desc()).limit(limit)
+    # Get total count
+    count_query = select(func.count()).select_from(base_query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Get paginated results
+    query = (
+        base_query.options(selectinload(Detection.camera))
+        .order_by(Detection.detected_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     result = await db.execute(query)
     detections = result.scalars().all()
 
@@ -900,6 +908,9 @@ async def get_live_detections(
             for d in detections
         ],
         "count": len(detections),
+        "total": total,
+        "offset": offset,
+        "limit": limit,
     }
 
 

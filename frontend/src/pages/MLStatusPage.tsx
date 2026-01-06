@@ -24,10 +24,14 @@ const AVAILABLE_CLASSES = [
   'dog', 'cat', 'bird', 'backpack', 'handbag', 'suitcase',
 ];
 
+const DETECTIONS_PER_PAGE = 100;
+
 export function MLStatusPage() {
   const [mlStatus, setMlStatus] = useState<MLStatus | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveDetectionStatus | null>(null);
   const [recentDetections, setRecentDetections] = useState<LiveDetection[]>([]);
+  const [detectionsTotal, setDetectionsTotal] = useState(0);
+  const [detectionsPage, setDetectionsPage] = useState(0);
   const [selectedDetection, setSelectedDetection] = useState<LiveDetection | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [jobs, setJobs] = useState<MLJob[]>([]);
@@ -50,7 +54,10 @@ export function MLStatusPage() {
       const [status, live, detections, jobsResponse, summary, modelsResponse, settingsResponse] = await Promise.all([
         api.getMLStatus(),
         api.getLiveDetectionStatus(),
-        api.getLiveDetections({ limit: 10 }),
+        api.getLiveDetections({
+          limit: DETECTIONS_PER_PAGE,
+          offset: detectionsPage * DETECTIONS_PER_PAGE,
+        }),
         api.getMLJobs({ limit: 20 }),
         api.getMLDetectionSummary(),
         api.getMLModels(),
@@ -59,6 +66,7 @@ export function MLStatusPage() {
       setMlStatus(status);
       setLiveStatus(live);
       setRecentDetections(detections.detections);
+      setDetectionsTotal(detections.total);
       setJobs(jobsResponse.jobs);
       setJobsTotal(jobsResponse.total);
       setDetectionSummary(summary);
@@ -73,7 +81,7 @@ export function MLStatusPage() {
     } finally {
       setLoading(false);
     }
-  }, [editedSettings]);
+  }, [editedSettings, detectionsPage]);
 
   useEffect(() => {
     loadData();
@@ -601,8 +609,42 @@ export function MLStatusPage() {
         </div>
 
         {/* Recent Live Detections */}
-        <div className="ml-status-card">
-          <h3>Recent Live Detections</h3>
+        <div className="ml-status-card detections-card">
+          <div className="detections-header">
+            <h3>Live Detections ({detectionsTotal} total)</h3>
+            {detectionsTotal > DETECTIONS_PER_PAGE && (
+              <div className="pagination-controls">
+                <button
+                  className="pagination-button"
+                  onClick={() => setDetectionsPage((p) => Math.max(0, p - 1))}
+                  disabled={detectionsPage === 0}
+                >
+                  Previous
+                </button>
+                <span className="pagination-info">
+                  Page {detectionsPage + 1} of{' '}
+                  {Math.ceil(detectionsTotal / DETECTIONS_PER_PAGE)}
+                </span>
+                <button
+                  className="pagination-button"
+                  onClick={() =>
+                    setDetectionsPage((p) =>
+                      Math.min(
+                        Math.ceil(detectionsTotal / DETECTIONS_PER_PAGE) - 1,
+                        p + 1
+                      )
+                    )
+                  }
+                  disabled={
+                    detectionsPage >=
+                    Math.ceil(detectionsTotal / DETECTIONS_PER_PAGE) - 1
+                  }
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
           {recentDetections.length > 0 ? (
             <div className="recent-detections">
               {recentDetections.map((det) => (
