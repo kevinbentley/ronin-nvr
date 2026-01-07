@@ -538,6 +538,14 @@ class LiveDetectionWorker:
             if self._motion_gate_enabled and previous_frame is not None:
                 motion_result = self._motion_gate.check(frame, previous_frame)
 
+                # Skip corrupted frames entirely - don't run YOLO or store as previous
+                if motion_result.frame_corrupted:
+                    logger.warning(
+                        f"Camera {state.camera_id}: frame corruption detected, skipping"
+                    )
+                    # Don't update previous_frame with corrupted data
+                    continue
+
                 # Only use motion gate to skip YOLO on non-first frames within segment
                 # First frame (frame_idx == 0) always runs YOLO to catch stationary objects
                 if frame_idx > 0:

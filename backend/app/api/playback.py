@@ -417,3 +417,124 @@ async def download_export(
             "Content-Disposition": f'attachment; filename="{export_id}"',
         },
     )
+
+
+# Thumbnail endpoints for video scrubbing preview
+
+
+class ThumbnailInfoResponse(BaseModel):
+    """Response with thumbnail sprite information."""
+
+    available: bool
+    sprite_url: Optional[str] = None
+    vtt_url: Optional[str] = None
+    thumbnail_count: int = 0
+    interval_seconds: int = 0
+
+
+@router.get("/recordings/{recording_id}/thumbnails", response_model=ThumbnailInfoResponse)
+async def get_thumbnail_info(
+    recording_id: str,
+) -> ThumbnailInfoResponse:
+    """Get thumbnail sprite info for a recording.
+
+    If thumbnails are already generated, returns URLs.
+    If not, triggers async generation and returns available=False.
+
+    Note: No auth required for video player compatibility.
+    """
+    from app.services.thumbnail import get_cached_sprite, generate_sprite
+
+    rec = playback_service.get_recording_by_id(recording_id)
+    if not rec:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recording {recording_id} not found",
+        )
+
+    # Skip thumbnails for in-progress recordings
+    if rec.is_in_progress:
+        return ThumbnailInfoResponse(available=False)
+
+    # Check cache first
+    sprite = get_cached_sprite(rec.path)
+    if sprite:
+        return ThumbnailInfoResponse(
+            available=True,
+            sprite_url=f"/api/playback/recordings/{recording_id}/thumbnails/sprite.jpg",
+            vtt_url=f"/api/playback/recordings/{recording_id}/thumbnails/sprite.vtt",
+            thumbnail_count=sprite.thumbnail_count,
+            interval_seconds=sprite.interval_seconds,
+        )
+
+    # Generate sprite asynchronously
+    import asyncio
+    asyncio.create_task(generate_sprite(rec.path))
+
+    return ThumbnailInfoResponse(available=False)
+
+
+@router.get("/recordings/{recording_id}/thumbnails/sprite.jpg")
+async def get_thumbnail_sprite(
+    recording_id: str,
+) -> FileResponse:
+    """Get the thumbnail sprite sheet image.
+
+    Note: No auth required for video player compatibility.
+    """
+    from app.services.thumbnail import get_cached_sprite
+
+    rec = playback_service.get_recording_by_id(recording_id)
+    if not rec:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recording {recording_id} not found",
+        )
+
+    sprite = get_cached_sprite(rec.path)
+    if not sprite:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thumbnails not yet generated",
+        )
+
+    return FileResponse(
+        sprite.sprite_path,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+        },
+    )
+
+
+@router.get("/recordings/{recording_id}/thumbnails/sprite.vtt")
+async def get_thumbnail_vtt(
+    recording_id: str,
+) -> FileResponse:
+    """Get the VTT file mapping timestamps to sprite coordinates.
+
+    Note: No auth required for video player compatibility.
+    """
+    from app.services.thumbnail import get_cached_sprite
+
+    rec = playback_service.get_recording_by_id(recording_id)
+    if not rec:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recording {recording_id} not found",
+        )
+
+    sprite = get_cached_sprite(rec.path)
+    if not sprite:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thumbnails not yet generated",
+        )
+
+    return FileResponse(
+        sprite.vtt_path,
+        media_type="text/vtt",
+        headers={
+            "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+        },
+    )

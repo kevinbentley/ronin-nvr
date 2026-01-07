@@ -8,6 +8,9 @@ should be run. Unlike MOG2, this works well with sparse frames
 The gate is designed to be fast (~8ms per frame at 720p) so that
 skipping YOLO inference (~121ms) on static scenes provides a
 significant performance benefit.
+
+Also includes corruption detection to filter out false motion from
+video decode errors (vertical banding from UDP packet loss).
 """
 
 import logging
@@ -20,6 +23,63 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+def detect_frame_corruption(
+    frame: np.ndarray,
+    repeated_col_threshold: float = 0.5,
+    mean_diff_threshold: float = 0.5,
+) -> bool:
+    """Detect if a frame has vertical banding corruption from decode errors.
+
+    UDP packet loss causes the video decoder to repeat the last successfully
+    decoded row of pixels for all remaining rows in affected macroblocks.
+    This creates columns where pixel values are nearly identical down their
+    length - something that virtually never happens in natural scenes.
+
+    Detection method:
+    1. Focus on bottom 40% of frame (where corruption typically manifests)
+    2. Compute row-to-row pixel differences for each column
+    3. Corrupted columns have mean diff ≈ 0 (same value repeated down column)
+    4. Flag as corrupt if >50% of columns show this pattern
+
+    Args:
+        frame: BGR image to check
+        repeated_col_threshold: Fraction of columns with near-zero row diffs
+                               needed to flag as corrupt (default 0.5 = 50%)
+        mean_diff_threshold: Maximum mean row diff to consider a column as
+                            "repeated" (default 0.5 pixels)
+
+    Returns:
+        True if corruption detected, False otherwise
+    """
+    # Convert to grayscale
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
+    height, width = gray.shape[:2]
+
+    # Focus on bottom 40% where corruption typically appears
+    bottom_start = int(height * 0.6)
+    bottom = gray[bottom_start:, :]
+
+    # Compute row-to-row differences for each column
+    # In corrupted regions, the same pixel value repeats down the column
+    # so these differences are ~0
+    row_diffs = np.abs(np.diff(bottom.astype(float), axis=0))
+
+    # Mean difference per column
+    col_mean_diff = np.mean(row_diffs, axis=0)
+
+    # Count columns with very small row differences (repeated pixels)
+    repeated_cols = np.sum(col_mean_diff < mean_diff_threshold)
+    repeated_pct = repeated_cols / width
+
+    # Overall mean - corrupted images have very low overall mean
+    overall_mean = np.mean(col_mean_diff)
+
+    # Detection criteria:
+    # - More than 50% of columns have repeated pixels, OR
+    # - Overall mean row-diff is very low (strong corruption signal)
+    return repeated_pct > repeated_col_threshold or overall_mean < mean_diff_threshold
+
+
 @dataclass
 class MotionGateResult:
     """Result from motion gate check."""
@@ -29,6 +89,7 @@ class MotionGateResult:
     motion_percent: float  # Percentage of frame with motion (0-100)
     contour_count: int  # Number of motion regions found
     reason: str  # Human-readable reason for decision
+    frame_corrupted: bool = False  # True if frame corruption detected
 
 
 class MotionGate:
@@ -87,6 +148,19 @@ class MotionGate:
         Returns:
             MotionGateResult with decision and details
         """
+        # Check for frame corruption (vertical banding from decode errors)
+        is_corrupted = detect_frame_corruption(current_frame)
+        if is_corrupted:
+            logger.debug("Frame corruption detected, skipping motion detection")
+            return MotionGateResult(
+                should_run_inference=False,
+                motion_detected=False,
+                motion_percent=0.0,
+                contour_count=0,
+                reason="frame_corrupted",
+                frame_corrupted=True,
+            )
+
         # First frame: always run YOLO (no previous to compare)
         if previous_frame is None:
             return MotionGateResult(

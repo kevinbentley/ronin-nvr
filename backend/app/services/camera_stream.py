@@ -188,15 +188,16 @@ class CameraStream:
             "-avoid_negative_ts", "make_zero",
         ]
 
-        # Output 1: HLS for live streaming
+        # Output 1: HLS for live streaming with DVR support
+        # 15-minute DVR window: 4-second segments * 225 = 900 seconds (15 min)
         # Use start_at_zero and reset_timestamps for cleaner segments
         cmd.extend([
             "-c:v", "copy",
             "-c:a", "aac",
             "-ar", "44100",
             "-f", "hls",
-            "-hls_time", "2",
-            "-hls_list_size", "10",
+            "-hls_time", "4",
+            "-hls_list_size", "225",
             "-hls_flags", "delete_segments+append_list+omit_endlist",
             "-start_at_zero",
             "-hls_segment_filename", str(self.hls_directory / "segment%03d.ts"),

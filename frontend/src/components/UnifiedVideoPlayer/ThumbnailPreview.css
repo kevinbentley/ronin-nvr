@@ -1,0 +1,43 @@
+/* ThumbnailPreview.css - Thumbnail preview tooltip styles */
+
+.thumbnail-preview {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  z-index: 100;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: thumbnail-fade-in 0.15s ease-out;
+}
+
+@keyframes thumbnail-fade-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.thumbnail-preview-image {
+  border-radius: 4px;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  background-color: #000;
+}
+
+.thumbnail-preview-time {
+  margin-top: 4px;
+  padding: 2px 8px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}

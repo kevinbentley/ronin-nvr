@@ -89,7 +89,10 @@ export function StatusPage({ cameras, recordingStatus }: StatusPageProps) {
   if (loading) {
     return (
       <div className="status-page loading">
-        <div className="loading-spinner">Loading status...</div>
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <div className="loading-text">Loading status...</div>
+        </div>
       </div>
     );
   }

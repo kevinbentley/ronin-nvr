@@ -20,6 +20,7 @@ import type {
   MLDetectionSummary,
   MLModelListResponse,
   TimelineEventsResponse,
+  DetectionListResponse,
   LiveDetectionStatus,
   LiveDetectionsResponse,
   MLSettings,
@@ -384,6 +385,20 @@ class ApiClient {
     return response.data;
   }
 
+  async getDetections(params: {
+    recording_id?: number;
+    camera_id?: number;
+    class_name?: string;
+    min_confidence?: number;
+    start_time?: string;
+    end_time?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<DetectionListResponse> {
+    const response = await this.client.get('/ml/detections', { params });
+    return response.data;
+  }
+
   // Live Detection API
   async getLiveDetectionStatus(): Promise<LiveDetectionStatus> {
     const response = await this.client.get('/ml/live-detections/status');
@@ -409,6 +424,20 @@ class ApiClient {
 
   async updateMLSettings(settings: MLSettingsUpdate): Promise<MLSettings> {
     const response = await this.client.put('/ml/settings', settings);
+    return response.data;
+  }
+
+  // Thumbnail API
+  async getThumbnailInfo(recordingId: string): Promise<{
+    available: boolean;
+    sprite_url?: string;
+    vtt_url?: string;
+    thumbnail_count: number;
+    interval_seconds: number;
+  }> {
+    // URL-encode the recording ID since it contains :: separators
+    const encodedId = encodeURIComponent(recordingId);
+    const response = await this.client.get(`/playback/recordings/${encodedId}/thumbnails`);
     return response.data;
   }
 }

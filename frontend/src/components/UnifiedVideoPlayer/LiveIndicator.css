@@ -1,0 +1,82 @@
+/**
+ * Styles for LiveIndicator component.
+ */
+
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: none;
+  cursor: default;
+  transition: all 0.15s ease;
+}
+
+/* At live edge - pulsing red */
+.live-indicator.at-edge {
+  background: rgba(239, 68, 68, 0.9);
+  color: #fff;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.85);
+  }
+}
+
+.live-text {
+  font-weight: 700;
+}
+
+/* Behind live - clickable to return */
+.live-indicator.behind {
+  background: rgba(251, 191, 36, 0.9);
+  color: #000;
+  cursor: pointer;
+}
+
+.live-indicator.behind:hover {
+  background: #fbbf24;
+  transform: scale(1.02);
+}
+
+.live-indicator.behind:active {
+  transform: scale(0.98);
+}
+
+.time-behind {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-weight: 700;
+}
+
+.return-text {
+  font-size: 10px;
+  opacity: 0;
+  max-width: 0;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.live-indicator.behind:hover .return-text {
+  opacity: 1;
+  max-width: 60px;
+  margin-left: 4px;
+}

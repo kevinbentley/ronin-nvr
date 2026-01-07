@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
 import { DatePicker } from '../components/DatePicker';
 import { Timeline } from '../components/Timeline';
-import { RecordingPlayer } from '../components/RecordingPlayer';
+import { UnifiedVideoPlayer } from '../components/UnifiedVideoPlayer';
 import type { RecordingFile, TimelineEvent } from '../types/camera';
 import './PlaybackPage.css';
 
@@ -323,10 +323,15 @@ export function PlaybackPage() {
 
         <div className="player-container">
           {selectedRecording ? (
-            <RecordingPlayer
+            <UnifiedVideoPlayer
+              mode="playback"
               src={api.getRecordingStreamUrl(selectedRecording.id)}
-              title={`${selectedCamera} - ${formatRecordingTime(selectedRecording.start_time)}`}
-              isInProgress={selectedRecording.is_in_progress}
+              cameraId={0}
+              cameraName={`${selectedCamera} - ${formatRecordingTime(selectedRecording.start_time)}`}
+              recordingIdString={selectedRecording.id}
+              recordingStartTime={new Date(selectedRecording.start_time)}
+              showControls={true}
+              showTimeline={true}
             />
           ) : (
             <div className="no-selection">

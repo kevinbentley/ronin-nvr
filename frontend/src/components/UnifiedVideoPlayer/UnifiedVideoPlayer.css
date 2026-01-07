@@ -1,0 +1,270 @@
+/**
+ * Styles for UnifiedVideoPlayer component.
+ */
+
+.unified-player {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.player-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: linear-gradient(rgba(0, 0, 0, 0.7), transparent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.unified-player:hover .player-header,
+.unified-player.controls-visible .player-header {
+  opacity: 1;
+}
+
+.camera-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.header-indicators {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(239, 68, 68, 0.9);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.recording-indicator::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  animation: pulse-rec 1s ease-in-out infinite;
+}
+
+@keyframes pulse-rec {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Video wrapper */
+.video-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  min-height: 0;
+}
+
+.video-element {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+/* Detection overlay */
+.detection-overlay-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+/* Video overlays */
+.video-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  gap: 16px;
+}
+
+.video-overlay.error-overlay {
+  cursor: pointer;
+}
+
+.overlay-text {
+  color: #fff;
+  font-size: 14px;
+  text-align: center;
+}
+
+.overlay-text.error {
+  color: #f87171;
+}
+
+/* Loading spinner */
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Reconnect button */
+.reconnect-btn {
+  padding: 10px 20px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.reconnect-btn:hover {
+  background: #2563eb;
+}
+
+/* Play overlay button */
+.play-overlay-btn {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  opacity: 0;
+}
+
+.unified-player:hover .play-overlay-btn,
+.unified-player.controls-visible .play-overlay-btn {
+  opacity: 1;
+}
+
+.play-overlay-btn:hover {
+  background: rgba(59, 130, 246, 0.8);
+  transform: scale(1.1);
+}
+
+.play-overlay-btn svg {
+  width: 36px;
+  height: 36px;
+  margin-left: 4px; /* Visual centering for play icon */
+}
+
+/* Video placeholder (offline) */
+.video-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a1a;
+}
+
+.placeholder-text {
+  color: #666;
+  font-size: 14px;
+}
+
+/* Mini timeline placeholder */
+.mini-timeline-placeholder {
+  height: 40px;
+  background: rgba(0, 0, 0, 0.5);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Fullscreen styles */
+.unified-player:fullscreen {
+  border-radius: 0;
+}
+
+.unified-player:fullscreen .video-wrapper {
+  flex: 1;
+}
+
+.unified-player:fullscreen .player-controls {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .player-header {
+    padding: 8px 10px;
+  }
+
+  .camera-name {
+    font-size: 12px;
+  }
+
+  .recording-indicator {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+
+  .play-overlay-btn {
+    width: 56px;
+    height: 56px;
+  }
+
+  .play-overlay-btn svg {
+    width: 28px;
+    height: 28px;
+  }
+}

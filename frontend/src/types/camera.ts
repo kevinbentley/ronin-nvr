@@ -224,6 +224,30 @@ export interface TimelineEventsResponse {
   class_counts: Record<string, number>;
 }
 
+// Detection types for bounding box overlay
+export interface Detection {
+  id: number;
+  recording_id: number | null;
+  camera_id: number;
+  class_name: string;
+  confidence: number;
+  timestamp_ms: number;
+  frame_number: number;
+  bbox_x: number;
+  bbox_y: number;
+  bbox_width: number;
+  bbox_height: number;
+  model_name: string;
+  model_version?: string;
+  created_at: string;
+  snapshot_url?: string;
+}
+
+export interface DetectionListResponse {
+  detections: Detection[];
+  total: number;
+}
+
 // Live Detection types
 export interface LiveDetectionConfig {
   fps: number;
