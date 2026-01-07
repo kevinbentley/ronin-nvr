@@ -1,6 +1,10 @@
 # Overview
 This document contains critical information about working with this codebase. Follow these guidelines precisely.
 
+## Bash Tool Usage
+- **NEVER include comments in bash commands.** Do not prefix commands with `# explanation` comments. Just run the command directly. Use the `description` parameter to explain what the command does instead.
+- **For testing Python code**, create a temporary `.py` file (e.g., `test_something.py`) and run it with `python test_something.py`. Do NOT use heredoc syntax like `python3 << 'EOF'`.
+
 This project will use React for any GUI. All controls, buttons, etc. will use an event driven architecture, so when a button is pressed, the UI remains responsive while the process executes.
 
 Standalone command line tools such as those that process or generate data files should include argument processing, and the usage should be documented in a readme file.
@@ -458,9 +462,9 @@ LIVE_DETECTION_COOLDOWN=30.0
 ### Volume Mounts (Production)
 
 The GPU compose file uses host paths for persistent data:
-- `/opt2/ronin/postgres` - Database files
-- `/opt2/ronin/storage` - Video recordings
-- `/opt2/ronin/ml_models` - ONNX model cache
+- `/opt3/ronin/postgres` - Database files
+- `/opt3/ronin/storage` - Video recordings
+- `/opt3/ronin/ml_models` - ONNX model cache
 
 The CPU compose file uses named Docker volumes instead.
 
