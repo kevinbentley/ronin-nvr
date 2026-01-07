@@ -29,7 +29,9 @@ export function Header({
   return (
     <header className="app-header">
       <div className="header-left">
-        <h1 className="app-title">RoninNVR</h1>
+        <h1 className="app-title" onClick={() => window.location.reload()}>
+          RoninNVR
+        </h1>
         <nav className="header-nav">
           <button
             className={`nav-button ${currentPage === 'live' ? 'active' : ''}`}
