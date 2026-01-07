@@ -25,27 +25,28 @@ logger = logging.getLogger(__name__)
 
 def detect_frame_corruption(
     frame: np.ndarray,
-    min_band_ratio: float = 0.08,
-    min_thin_bands: int = 20,
+    repeated_col_threshold: float = 0.5,
+    mean_diff_threshold: float = 0.5,
 ) -> bool:
     """Detect if a frame has vertical banding corruption from decode errors.
 
-    UDP packet loss causes characteristic vertical striping patterns where
-    entire columns of pixels become uniform (solid color). This function
-    detects such patterns by finding columns with abnormally low variance.
+    UDP packet loss causes the video decoder to repeat the last successfully
+    decoded row of pixels for all remaining rows in affected macroblocks.
+    This creates columns where pixel values are nearly identical down their
+    length - something that virtually never happens in natural scenes.
 
-    Corruption characteristics:
-    1. Very thin vertical bands (1-10 pixels wide)
-    2. Bands have uniform or near-uniform color down their length
-    3. Multiple bands appear in clusters
-    4. Typically affects only part of the frame (bottom portion)
+    Detection method:
+    1. Focus on bottom 40% of frame (where corruption typically manifests)
+    2. Compute row-to-row pixel differences for each column
+    3. Corrupted columns have mean diff ≈ 0 (same value repeated down column)
+    4. Flag as corrupt if >50% of columns show this pattern
 
     Args:
         frame: BGR image to check
-        min_band_ratio: Minimum ratio of frame width with uniform columns (0-1).
-                       Default 0.08 (8% of width must be uniform bands).
-        min_thin_bands: Minimum number of thin uniform band clusters.
-                       Default 20 distinct thin bands.
+        repeated_col_threshold: Fraction of columns with near-zero row diffs
+                               needed to flag as corrupt (default 0.5 = 50%)
+        mean_diff_threshold: Maximum mean row diff to consider a column as
+                            "repeated" (default 0.5 pixels)
 
     Returns:
         True if corruption detected, False otherwise
@@ -54,41 +55,29 @@ def detect_frame_corruption(
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
     height, width = gray.shape[:2]
 
-    # Focus on bottom 40% of frame where corruption typically appears
-    # (corruption from packet loss usually affects lower portions)
+    # Focus on bottom 40% where corruption typically appears
     bottom_start = int(height * 0.6)
-    bottom_region = gray[bottom_start:, :]
+    bottom = gray[bottom_start:, :]
 
-    # For each column, calculate variance - corrupted bands are nearly solid
-    # Normal image columns have variance > 20, corrupted bands have < 15
-    column_stds = np.std(bottom_region.astype(float), axis=0)
+    # Compute row-to-row differences for each column
+    # In corrupted regions, the same pixel value repeats down the column
+    # so these differences are ~0
+    row_diffs = np.abs(np.diff(bottom.astype(float), axis=0))
 
-    # Find columns with suspiciously low variance (uniform color)
-    uniform_columns = column_stds < 15
+    # Mean difference per column
+    col_mean_diff = np.mean(row_diffs, axis=0)
 
-    # Count clusters of uniform columns (corruption comes in thin bands)
-    # Find runs of consecutive uniform columns
-    uniform_run_lengths = []
-    current_run = 0
-    for is_uniform in uniform_columns:
-        if is_uniform:
-            current_run += 1
-        else:
-            if current_run > 0:
-                uniform_run_lengths.append(current_run)
-            current_run = 0
-    if current_run > 0:
-        uniform_run_lengths.append(current_run)
+    # Count columns with very small row differences (repeated pixels)
+    repeated_cols = np.sum(col_mean_diff < mean_diff_threshold)
+    repeated_pct = repeated_cols / width
 
-    # Count thin uniform bands (corruption creates bands 1-10 pixels wide)
-    thin_band_count = sum(1 for run in uniform_run_lengths if 1 <= run <= 10)
+    # Overall mean - corrupted images have very low overall mean
+    overall_mean = np.mean(col_mean_diff)
 
-    # Calculate ratio of frame width that is uniform
-    total_uniform = np.sum(uniform_columns)
-    uniform_ratio = total_uniform / width
-
-    # Corruption detected if: many thin uniform bands covering significant width
-    return thin_band_count >= min_thin_bands and uniform_ratio >= min_band_ratio
+    # Detection criteria:
+    # - More than 50% of columns have repeated pixels, OR
+    # - Overall mean row-diff is very low (strong corruption signal)
+    return repeated_pct > repeated_col_threshold or overall_mean < mean_diff_threshold
 
 
 @dataclass
