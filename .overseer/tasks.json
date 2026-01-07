@@ -267,6 +267,169 @@
       "title": "Transcode worker showing negative space saved and running slower than expected",
       "type": "bug",
       "updated_at": "2026-01-05T12:34:04.695674"
+    },
+    {
+      "context": "The motion/object detection events section on the playback timeline page is not always visible. The section height depends on the video aspect ratio - when the window is wide, the video takes up more vertical space and pushes the events section out of view. Need to give this section a fixed height or make it scale properly.",
+      "created_at": "2026-01-05T12:47:51.390421",
+      "created_by": "agent",
+      "id": "TASK-20",
+      "jira_key": null,
+      "linked_files": [],
+      "status": "done",
+      "title": "Fix timeline events section visibility on playback page",
+      "type": "bug",
+      "updated_at": "2026-01-05T12:49:04.198498"
+    },
+    {
+      "context": "FFmpeg showing \"No decoder surfaces left\" errors even with no other GPU processes. Also seeing DTS/PTS timestamp warnings. Need to: 1) Log FFmpeg stderr even on success, 2) Add verbose/progress mode, 3) Investigate NVDEC surface exhaustion - may need -extra_hw_frames flag, 4) Consider -fflags +genpts for corrupt timestamps",
+      "created_at": "2026-01-05T14:03:43.885746",
+      "created_by": "agent",
+      "id": "TASK-21",
+      "jira_key": null,
+      "linked_files": [
+        "backend/transcode_worker.py"
+      ],
+      "status": "done",
+      "title": "Improve transcode worker logging and debug NVDEC surface exhaustion",
+      "type": "bug",
+      "updated_at": "2026-01-05T14:05:07.735336"
+    },
+    {
+      "context": "User reported that changing transport to UDP in the camera settings UI didn't work. Need to verify: 1) UI properly sends transport field in PUT request, 2) Backend correctly updates database, 3) Stream manager picks up the change (may need stream restart). Ubiquiti cameras (7,8,9,10) require UDP transport.",
+      "created_at": "2026-01-05T16:21:35.545976",
+      "created_by": "agent",
+      "id": "TASK-22",
+      "jira_key": null,
+      "linked_files": [
+        "frontend/src/components/CameraSettingsModal.tsx",
+        "backend/app/api/cameras.py",
+        "backend/app/schemas/camera.py"
+      ],
+      "status": "backlog",
+      "title": "Verify UDP transport switch works from camera settings UI",
+      "type": "chore",
+      "updated_at": "2026-01-05T16:21:35.545976"
+    },
+    {
+      "context": "Make recent detections list clickable and show snapshot preview when selected. The LiveDetection type already has snapshot_url field. Need to add selection state and a preview panel in the bottom-right area of the ML page.",
+      "created_at": "2026-01-05T16:25:15.603069",
+      "created_by": "agent",
+      "id": "TASK-23",
+      "jira_key": null,
+      "linked_files": [
+        "frontend/src/pages/MLStatusPage.tsx",
+        "frontend/src/pages/MLStatusPage.css"
+      ],
+      "status": "done",
+      "title": "Add clickable detection list with snapshot preview panel",
+      "type": "feature",
+      "updated_at": "2026-01-05T16:26:35.123188"
+    },
+    {
+      "context": "Currently snapshot images are served without authentication for simplicity (img src tags can't include Authorization headers). Consider using fetch() with auth headers to get image blobs and convert to object URLs, or implement a token-based query parameter auth scheme. This would restore security for the /api/ml/snapshots endpoint.",
+      "created_at": "2026-01-05T16:57:06.665065",
+      "created_by": "agent",
+      "id": "TASK-24",
+      "jira_key": null,
+      "linked_files": [
+        "backend/app/api/ml.py",
+        "frontend/src/pages/MLStatusPage.tsx"
+      ],
+      "status": "backlog",
+      "title": "Add authentication for snapshot images",
+      "type": "debt",
+      "updated_at": "2026-01-05T16:57:06.665065"
+    },
+    {
+      "context": "Recording watcher fails with UniqueViolationError when a recording already exists in the database. The error cascades because the session isn't rolled back properly, causing subsequent inserts to fail. Need to either check for existing records before insert, or handle the IntegrityError gracefully.",
+      "created_at": "2026-01-05T16:58:36.286856",
+      "created_by": "agent",
+      "id": "TASK-25",
+      "jira_key": null,
+      "linked_files": [
+        "backend/app/services/ml/recording_watcher.py"
+      ],
+      "status": "done",
+      "title": "Fix duplicate key error in recording watcher",
+      "type": "bug",
+      "updated_at": "2026-01-05T16:59:30.595723"
+    },
+    {
+      "context": "After handling IntegrityError, subsequent queries return \"Multiple rows found\" error. This may be due to SQLAlchemy identity map retaining stale objects. Need to use .first() instead of .scalar_one_or_none() or expire/clear identity map.",
+      "created_at": "2026-01-05T17:22:56.019126",
+      "created_by": "agent",
+      "id": "TASK-26",
+      "jira_key": null,
+      "linked_files": [
+        "backend/app/services/ml/recording_watcher.py"
+      ],
+      "status": "done",
+      "title": "Fix \"Multiple rows found\" error in recording watcher",
+      "type": "bug",
+      "updated_at": "2026-01-05T17:25:57.587142"
+    },
+    {
+      "context": "Motion detection is broken in live detection - MOG2 needs continuous frames but only gets 1 frame per 2-second segment. Solution: Scale to 720p, extract at 3fps, use frame differencing as gate before YOLO, process cameras in parallel.",
+      "created_at": "2026-01-05T19:04:57.877396",
+      "created_by": "agent",
+      "id": "TASK-27",
+      "jira_key": null,
+      "linked_files": [
+        "backend/live_detection_worker.py",
+        "backend/app/services/ml/motion_gate.py",
+        "backend/app/config.py",
+        "backend/app/models/ml_settings.py",
+        "backend/app/schemas/ml.py"
+      ],
+      "status": "done",
+      "title": "Fix motion detection with motion-gated YOLO at 3fps",
+      "type": "feature",
+      "updated_at": "2026-01-05T19:11:15.203463"
+    },
+    {
+      "context": "Plan and implement an advanced video player component with:\n- Live video streaming with ability to scrub back and return to live\n- Timeline showing motion/detection events\n- Toggleable bounding boxes for detected objects\n- Smooth seeking and playback controls",
+      "created_at": "2026-01-05T22:37:24.088288",
+      "created_by": "agent",
+      "id": "TASK-28",
+      "jira_key": null,
+      "linked_files": [],
+      "status": "done",
+      "title": "Design sophisticated video player with timeline, live/DVR, and detection overlays",
+      "type": "feature",
+      "updated_at": "2026-01-06T00:12:37.681518"
+    },
+    {
+      "context": "UDP RTSP streams (Ubiquiti cameras) occasionally have packet loss causing frame corruption (vertical streaking). Two issues:\n1. Corrupted frames trigger false motion detections\n2. Browser fails to decode and shows error screen instead of recovering\n\nNeed to:\n1. Detect corruption patterns in live_detection_worker.py and skip motion detection\n2. Improve HLS player error handling to recover from decode errors instead of showing error state",
+      "created_at": "2026-01-06T10:52:28.083999",
+      "created_by": "agent",
+      "id": "TASK-29",
+      "jira_key": null,
+      "linked_files": [
+        "backend/live_detection_worker.py",
+        "frontend/src/components/UnifiedVideoPlayer/hooks/useHlsPlayer.ts"
+      ],
+      "status": "done",
+      "title": "Handle corrupted video frames gracefully",
+      "type": "bug",
+      "updated_at": "2026-01-06T11:00:17.809109"
+    },
+    {
+      "context": "Implement ONVIF integration for: 1) Auto-detecting RTSP stream paths from camera media profiles (priority), 2) Receiving camera motion events for instant edge alerts. Both ONVIF events and ML detections run in parallel in unified timeline. Key phases: Foundation (deps, client service), Database (camera/detection model changes), Probe API, Frontend UI, Event Worker.",
+      "created_at": "2026-01-06T20:52:44.183990",
+      "created_by": "agent",
+      "id": "TASK-30",
+      "jira_key": null,
+      "linked_files": [
+        "backend/app/models/camera.py",
+        "backend/app/models/detection.py",
+        "backend/app/api/ml.py",
+        "frontend/src/components/CameraModal.tsx",
+        "frontend/src/components/Timeline.tsx"
+      ],
+      "status": "active",
+      "title": "Add ONVIF protocol support for camera discovery and events",
+      "type": "feature",
+      "updated_at": "2026-01-06T20:52:44.183990"
     }
   ],
   "version": "0.1"

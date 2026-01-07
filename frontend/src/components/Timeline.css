@@ -104,6 +104,16 @@
   box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
 }
 
+/* ONVIF camera events have a distinct white border */
+.event-marker.onvif-event {
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
+}
+
+.event-marker.onvif-event:hover {
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.7);
+}
+
 .timeline-hours {
   display: flex;
   height: 8px;

@@ -4,7 +4,14 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
-import type { Camera, CameraCreate, CameraUpdate, CameraTestResult } from '../types/camera';
+import type {
+  Camera,
+  CameraCreate,
+  CameraUpdate,
+  CameraTestResult,
+  ONVIFProbeResponse,
+  ONVIFProfile,
+} from '../types/camera';
 import './CameraModal.css';
 
 interface CameraModalProps {
@@ -26,6 +33,9 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
     password: '',
     transport: 'tcp',
     recording_enabled: true,
+    onvif_port: 80,
+    onvif_enabled: false,
+    onvif_events_enabled: false,
   });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<CameraTestResult | null>(null);
@@ -38,6 +48,11 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
 
   // Track the saved camera ID after initial creation (for "Save & Test" flow)
   const [savedCameraId, setSavedCameraId] = useState<number | null>(null);
+
+  // ONVIF probe state
+  const [probing, setProbing] = useState(false);
+  const [probeResult, setProbeResult] = useState<ONVIFProbeResponse | null>(null);
+  const [selectedProfile, setSelectedProfile] = useState<ONVIFProfile | null>(null);
 
   const isEditing = !!camera || savedCameraId !== null;
 
@@ -56,6 +71,9 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
         password: '', // Don't populate - backend doesn't return it
         transport: camera.transport,
         recording_enabled: camera.recording_enabled,
+        onvif_port: camera.onvif_port || 80,
+        onvif_enabled: camera.onvif_enabled || false,
+        onvif_events_enabled: camera.onvif_events_enabled || false,
       });
       setPasswordModified(false);
     }
@@ -97,6 +115,62 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
       });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleProbeONVIF = async () => {
+    if (!formData.host) return;
+
+    setProbing(true);
+    setProbeResult(null);
+    setSelectedProfile(null);
+    setError(null);
+
+    try {
+      const result = await api.probeONVIF({
+        host: formData.host,
+        onvif_port: formData.onvif_port || 80,
+        username: formData.username || undefined,
+        password: formData.password || undefined,
+        timeout: 10,
+      });
+      setProbeResult(result);
+
+      if (result.success && result.profiles.length > 0) {
+        // Auto-select the first (usually main stream) profile
+        setSelectedProfile(result.profiles[0]);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ONVIF probe failed');
+    } finally {
+      setProbing(false);
+    }
+  };
+
+  const handleApplyProfile = (profile: ONVIFProfile) => {
+    setSelectedProfile(profile);
+
+    // Parse RTSP URL to extract path and port
+    try {
+      const url = new URL(profile.rtsp_url);
+      let newPath = url.pathname;
+      if (url.search) {
+        newPath += url.search;
+      }
+      const newPort = parseInt(url.port, 10) || 554;
+
+      setFormData((prev) => ({
+        ...prev,
+        port: newPort,
+        path: newPath || '/stream',
+        onvif_enabled: true,
+      }));
+    } catch {
+      // If URL parsing fails, just use the path as-is
+      setFormData((prev) => ({
+        ...prev,
+        onvif_enabled: true,
+      }));
     }
   };
 
@@ -289,6 +363,84 @@ export function CameraModal({ camera, onClose, onSave }: CameraModalProps) {
                 Enable Recording
               </label>
             </div>
+          </div>
+
+          {/* ONVIF Section */}
+          <div className="form-section">
+            <h3>ONVIF Auto-Detection</h3>
+            <div className="form-row">
+              <div className="form-group flex-1">
+                <label htmlFor="onvif_port">ONVIF Port</label>
+                <input
+                  id="onvif_port"
+                  name="onvif_port"
+                  type="number"
+                  value={formData.onvif_port || 80}
+                  onChange={handleChange}
+                  min="1"
+                  max="65535"
+                />
+              </div>
+              <div className="form-group flex-2 onvif-probe-group">
+                <label>&nbsp;</label>
+                <button
+                  type="button"
+                  className="btn-onvif-probe"
+                  onClick={handleProbeONVIF}
+                  disabled={probing || !formData.host}
+                >
+                  {probing ? 'Detecting...' : 'Detect Streams'}
+                </button>
+              </div>
+            </div>
+
+            {probeResult && probeResult.success && (
+              <div className="onvif-result">
+                {probeResult.device_info.manufacturer && (
+                  <div className="device-info">
+                    {probeResult.device_info.manufacturer} {probeResult.device_info.model}
+                    {probeResult.device_info.firmware && (
+                      <span className="firmware"> (FW: {probeResult.device_info.firmware})</span>
+                    )}
+                  </div>
+                )}
+                <div className="profiles-list">
+                  <label>Available Streams:</label>
+                  {probeResult.profiles.map((profile) => (
+                    <div
+                      key={profile.token}
+                      className={`profile-item ${selectedProfile?.token === profile.token ? 'selected' : ''}`}
+                      onClick={() => handleApplyProfile(profile)}
+                    >
+                      <span className="profile-name">{profile.name}</span>
+                      <span className="profile-details">
+                        {profile.resolution} {profile.encoding} {profile.fps && `@ ${profile.fps}fps`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {probeResult.has_events && (
+                  <div className="form-group checkbox-group events-option">
+                    <label>
+                      <input
+                        type="checkbox"
+                        name="onvif_events_enabled"
+                        checked={formData.onvif_events_enabled}
+                        onChange={handleChange}
+                      />
+                      Enable Camera Motion Events
+                    </label>
+                    <small>Receive instant alerts when camera detects motion</small>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {probeResult && !probeResult.success && (
+              <div className="onvif-error">
+                ONVIF detection failed: {probeResult.error}
+              </div>
+            )}
           </div>
 
           {testResult && (

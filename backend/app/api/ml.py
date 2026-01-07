@@ -429,6 +429,9 @@ async def get_timeline_events(
         bucket_time = (abs_time_ms // bucket_size_ms) * bucket_size_ms
         bucket_key = (bucket_time, det.class_name)
 
+        # Get event_source (defaults to "ml" for older records)
+        event_source = getattr(det, "event_source", "ml") or "ml"
+
         if bucket_key not in buckets:
             buckets[bucket_key] = {
                 "timestamp_ms": bucket_time,
@@ -436,12 +439,18 @@ async def get_timeline_events(
                 "confidence": det.confidence,
                 "recording_id": det.recording_id,
                 "count": 0,
+                "event_source": event_source,
             }
 
         buckets[bucket_key]["count"] += 1
         buckets[bucket_key]["confidence"] = max(
             buckets[bucket_key]["confidence"], det.confidence
         )
+        # If any detection in bucket is from ONVIF, mark bucket as such
+        # Priority: onvif_analytics > onvif_motion > ml
+        current_source = buckets[bucket_key]["event_source"]
+        if event_source.startswith("onvif") and current_source == "ml":
+            buckets[bucket_key]["event_source"] = event_source
 
         # Update class counts
         class_counts[det.class_name] = class_counts.get(det.class_name, 0) + 1

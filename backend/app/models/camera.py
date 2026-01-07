@@ -5,7 +5,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Boolean, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -53,6 +53,15 @@ class Camera(Base):
 
     # Recording settings
     recording_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # ONVIF protocol settings
+    onvif_port: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    onvif_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    onvif_profile_token: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )
+    onvif_device_info: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    onvif_events_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Timestamps (using TIMESTAMP WITH TIME ZONE for proper UTC handling)
     created_at: Mapped[datetime] = mapped_column(

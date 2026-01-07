@@ -28,6 +28,12 @@ import type {
   TranscodeStatus,
   RetentionSettings,
   RetentionSettingsUpdate,
+  ONVIFProbeRequest,
+  ONVIFProbeResponse,
+  ONVIFProfilesResponse,
+  ONVIFApplyProfileRequest,
+  ONVIFApplyProfileResponse,
+  ONVIFEventsResponse,
 } from '../types/camera';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -438,6 +444,42 @@ class ApiClient {
     // URL-encode the recording ID since it contains :: separators
     const encodedId = encodeURIComponent(recordingId);
     const response = await this.client.get(`/playback/recordings/${encodedId}/thumbnails`);
+    return response.data;
+  }
+
+  // ONVIF API
+  async probeONVIF(params: ONVIFProbeRequest): Promise<ONVIFProbeResponse> {
+    const response = await this.client.post('/onvif/probe', params);
+    return response.data;
+  }
+
+  async getCameraONVIFProfiles(cameraId: number): Promise<ONVIFProfilesResponse> {
+    const response = await this.client.get(`/onvif/cameras/${cameraId}/profiles`);
+    return response.data;
+  }
+
+  async applyONVIFProfile(
+    cameraId: number,
+    params: ONVIFApplyProfileRequest
+  ): Promise<ONVIFApplyProfileResponse> {
+    const response = await this.client.post(
+      `/onvif/cameras/${cameraId}/apply-profile`,
+      params
+    );
+    return response.data;
+  }
+
+  async enableONVIFEvents(cameraId: number): Promise<ONVIFEventsResponse> {
+    const response = await this.client.post(
+      `/onvif/cameras/${cameraId}/events/subscribe`
+    );
+    return response.data;
+  }
+
+  async disableONVIFEvents(cameraId: number): Promise<ONVIFEventsResponse> {
+    const response = await this.client.post(
+      `/onvif/cameras/${cameraId}/events/unsubscribe`
+    );
     return response.data;
   }
 }

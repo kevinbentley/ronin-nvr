@@ -194,6 +194,33 @@ services:
               count: all
               capabilities: [gpu]
 
+  # ONVIF Event Worker (receives camera motion events)
+  onvif-events:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: ronin-onvif-events
+    restart: unless-stopped
+    user: "1000:1000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ronin_nvr_user}:${POSTGRES_PASSWORD:-ronin_pass}@postgres:5432/${POSTGRES_DB:-ronin_nvr}
+      TZ: ${TZ:-America/Denver}
+      ONVIF_POLL_INTERVAL: ${ONVIF_POLL_INTERVAL:-5.0}
+      ONVIF_REFRESH_INTERVAL: ${ONVIF_REFRESH_INTERVAL:-60.0}
+      ONVIF_EVENT_COOLDOWN: ${ONVIF_EVENT_COOLDOWN:-30.0}
+    command: ["python", "onvif_event_worker.py"]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
   # Transcode Worker (runs 3 replicas)
   transcode-worker:
     build:
