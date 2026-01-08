@@ -69,6 +69,7 @@ class CameraStream:
         self._monitor_task: Optional[asyncio.Task] = None
         self._reconnect_attempts = 0
         self._max_reconnect_attempts = 10
+        self._recording_date: Optional[str] = None  # Track the date used for recording path
 
     @property
     def safe_name(self) -> str:
@@ -94,10 +95,19 @@ class CameraStream:
         return self._state in ("running", "reconnecting")
 
     def _get_recording_pattern(self) -> str:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        output_dir = self.recording_directory / today
+        self._recording_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        output_dir = self.recording_directory / self._recording_date
         output_dir.mkdir(parents=True, exist_ok=True)
         return str(output_dir / "%H-%M-%S.mp4")
+
+    def needs_date_rollover(self) -> bool:
+        """Check if the stream needs to be restarted due to date change."""
+        if not self._recording_date or not self.is_running:
+            return False
+        if not self.config.recording_enabled:
+            return False
+        current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return current_date != self._recording_date
 
     def _build_command(self) -> list[str]:
         ffmpeg = shutil.which("ffmpeg")
@@ -292,6 +302,59 @@ class StreamManager:
         self._streams: dict[int, CameraStream] = {}
         self._locks: dict[int, asyncio.Lock] = {}
         self._global_lock = asyncio.Lock()
+        self._date_rollover_task: Optional[asyncio.Task] = None
+
+    async def start_date_rollover_monitor(self) -> None:
+        """Start the background task that monitors for date changes."""
+        if self._date_rollover_task is None:
+            self._date_rollover_task = asyncio.create_task(self._date_rollover_loop())
+            logger.info("Date rollover monitor started")
+
+    async def stop_date_rollover_monitor(self) -> None:
+        """Stop the date rollover monitor task."""
+        if self._date_rollover_task:
+            self._date_rollover_task.cancel()
+            try:
+                await self._date_rollover_task
+            except asyncio.CancelledError:
+                pass
+            self._date_rollover_task = None
+
+    async def _date_rollover_loop(self) -> None:
+        """Periodically check for date changes and restart streams as needed."""
+        while True:
+            try:
+                # Check every 30 seconds
+                await asyncio.sleep(30)
+                await self._check_date_rollover()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.exception(f"Error in date rollover check: {e}")
+                await asyncio.sleep(60)  # Wait longer on error
+
+    async def _check_date_rollover(self) -> None:
+        """Check all streams and restart any that need date rollover."""
+        streams_to_restart = []
+
+        for camera_id, stream in self._streams.items():
+            if stream.needs_date_rollover():
+                streams_to_restart.append((camera_id, stream))
+
+        if streams_to_restart:
+            logger.info(f"Date rollover: restarting {len(streams_to_restart)} streams")
+
+        for camera_id, stream in streams_to_restart:
+            try:
+                config = stream.config
+                logger.info(f"Restarting stream '{config.name}' for date rollover")
+                await stream.stop()
+                # Small delay to ensure clean shutdown
+                await asyncio.sleep(1)
+                await stream.start()
+                logger.info(f"Stream '{config.name}' restarted for new date")
+            except Exception as e:
+                logger.error(f"Failed to restart stream {camera_id} for date rollover: {e}")
 
     def _get_lock(self, camera_id: int) -> asyncio.Lock:
         """Get or create a lock for a camera (thread-safe)."""
@@ -376,9 +439,16 @@ async def list_streams():
     return manager.get_all_status()
 
 
+@app.on_event("startup")
+async def startup():
+    logger.info("Starting date rollover monitor")
+    await manager.start_date_rollover_monitor()
+
+
 @app.on_event("shutdown")
 async def shutdown():
     logger.info("Shutting down stream manager")
+    await manager.stop_date_rollover_monitor()
     await manager.stop_all()
 
 
