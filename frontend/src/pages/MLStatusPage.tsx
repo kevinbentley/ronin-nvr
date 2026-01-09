@@ -252,6 +252,20 @@ export function MLStatusPage() {
     return [...classList, className];
   };
 
+  // Close lightbox on Escape key
+  useEffect(() => {
+    if (!zoomedImage) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setZoomedImage(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [zoomedImage]);
+
   if (loading) {
     return (
       <div className="ml-status-page loading">

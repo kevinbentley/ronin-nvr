@@ -268,7 +268,10 @@ export function PlaybackPage() {
   if (loading) {
     return (
       <div className="playback-page loading">
-        <div className="loading-spinner">Loading...</div>
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <div className="loading-text">Loading...</div>
+        </div>
       </div>
     );
   }

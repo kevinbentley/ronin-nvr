@@ -21,7 +21,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ronin_pass}
       POSTGRES_DB: ${POSTGRES_DB:-ronin_nvr}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ${POSTGRES_DATA_PATH:-postgres_data}:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
@@ -53,8 +53,8 @@ services:
       ML_ENABLED: "true"
       ML_AUTO_PROCESS: "true"
     volumes:
-      - storage_data:/data/storage
-      - ml_models:/data/storage/.ml/models
+      - ${STORAGE_PATH:-storage_data}:/data/storage
+      - ${ML_MODELS_PATH:-ml_models}:/data/storage/.ml/models
     ports:
       - "8000:8000"
     healthcheck:
@@ -100,8 +100,8 @@ services:
       ML_CONFIDENCE_THRESHOLD: ${ML_CONFIDENCE_THRESHOLD:-0.5}
       ML_CLASS_FILTER: ${ML_CLASS_FILTER:-person,car,truck,bus,motorcycle,bicycle,dog,cat}
     volumes:
-      - storage_data:/data/storage
-      - ml_models:/data/storage/.ml/models
+      - ${STORAGE_PATH:-storage_data}:/data/storage
+      - ${ML_MODELS_PATH:-ml_models}:/data/storage/.ml/models
     command: ["python", "ml_worker.py", "--workers", "1"]
     deploy:
       resources:
@@ -133,8 +133,8 @@ services:
       ML_CONFIDENCE_THRESHOLD: ${ML_CONFIDENCE_THRESHOLD:-0.5}
       ML_CLASS_FILTER: ${ML_CLASS_FILTER:-person,car,truck,bus,motorcycle,bicycle,dog,cat}
     volumes:
-      - storage_data:/data/storage
-      - ml_models:/data/storage/.ml/models
+      - ${STORAGE_PATH:-storage_data}:/data/storage
+      - ${ML_MODELS_PATH:-ml_models}:/data/storage/.ml/models
     command: ["python", "live_detection_worker.py"]
     deploy:
       resources:
@@ -156,7 +156,7 @@ services:
       TRANSCODE_CRF: ${TRANSCODE_CRF:-28}
       TRANSCODE_PRESET: ${TRANSCODE_PRESET:-medium}
     volumes:
-      - storage_data:/data/storage
+      - ${STORAGE_PATH:-storage_data}:/data/storage
     command: ["python", "transcode_worker.py", "--continuous", "--no-gpu"]
     deploy:
       resources:
