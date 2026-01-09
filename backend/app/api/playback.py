@@ -4,7 +4,15 @@ from datetime import date, datetime
 from typing import Optional, Union
 
 import aiofiles
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -435,6 +443,7 @@ class ThumbnailInfoResponse(BaseModel):
 @router.get("/recordings/{recording_id}/thumbnails", response_model=ThumbnailInfoResponse)
 async def get_thumbnail_info(
     recording_id: str,
+    background_tasks: BackgroundTasks,
 ) -> ThumbnailInfoResponse:
     """Get thumbnail sprite info for a recording.
 
@@ -467,9 +476,8 @@ async def get_thumbnail_info(
             interval_seconds=sprite.interval_seconds,
         )
 
-    # Generate sprite asynchronously
-    import asyncio
-    asyncio.create_task(generate_sprite(rec.path))
+    # Generate sprite in the background (properly managed by FastAPI)
+    background_tasks.add_task(generate_sprite, rec.path)
 
     return ThumbnailInfoResponse(available=False)
 
