@@ -3,7 +3,7 @@
  */
 
 import { useMemo } from 'react';
-import type { RecordingFile, TimelineEvent } from '../types/camera';
+import type { RecordingFile, TimelineEvent, EventSource } from '../types/camera';
 import './Timeline.css';
 
 /**
@@ -42,6 +42,29 @@ const EVENT_COLORS: Record<string, string> = {
 
 function getEventColor(className: string): string {
   return EVENT_COLORS[className.toLowerCase()] || EVENT_COLORS.default;
+}
+
+// Get border style based on event source
+function getEventSourceStyle(eventSource?: EventSource): React.CSSProperties {
+  switch (eventSource) {
+    case 'onvif_motion':
+    case 'onvif_analytics':
+      return { border: '2px solid #fff', boxShadow: '0 0 4px rgba(255,255,255,0.5)' };
+    default:
+      return {};
+  }
+}
+
+// Get source label for tooltip
+function getEventSourceLabel(eventSource?: EventSource): string {
+  switch (eventSource) {
+    case 'onvif_motion':
+      return ' [CAM]';
+    case 'onvif_analytics':
+      return ' [CAM-AI]';
+    default:
+      return '';
+  }
 }
 
 interface TimelineProps {
@@ -94,11 +117,15 @@ export function Timeline({
       const minutes = Math.floor(totalMinutes % 60);
       const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 
+      // Include event source in tooltip
+      const sourceLabel = getEventSourceLabel(event.event_source);
+
       return {
         event,
         left: `${positionPercent}%`,
         color: getEventColor(event.class_name),
-        tooltip: `${event.class_name} (${event.count}) at ${timeStr}`,
+        tooltip: `${event.class_name} (${event.count}) at ${timeStr}${sourceLabel}`,
+        sourceStyle: getEventSourceStyle(event.event_source),
       };
     });
   }, [events]);
@@ -142,11 +169,11 @@ export function Timeline({
 
       {events.length > 0 && (
         <div className="timeline-events-track">
-          {eventMarkers.map(({ event, left, color, tooltip }, index) => (
+          {eventMarkers.map(({ event, left, color, tooltip, sourceStyle }, index) => (
             <button
               key={`${event.recording_id}-${event.timestamp_ms}-${event.class_name}-${index}`}
-              className="event-marker"
-              style={{ left, backgroundColor: color }}
+              className={`event-marker ${event.event_source?.startsWith('onvif') ? 'onvif-event' : ''}`}
+              style={{ left, backgroundColor: color, ...sourceStyle }}
               onClick={() => onEventClick?.(event)}
               title={tooltip}
             />

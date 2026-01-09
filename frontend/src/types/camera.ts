@@ -16,6 +16,12 @@ export interface Camera {
   last_seen?: string;
   created_at: string;
   updated_at: string;
+  // ONVIF settings
+  onvif_port?: number;
+  onvif_enabled?: boolean;
+  onvif_profile_token?: string;
+  onvif_device_info?: ONVIFDeviceInfo;
+  onvif_events_enabled?: boolean;
 }
 
 export interface CameraCreate {
@@ -27,6 +33,10 @@ export interface CameraCreate {
   password?: string;
   transport?: 'tcp' | 'udp';
   recording_enabled?: boolean;
+  // ONVIF settings
+  onvif_port?: number;
+  onvif_enabled?: boolean;
+  onvif_events_enabled?: boolean;
 }
 
 export interface CameraUpdate {
@@ -38,6 +48,10 @@ export interface CameraUpdate {
   password?: string;
   transport?: 'tcp' | 'udp';
   recording_enabled?: boolean;
+  // ONVIF settings
+  onvif_port?: number;
+  onvif_enabled?: boolean;
+  onvif_events_enabled?: boolean;
 }
 
 export interface CameraTestResult {
@@ -209,6 +223,9 @@ export interface MLStatus {
   models_loaded: string[];
 }
 
+// Event source type for unified timeline
+export type EventSource = 'ml' | 'onvif_motion' | 'onvif_analytics';
+
 // Timeline events
 export interface TimelineEvent {
   timestamp_ms: number;  // Milliseconds from start of day
@@ -216,6 +233,7 @@ export interface TimelineEvent {
   confidence: number;
   recording_id: number | null;  // null for live detections
   count: number;
+  event_source?: EventSource;  // Source of the detection
 }
 
 export interface TimelineEventsResponse {
@@ -347,4 +365,66 @@ export interface RetentionSettings {
 export interface RetentionSettingsUpdate {
   retention_days?: number | null;
   retention_max_gb?: number | null;
+}
+
+// ONVIF Types
+
+export interface ONVIFDeviceInfo {
+  manufacturer?: string;
+  model?: string;
+  firmware?: string;
+  serial?: string;
+  hardware_id?: string;
+}
+
+export interface ONVIFProfile {
+  token: string;
+  name: string;
+  rtsp_url: string;
+  encoding?: string;
+  resolution?: string;
+  fps?: number;
+}
+
+export interface ONVIFProbeRequest {
+  host: string;
+  onvif_port?: number;
+  username?: string;
+  password?: string;
+  timeout?: number;
+}
+
+export interface ONVIFProbeResponse {
+  success: boolean;
+  host: string;
+  device_info: ONVIFDeviceInfo;
+  profiles: ONVIFProfile[];
+  has_events: boolean;
+  has_analytics: boolean;
+  has_ptz: boolean;
+  error?: string;
+}
+
+export interface ONVIFProfilesResponse {
+  camera_id: number;
+  profiles: ONVIFProfile[];
+}
+
+export interface ONVIFApplyProfileRequest {
+  profile_token: string;
+  rtsp_url: string;
+}
+
+export interface ONVIFApplyProfileResponse {
+  success: boolean;
+  camera_id: number;
+  new_path: string;
+  new_port: number;
+  profile_token: string;
+}
+
+export interface ONVIFEventsResponse {
+  success: boolean;
+  camera_id: number;
+  events_enabled: boolean;
 }

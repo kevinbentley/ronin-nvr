@@ -12,8 +12,15 @@ import { api } from '../services/api';
 import { DatePicker } from '../components/DatePicker';
 import { Timeline } from '../components/Timeline';
 import { UnifiedVideoPlayer } from '../components/UnifiedVideoPlayer';
-import type { RecordingFile, TimelineEvent } from '../types/camera';
+import type { RecordingFile, TimelineEvent, EventSource } from '../types/camera';
 import './PlaybackPage.css';
+
+/** Display labels for event sources */
+const EVENT_SOURCE_LABELS: Record<EventSource, string> = {
+  ml: 'ML Detection',
+  onvif_motion: 'Camera Motion',
+  onvif_analytics: 'Camera Analytics',
+};
 
 /**
  * Format an ISO timestamp string as a local time string.
@@ -50,8 +57,26 @@ export function PlaybackPage() {
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [eventClassCounts, setEventClassCounts] = useState<Record<string, number>>({});
   const [selectedEventTypes, setSelectedEventTypes] = useState<Set<string>>(new Set());
+  const [selectedEventSources, setSelectedEventSources] = useState<Set<EventSource>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Compute event source counts from events
+  const eventSourceCounts = useMemo(() => {
+    const counts: Record<EventSource, number> = {
+      ml: 0,
+      onvif_motion: 0,
+      onvif_analytics: 0,
+    };
+    timelineEvents.forEach((event) => {
+      const source = event.event_source || 'ml';
+      counts[source] = (counts[source] || 0) + 1;
+    });
+    // Filter out sources with no events
+    return Object.fromEntries(
+      Object.entries(counts).filter(([, count]) => count > 0)
+    ) as Record<EventSource, number>;
+  }, [timelineEvents]);
 
   // Derive available dates from recordings (grouped by local date)
   const availableDates = useMemo(() => {
@@ -156,6 +181,7 @@ export function PlaybackPage() {
       setTimelineEvents([]);
       setEventClassCounts({});
       setSelectedEventTypes(new Set());
+      setSelectedEventSources(new Set());
       return;
     }
 
@@ -169,19 +195,28 @@ export function PlaybackPage() {
         setEventClassCounts(response.class_counts);
         // Select all event types by default
         setSelectedEventTypes(new Set(Object.keys(response.class_counts)));
+        // Select all event sources by default
+        const sources = new Set<EventSource>();
+        response.events.forEach((event) => {
+          sources.add(event.event_source || 'ml');
+        });
+        setSelectedEventSources(sources);
       } catch (err) {
         // Events are optional, don't show error
         setTimelineEvents([]);
         setEventClassCounts({});
         setSelectedEventTypes(new Set());
+        setSelectedEventSources(new Set());
       }
     };
     loadEvents();
   }, [selectedCamera, selectedDate]);
 
-  // Filter events based on selected types
+  // Filter events based on selected types and sources
   const filteredEvents = timelineEvents.filter(
-    (event) => selectedEventTypes.has(event.class_name)
+    (event) =>
+      selectedEventTypes.has(event.class_name) &&
+      selectedEventSources.has(event.event_source || 'ml')
   );
 
   const handleToggleEventType = (eventType: string) => {
@@ -191,6 +226,18 @@ export function PlaybackPage() {
         next.delete(eventType);
       } else {
         next.add(eventType);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleEventSource = (source: EventSource) => {
+    setSelectedEventSources((prev) => {
+      const next = new Set(prev);
+      if (next.has(source)) {
+        next.delete(source);
+      } else {
+        next.add(source);
       }
       return next;
     });
@@ -308,6 +355,27 @@ export function PlaybackPage() {
                       onChange={() => handleToggleEventType(eventType)}
                     />
                     <span className="event-type-name">{eventType}</span>
+                    <span className="event-type-count">({count})</span>
+                  </label>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {Object.keys(eventSourceCounts).length > 1 && (
+          <div className="sidebar-section">
+            <h3>Event Source</h3>
+            <div className="event-filters">
+              {(Object.entries(eventSourceCounts) as [EventSource, number][])
+                .sort((a, b) => b[1] - a[1]) // Sort by count descending
+                .map(([source, count]) => (
+                  <label key={source} className="event-filter-item">
+                    <input
+                      type="checkbox"
+                      checked={selectedEventSources.has(source)}
+                      onChange={() => handleToggleEventSource(source)}
+                    />
+                    <span className="event-type-name">{EVENT_SOURCE_LABELS[source]}</span>
                     <span className="event-type-count">({count})</span>
                   </label>
                 ))}

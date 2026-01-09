@@ -20,6 +20,15 @@ class CameraBase(BaseModel):
     transport: str = Field(default="tcp", description="Transport protocol: tcp or udp")
     recording_enabled: bool = Field(default=True)
 
+    # ONVIF settings
+    onvif_port: Optional[int] = Field(
+        default=None, ge=1, le=65535, description="ONVIF service port (usually 80)"
+    )
+    onvif_enabled: bool = Field(default=False, description="Enable ONVIF protocol")
+    onvif_events_enabled: bool = Field(
+        default=False, description="Subscribe to camera events"
+    )
+
     @field_validator("transport")
     @classmethod
     def validate_transport(cls, v: str) -> str:
@@ -56,6 +65,11 @@ class CameraUpdate(BaseModel):
     transport: Optional[str] = Field(default=None)
     recording_enabled: Optional[bool] = Field(default=None)
 
+    # ONVIF settings
+    onvif_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    onvif_enabled: Optional[bool] = Field(default=None)
+    onvif_events_enabled: Optional[bool] = Field(default=None)
+
     @field_validator("transport")
     @classmethod
     def validate_transport(cls, v: Optional[str]) -> Optional[str]:
@@ -88,6 +102,14 @@ class CameraResponse(UTCBaseModel, CameraBase):
 
     # Hide password in response
     password: Optional[str] = Field(default=None, exclude=True)
+
+    # ONVIF additional fields (read-only, set by ONVIF operations)
+    onvif_profile_token: Optional[str] = Field(
+        default=None, description="Currently selected ONVIF profile"
+    )
+    onvif_device_info: Optional[dict] = Field(
+        default=None, description="Cached device information"
+    )
 
     @property
     def rtsp_url(self) -> str:

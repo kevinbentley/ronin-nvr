@@ -96,6 +96,7 @@ class TimelineEvent(BaseModel):
     confidence: float
     recording_id: Optional[int] = None  # None for live detections
     count: int = 1  # Number of detections at this time
+    event_source: str = "ml"  # "ml", "onvif_motion", "onvif_analytics"
 
 
 class TimelineEventsResponse(BaseModel):

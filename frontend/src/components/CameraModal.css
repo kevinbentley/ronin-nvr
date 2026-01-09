@@ -224,3 +224,130 @@ form {
   color: #888;
   font-style: italic;
 }
+
+/* ONVIF Section */
+.form-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #444;
+}
+
+.form-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #aaa;
+  font-weight: 500;
+}
+
+.onvif-probe-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.btn-onvif-probe {
+  padding: 10px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  background: #2e7d32;
+  border: 1px solid #2e7d32;
+  color: #fff;
+  transition: all 0.2s;
+}
+
+.btn-onvif-probe:hover:not(:disabled) {
+  background: #1b5e20;
+}
+
+.btn-onvif-probe:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.onvif-result {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(76, 175, 80, 0.1);
+  border: 1px solid #2e7d32;
+  border-radius: 4px;
+}
+
+.onvif-result .device-info {
+  font-size: 13px;
+  color: #81c784;
+  margin-bottom: 12px;
+}
+
+.onvif-result .device-info .firmware {
+  opacity: 0.7;
+  font-size: 11px;
+}
+
+.profiles-list {
+  margin-bottom: 12px;
+}
+
+.profiles-list > label {
+  display: block;
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 8px;
+}
+
+.profile-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  background: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.profile-item:hover {
+  border-color: #1976d2;
+  background: #252525;
+}
+
+.profile-item.selected {
+  border-color: #1976d2;
+  background: rgba(25, 118, 210, 0.2);
+}
+
+.profile-item .profile-name {
+  font-size: 13px;
+  color: #fff;
+  font-weight: 500;
+}
+
+.profile-item .profile-details {
+  font-size: 11px;
+  color: #888;
+}
+
+.events-option {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #444;
+}
+
+.events-option small {
+  display: block;
+  margin-top: 4px;
+  margin-left: 24px;
+  font-size: 11px;
+  color: #888;
+}
+
+.onvif-error {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(229, 57, 53, 0.1);
+  border: 1px solid #e53935;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #ef9a9a;
+}

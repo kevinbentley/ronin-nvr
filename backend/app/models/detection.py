@@ -102,6 +102,10 @@ class Detection(Base):
     # e.g., "A delivery driver placing a package on the front porch"
     llm_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Event source for unified timeline (distinguishes ML from camera events)
+    # Values: "ml", "onvif_motion", "onvif_analytics"
+    event_source: Mapped[str] = mapped_column(String(20), default="ml", nullable=False)
+
     # Relationships
     recording: Mapped[Optional["Recording"]] = relationship(
         "Recording", back_populates="detections"
@@ -118,6 +122,8 @@ class Detection(Base):
         # Indexes for live detection timeline queries (added by migration)
         Index("ix_detections_detected_at", "detected_at"),
         Index("ix_detections_camera_detected_at", "camera_id", "detected_at"),
+        # Index for event source filtering (added by migration)
+        Index("ix_detections_event_source", "event_source"),
     )
 
     @property

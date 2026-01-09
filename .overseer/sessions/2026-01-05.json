@@ -83,6 +83,110 @@
       "logged_at": "2026-01-05T12:34:04.639336",
       "summary": "Fixed transcode worker VFR bug causing files to grow larger instead of smaller. Root cause: source camera files are VFR (variable frame rate) with r_frame_rate=100fps but actual ~15fps content. FFmpeg was duplicating frames to fill 100fps, causing 2-3x larger output files and 0.3x realtime speed. Fix: added -vsync vfr to preserve original frame timing. Results: files now save ~24% space at 2x realtime speed.",
       "task_id": "TASK-19"
+    },
+    {
+      "files_touched": [
+        "frontend/src/pages/PlaybackPage.css"
+      ],
+      "id": "4a04af7f",
+      "logged_at": "2026-01-05T12:49:04.254978",
+      "summary": "Fixed timeline events section visibility bug on playback page. The section was getting squeezed when video aspect ratio made the player tall. Added flex-shrink: 0 to prevent compression and increased height from 120px to 160px to properly accommodate the events track.",
+      "task_id": "TASK-20"
+    },
+    {
+      "files_touched": [
+        "frontend/src/pages/PlaybackPage.css",
+        "frontend/src/components/Timeline.css",
+        "frontend/src/components/RecordingPlayer.css"
+      ],
+      "id": "c5a19536",
+      "logged_at": "2026-01-05T13:56:10.873773",
+      "summary": "Fixed timeline events section visibility on playback page. The events track was getting cut off when video aspect ratio made the player tall. Changed playback-main from flexbox to CSS Grid with minmax(0, 1fr) for player row, and set timeline-track to fixed 28px height instead of flex: 1.",
+      "task_id": "TASK-20"
+    },
+    {
+      "files_touched": [
+        "backend/transcode_worker.py"
+      ],
+      "id": "e1de22b4",
+      "logged_at": "2026-01-05T14:05:07.788114",
+      "summary": "Added improved logging and NVDEC fixes to transcode worker: 1) -extra_hw_frames 8 to prevent decoder surface exhaustion, 2) -fflags +genpts to handle timestamp discontinuities, 3) stderr logging for FFmpeg warnings even on success, 4) --show-ffmpeg-output flag for real-time debugging",
+      "task_id": "TASK-21"
+    },
+    {
+      "files_touched": [
+        "backend/transcode_worker.py",
+        "backend/stream_manager.py"
+      ],
+      "id": "9ab0b87e",
+      "logged_at": "2026-01-05T16:21:56.630634",
+      "summary": "Fixed camera streaming issues: Ubiquiti cameras (7,8,9,10) require UDP transport instead of TCP. Also improved transcode worker with better logging, NVDEC surface fix, and timestamp handling. Fixed run_once() bug where _running flag wasn't set.",
+      "task_id": "TASK-21"
+    },
+    {
+      "files_touched": [
+        "frontend/src/pages/MLStatusPage.tsx",
+        "frontend/src/pages/MLStatusPage.css"
+      ],
+      "id": "fa5fcc74",
+      "logged_at": "2026-01-05T16:26:35.134975",
+      "summary": "Added clickable detection list with snapshot preview panel to ML Status page. Detection items now highlight on hover and show selected state. New snapshot preview panel displays the detection image with camera name, class, confidence, and timestamp.",
+      "task_id": "TASK-23"
+    },
+    {
+      "files_touched": [
+        "backend/app/services/ml/recording_watcher.py"
+      ],
+      "id": "ce7e036d",
+      "logged_at": "2026-01-05T16:59:30.620313",
+      "summary": "Fixed duplicate key error in recording watcher. The code now handles IntegrityError by rolling back the session and fetching the existing record, preventing cascade failures to subsequent inserts.",
+      "task_id": "TASK-25"
+    },
+    {
+      "files_touched": [
+        "backend/app/services/ml/recording_watcher.py",
+        "backend/app/models/ml_job.py",
+        "backend/alembic/versions/a15875f2b4cd_add_unique_constraint_on_ml_jobs_.py"
+      ],
+      "id": "464a82a5",
+      "logged_at": "2026-01-05T17:25:57.598789",
+      "summary": "Fixed \"Multiple rows found\" error by changing scalar_one_or_none() to scalars().first(). Also cleaned up 95 duplicate ML jobs and added unique constraint on (recording_id, model_name) to prevent future duplicates.",
+      "task_id": "TASK-26"
+    },
+    {
+      "files_touched": [
+        "backend/live_detection_worker.py",
+        "backend/app/services/ml/motion_gate.py",
+        "backend/app/config.py"
+      ],
+      "id": "7747bf91",
+      "logged_at": "2026-01-05T19:11:20.879612",
+      "summary": "Fixed motion detection in live detection worker. Replaced broken MOG2 algorithm with frame differencing motion gate. Now extracts multiple frames per segment at 720p, uses motion as gate before YOLO inference, and processes cameras in parallel. The system correctly skips YOLO on static scenes, saving ~121ms per frame when no motion detected.",
+      "task_id": "TASK-27"
+    },
+    {
+      "files_touched": [
+        "backend/app/api/ml.py",
+        "frontend/src/pages/MLStatusPage.tsx",
+        "frontend/src/pages/MLStatusPage.css",
+        "frontend/src/services/api.ts",
+        "frontend/src/types/camera.ts"
+      ],
+      "id": "64aebb32",
+      "logged_at": "2026-01-05T19:18:16.337478",
+      "summary": "Added pagination to ML page live detections: changed from 10 to 100 items per page with Previous/Next navigation. Updated backend API to support offset parameter and return total count, updated frontend types, API client, and added pagination controls with CSS styling.",
+      "task_id": null
+    },
+    {
+      "files_touched": [
+        "backend/live_detection_worker.py",
+        "backend/app/services/ml/motion_gate.py",
+        "backend/app/config.py"
+      ],
+      "id": "d789fb6c",
+      "logged_at": "2026-01-05T22:25:56.815842",
+      "summary": "Fixed motion detection bug in live detection worker. The DetectionResult for motion events was missing the required class_id parameter, causing TypeError exceptions that prevented all detections from being saved. Added class_id=-1 for motion events. Motion detection now correctly stores events to database when frame differencing detects changes.",
+      "task_id": null
     }
   ]
 }
