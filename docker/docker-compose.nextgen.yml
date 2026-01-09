@@ -1,0 +1,141 @@
+# RoninNVR NextGen Motion Detection Development Environment
+#
+# This compose file creates an isolated development environment with:
+# - Dual GPU access (RTX 2070 x2)
+# - Mounted repository for live code changes
+# - Access to existing video recordings for testing
+# - Network isolation from production services
+#
+# Usage:
+#   # Build the development image
+#   docker compose -f docker/docker-compose.nextgen.yml build
+#
+#   # Run interactive shell
+#   docker compose -f docker/docker-compose.nextgen.yml run --rm dev bash
+#
+#   # Run specific script
+#   docker compose -f docker/docker-compose.nextgen.yml run --rm dev python backend/tools/benchmark_pipeline.py
+#
+#   # Start Jupyter notebook
+#   docker compose -f docker/docker-compose.nextgen.yml run --rm -p 8888:8888 dev jupyter notebook --ip=0.0.0.0 --allow-root
+
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.nextgen-dev
+    container_name: ronin-nextgen-dev
+
+    # GPU access - both RTX 2070s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0", "1"]
+              capabilities: [gpu, compute, utility, video]
+
+    # Increase shared memory for CUDA operations
+    shm_size: "8gb"
+
+    # Environment variables
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+      - CUDA_VISIBLE_DEVICES=0,1
+      # Python settings
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      # Development settings
+      - DEBUG=true
+      # Database connection (use production DB for read access)
+      - DATABASE_URL=postgresql+asyncpg://ronin_nvr_user:ronin_pass@host.docker.internal:5432/ronin_nvr
+      # Storage paths
+      - STORAGE_ROOT=/opt3/ronin/storage
+      - ML_MODELS_PATH=/opt3/ronin/ml_models
+
+    # Volume mounts
+    volumes:
+      # Mount repository for live code editing
+      - ..:/workspace/ronin-nvr:rw
+
+      # Mount video storage (read-only for safety)
+      - /opt3/ronin/storage:/opt3/ronin/storage:ro
+
+      # Mount ML models (read-write for TensorRT engine generation)
+      - /opt3/ronin/ml_models:/opt3/ronin/ml_models:rw
+
+      # Persist pip cache for faster rebuilds
+      - nextgen-pip-cache:/root/.cache/pip
+
+      # Persist Jupyter data
+      - nextgen-jupyter-data:/root/.jupyter
+
+    # Working directory
+    working_dir: /workspace/ronin-nvr
+
+    # Network settings
+    networks:
+      - nextgen-dev
+
+    # Allow access to host for database connection
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # Interactive terminal
+    stdin_open: true
+    tty: true
+
+    # Default command
+    command: bash
+
+  # Optional: Standalone benchmark runner
+  benchmark:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.nextgen-dev
+    container_name: ronin-nextgen-benchmark
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0", "1"]
+              capabilities: [gpu, compute, utility, video]
+
+    shm_size: "8gb"
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0,1
+      - PYTHONUNBUFFERED=1
+      - STORAGE_ROOT=/opt3/ronin/storage
+      - ML_MODELS_PATH=/opt3/ronin/ml_models
+
+    volumes:
+      - ..:/workspace/ronin-nvr:rw
+      - /opt3/ronin/storage:/opt3/ronin/storage:ro
+      - /opt3/ronin/ml_models:/opt3/ronin/ml_models:rw
+      - nextgen-benchmark-results:/workspace/ronin-nvr/benchmark_results
+
+    working_dir: /workspace/ronin-nvr
+
+    networks:
+      - nextgen-dev
+
+    command: python backend/tools/benchmark_pipeline.py
+
+    profiles:
+      - benchmark
+
+networks:
+  nextgen-dev:
+    driver: bridge
+    # Isolated from production network
+    name: ronin-nextgen-dev
+
+volumes:
+  nextgen-pip-cache:
+  nextgen-jupyter-data:
+  nextgen-benchmark-results:
