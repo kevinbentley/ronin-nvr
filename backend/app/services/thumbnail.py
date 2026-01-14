@@ -15,6 +15,19 @@ THUMB_WIDTH = 160
 THUMB_HEIGHT = 90
 THUMB_INTERVAL = 10  # seconds between thumbnails
 SPRITE_COLUMNS = 10  # thumbnails per row in sprite sheet
+MAX_CONCURRENT_SPRITES = 3  # Limit concurrent ffmpeg processes for sprite generation
+FFMPEG_TIMEOUT = 120  # Timeout for sprite generation in seconds
+
+# Module-level semaphore for concurrency control
+_sprite_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    """Get or create the sprite generation semaphore."""
+    global _sprite_semaphore
+    if _sprite_semaphore is None:
+        _sprite_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SPRITES)
+    return _sprite_semaphore
 
 
 @dataclass
@@ -68,7 +81,8 @@ async def generate_sprite(recording_path: Path) -> Optional[ThumbnailSprite]:
     """Generate a thumbnail sprite sheet for a recording.
 
     Creates a sprite sheet image and a VTT file that maps timestamps
-    to coordinates in the sprite.
+    to coordinates in the sprite. Uses a semaphore to limit concurrent
+    ffmpeg processes.
 
     Args:
         recording_path: Path to the video recording file
@@ -110,65 +124,78 @@ async def generate_sprite(recording_path: Path) -> Optional[ThumbnailSprite]:
     # Calculate sprite dimensions
     rows = (thumb_count + SPRITE_COLUMNS - 1) // SPRITE_COLUMNS
 
-    try:
-        # Generate sprite sheet using FFmpeg
-        # fps=1/{interval} extracts one frame every N seconds
-        # tile={cols}x{rows} arranges them in a grid
-        proc = await asyncio.create_subprocess_exec(
-            "ffmpeg",
-            "-y",
-            "-i", str(recording_path),
-            "-vf", f"fps=1/{THUMB_INTERVAL},scale={THUMB_WIDTH}:{THUMB_HEIGHT},tile={SPRITE_COLUMNS}x{rows}",
-            "-frames:v", "1",
-            "-q:v", "5",  # JPEG quality (2-31, lower is better)
-            str(sprite_path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await proc.communicate()
+    # Use semaphore to limit concurrent ffmpeg processes
+    async with _get_semaphore():
+        proc: Optional[asyncio.subprocess.Process] = None
+        try:
+            # Generate sprite sheet using FFmpeg
+            # fps=1/{interval} extracts one frame every N seconds
+            # tile={cols}x{rows} arranges them in a grid
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                "-y",
+                "-i", str(recording_path),
+                "-vf", f"fps=1/{THUMB_INTERVAL},scale={THUMB_WIDTH}:{THUMB_HEIGHT},tile={SPRITE_COLUMNS}x{rows}",
+                "-frames:v", "1",
+                "-q:v", "5",  # JPEG quality (2-31, lower is better)
+                str(sprite_path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
 
-        if proc.returncode != 0:
-            # Log error but don't raise
-            print(f"FFmpeg sprite generation failed: {stderr.decode()[:500]}")
+            try:
+                _, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=FFMPEG_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                # Kill orphaned process on timeout
+                proc.kill()
+                await proc.wait()
+                print(f"FFmpeg sprite generation timed out for {recording_path}")
+                return None
+
+            if proc.returncode != 0:
+                # Log error but don't raise
+                print(f"FFmpeg sprite generation failed: {stderr.decode()[:500]}")
+                return None
+
+            # Generate VTT file
+            vtt_lines = ["WEBVTT", ""]
+
+            for i in range(thumb_count):
+                start_sec = i * THUMB_INTERVAL
+                end_sec = min((i + 1) * THUMB_INTERVAL, duration_int)
+
+                # Format times as HH:MM:SS.mmm
+                start_time = format_vtt_time(start_sec)
+                end_time = format_vtt_time(end_sec)
+
+                # Calculate sprite coordinates
+                col = i % SPRITE_COLUMNS
+                row = i // SPRITE_COLUMNS
+                x = col * THUMB_WIDTH
+                y = row * THUMB_HEIGHT
+
+                vtt_lines.append(f"{start_time} --> {end_time}")
+                vtt_lines.append(f"{sprite_id}.jpg#xywh={x},{y},{THUMB_WIDTH},{THUMB_HEIGHT}")
+                vtt_lines.append("")
+
+            vtt_path.write_text("\n".join(vtt_lines))
+
+            return ThumbnailSprite(
+                sprite_path=sprite_path,
+                vtt_path=vtt_path,
+                duration_seconds=duration_int,
+                thumbnail_count=thumb_count,
+                interval_seconds=THUMB_INTERVAL,
+            )
+
+        except Exception as e:
+            print(f"Sprite generation error: {e}")
+            # Clean up partial files
+            sprite_path.unlink(missing_ok=True)
+            vtt_path.unlink(missing_ok=True)
             return None
-
-        # Generate VTT file
-        vtt_lines = ["WEBVTT", ""]
-
-        for i in range(thumb_count):
-            start_sec = i * THUMB_INTERVAL
-            end_sec = min((i + 1) * THUMB_INTERVAL, duration_int)
-
-            # Format times as HH:MM:SS.mmm
-            start_time = format_vtt_time(start_sec)
-            end_time = format_vtt_time(end_sec)
-
-            # Calculate sprite coordinates
-            col = i % SPRITE_COLUMNS
-            row = i // SPRITE_COLUMNS
-            x = col * THUMB_WIDTH
-            y = row * THUMB_HEIGHT
-
-            vtt_lines.append(f"{start_time} --> {end_time}")
-            vtt_lines.append(f"{sprite_id}.jpg#xywh={x},{y},{THUMB_WIDTH},{THUMB_HEIGHT}")
-            vtt_lines.append("")
-
-        vtt_path.write_text("\n".join(vtt_lines))
-
-        return ThumbnailSprite(
-            sprite_path=sprite_path,
-            vtt_path=vtt_path,
-            duration_seconds=duration_int,
-            thumbnail_count=thumb_count,
-            interval_seconds=THUMB_INTERVAL,
-        )
-
-    except Exception as e:
-        print(f"Sprite generation error: {e}")
-        # Clean up partial files
-        sprite_path.unlink(missing_ok=True)
-        vtt_path.unlink(missing_ok=True)
-        return None
 
 
 def format_vtt_time(seconds: int) -> str:

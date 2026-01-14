@@ -27,7 +27,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ronin_pass}
       POSTGRES_DB: ${POSTGRES_DB:-ronin_nvr}
     volumes:
-      - /opt2/ronin/postgres:/var/lib/postgresql/data
+      - ${POSTGRES_DATA_PATH:-./data/postgres}:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
@@ -63,8 +63,8 @@ services:
       ML_AUTO_PROCESS: "true"
       STREAM_MANAGER_URL: "http://stream-manager:8001"
     volumes:
-      - /opt3/ronin/storage:/data/storage
-      - /opt3/ronin/ml_models:/data/storage/.ml/models
+      - ${STORAGE_PATH:-./data/storage}:/data/storage
+      - ${ML_MODELS_PATH:-./data/ml_models}:/data/storage/.ml/models
     ports:
       - "8000:8000"
     healthcheck:
@@ -91,7 +91,7 @@ services:
       SEGMENT_DURATION_MINUTES: "15"
       TZ: ${TZ:-America/Denver}
     volumes:
-      - /opt3/ronin/storage:/data/storage
+      - ${STORAGE_PATH:-./data/storage}:/data/storage
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
@@ -110,7 +110,7 @@ services:
       - backend
     volumes:
       # Mount storage for direct video serving (bypasses backend for better performance)
-      - /opt3/ronin/storage:/data/storage:ro
+      - ${STORAGE_PATH:-./data/storage}:/data/storage:ro
     ports:
       - "80:80"
     healthcheck:
@@ -141,8 +141,8 @@ services:
       ML_CONFIDENCE_THRESHOLD: ${ML_CONFIDENCE_THRESHOLD:-0.5}
       ML_CLASS_FILTER: ${ML_CLASS_FILTER:-person,car,truck,bus,motorcycle,bicycle,dog,cat}
     volumes:
-      - /opt3/ronin/storage:/data/storage
-      - /opt3/ronin/ml_models:/data/storage/.ml/models
+      - ${STORAGE_PATH:-./data/storage}:/data/storage
+      - ${ML_MODELS_PATH:-./data/ml_models}:/data/storage/.ml/models
     command: ["python", "ml_worker.py", "--workers", "1"]
     deploy:
       resources:
@@ -187,8 +187,8 @@ services:
       NEXTGEN_CLASS_THRESHOLDS: '${NEXTGEN_CLASS_THRESHOLDS:-{"person": 0.25, "dog": 0.35, "cat": 0.35}}'
       NEXTGEN_PERIODIC_DETECTION_INTERVAL: ${NEXTGEN_PERIODIC_DETECTION_INTERVAL:-30}
     volumes:
-      - /opt3/ronin/storage:/data/storage
-      - /opt3/ronin/ml_models:/data/storage/.ml/models
+      - ${STORAGE_PATH:-./data/storage}:/data/storage
+      - ${ML_MODELS_PATH:-./data/ml_models}:/data/storage/.ml/models
     command: ["python", "live_detection_worker.py", "--verbose"]
     deploy:
       resources:
@@ -243,7 +243,7 @@ services:
       TRANSCODE_CRF: ${TRANSCODE_CRF:-28}
       TRANSCODE_PRESET: ${TRANSCODE_PRESET:-medium}
     volumes:
-      - /opt3/ronin/storage:/data/storage
+      - ${STORAGE_PATH:-./data/storage}:/data/storage
     command: ["python", "transcode_worker.py", "--continuous"]
     deploy:
       replicas: 3

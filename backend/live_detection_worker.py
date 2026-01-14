@@ -1141,9 +1141,15 @@ class LiveDetectionWorker:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=15.0
-            )
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=15.0
+                )
+            except asyncio.TimeoutError:
+                # Kill orphaned process on timeout
+                proc.kill()
+                await proc.wait()
+                raise
 
             if proc.returncode != 0:
                 logger.debug(f"FFmpeg failed: {stderr.decode()[:200]}")

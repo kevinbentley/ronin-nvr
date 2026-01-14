@@ -459,14 +459,24 @@ LIVE_DETECTION_FPS=1.0
 LIVE_DETECTION_COOLDOWN=30.0
 ```
 
-### Volume Mounts (Production)
+### Volume Mounts (Configurable Paths)
 
-The GPU compose file uses host paths for persistent data:
-- `/opt3/ronin/postgres` - Database files
-- `/opt3/ronin/storage` - Video recordings
-- `/opt3/ronin/ml_models` - ONNX model cache
+Storage paths are configurable via environment variables in your `.env` file:
 
-The CPU compose file uses named Docker volumes instead.
+| Variable | Default (GPU) | Default (CPU) | Purpose |
+|----------|---------------|---------------|---------|
+| `POSTGRES_DATA_PATH` | `./data/postgres` | `postgres_data` (named vol) | PostgreSQL database files |
+| `STORAGE_PATH` | `./data/storage` | `storage_data` (named vol) | Video recordings |
+| `ML_MODELS_PATH` | `./data/ml_models` | `ml_models` (named vol) | ONNX model cache |
+
+Example production `.env`:
+```bash
+POSTGRES_DATA_PATH=/opt/ronin/postgres
+STORAGE_PATH=/opt/ronin/storage
+ML_MODELS_PATH=/opt/ronin/ml_models
+```
+
+When unset, the GPU compose uses relative paths (`./data/*`) and the CPU compose uses Docker named volumes.
 
 ### Database Migrations
 
