@@ -1,0 +1,3 @@
+# LLM-powered System Watchdog Dependencies
+httpx>=0.24.0      # Async HTTP client for LLM API
+psutil>=5.9.0      # System metrics collection
