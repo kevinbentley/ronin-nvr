@@ -1,13 +1,21 @@
-"""Motion gate for live detection using frame differencing.
+"""Motion gate for live detection using frame differencing or GPU MOG2.
 
-This module provides a simple, efficient motion detection mechanism
-that compares consecutive frames to determine if YOLO inference
-should be run. Unlike MOG2, this works well with sparse frames
-(1 frame per 2-second segment or multiple frames per segment).
+This module provides motion detection mechanisms to determine if YOLO
+inference should be run. Two backends are available:
 
-The gate is designed to be fast (~8ms per frame at 720p) so that
-skipping YOLO inference (~121ms) on static scenes provides a
-significant performance benefit.
+1. CPU Frame Differencing (default):
+   - Fast (~8ms per frame at 720p)
+   - Works well with sparse frames
+   - Simple but prone to false positives
+
+2. GPU MOG2 Background Subtraction:
+   - Faster (~2-3ms per frame at 720p with GPU)
+   - Maintains temporal background model
+   - Better rejection of rain, shadows, lighting changes
+   - Requires CUDA-enabled OpenCV
+
+The gate is designed to skip YOLO inference (~121ms) on static scenes,
+providing significant performance benefits.
 
 Also includes corruption detection to filter out false motion from
 video decode errors (vertical banding from UDP packet loss).
@@ -287,3 +295,51 @@ class MotionGate:
 
         # Return full frame if no valid contours
         return bboxes if bboxes else [(0.0, 0.0, 1.0, 1.0)]
+
+
+def create_motion_gate(
+    backend: str = "cpu",
+    **kwargs,
+) -> "MotionGate":
+    """Factory function to create a motion gate with the specified backend.
+
+    Args:
+        backend: Backend to use - "cpu" for frame differencing, "gpu" for MOG2
+        **kwargs: Additional arguments passed to the gate constructor
+
+    Returns:
+        MotionGate instance (CPU or GPU variant)
+
+    Raises:
+        ValueError: If backend is not recognized
+        RuntimeError: If GPU backend requested but CUDA not available
+    """
+    if backend == "cpu":
+        return MotionGate(**kwargs)
+
+    elif backend == "gpu":
+        try:
+            import cv2
+
+            if cv2.cuda.getCudaEnabledDeviceCount() == 0:
+                raise RuntimeError("GPU backend requested but no CUDA devices available")
+
+            from app.services.ml.gpu_motion import GPUMotionGate
+
+            # Map CPU params to GPU params where applicable
+            gpu_kwargs = {}
+            if "min_percent" in kwargs:
+                gpu_kwargs["min_motion_percent"] = kwargs["min_percent"]
+            if "min_area" in kwargs:
+                gpu_kwargs["min_contour_area"] = kwargs["min_area"]
+            if "threshold" in kwargs:
+                # CPU threshold maps roughly to MOG2 var_threshold
+                gpu_kwargs["var_threshold"] = kwargs["threshold"]
+
+            return GPUMotionGate(**gpu_kwargs)
+
+        except ImportError as e:
+            raise RuntimeError(f"GPU motion gate not available: {e}") from e
+
+    else:
+        raise ValueError(f"Unknown motion gate backend: {backend}")

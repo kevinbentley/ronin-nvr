@@ -25,7 +25,7 @@ class MLSettings(Base):
         Boolean, default=True, nullable=False
     )
     live_detection_fps: Mapped[float] = mapped_column(
-        Float, default=1.0, nullable=False
+        Float, default=3.0, nullable=False
     )
     live_detection_cooldown: Mapped[float] = mapped_column(
         Float, default=30.0, nullable=False

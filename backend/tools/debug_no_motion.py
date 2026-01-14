@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Debug - run detection WITHOUT motion gating."""
+
+import sys
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from app.services.ml.tensorrt_inference import TensorRTDetector
+
+
+def main():
+    video_path = "/opt3/ronin/storage/Hangar_East/2025-12-30/00-21-28.mp4"
+
+    # Create detector with per-class thresholds
+    detector = TensorRTDetector(
+        model_path="/opt3/ronin/ml_models/yolov8n_dynamic.onnx",
+        confidence_threshold=0.65,
+        class_thresholds={"person": 0.45},
+        warmup_iterations=3,
+    )
+
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    print(f"Video FPS: {fps}")
+
+    # Sample at 3 FPS like the test
+    frame_skip = int(fps / 3)
+    frame_idx = 0
+    person_count = 0
+    truck_count = 0
+    frames_sampled = 0
+
+    print("Processing first 300 frames WITHOUT motion gating...")
+    print("Thresholds: person=0.45, default=0.65")
+    print()
+
+    while frames_sampled < 300:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        if frame_idx % frame_skip != 0:
+            frame_idx += 1
+            continue
+
+        frames_sampled += 1
+        timestamp = frame_idx / fps
+
+        # Scale to 720p
+        h, w = frame.shape[:2]
+        if h > 720:
+            scale = 720 / h
+            frame = cv2.resize(frame, (int(w * scale), 720))
+
+        # Direct detection - no motion gating
+        detections = detector.detect(frame)
+
+        for det in detections:
+            if det.class_name == "person":
+                person_count += 1
+                print(f"  Frame {frame_idx} ({timestamp:.1f}s): PERSON @ {det.confidence:.2f}")
+            elif det.class_name == "truck":
+                truck_count += 1
+                print(f"  Frame {frame_idx} ({timestamp:.1f}s): truck @ {det.confidence:.2f}")
+
+        frame_idx += 1
+
+    cap.release()
+
+    print()
+    print(f"Frames sampled: {frames_sampled}")
+    print(f"Person detections: {person_count}")
+    print(f"Truck detections: {truck_count}")
+
+
+if __name__ == "__main__":
+    main()

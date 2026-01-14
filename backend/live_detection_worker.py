@@ -43,6 +43,11 @@ from app.services.ml.detection_service import DetectionResult, DetectionService
 from app.services.ml.model_manager import ModelManager
 from app.services.ml.motion_gate import MotionGate
 
+# NextGen pipeline imports (lazy loaded, use --legacy to disable)
+GPUOrchestrator = None  # Will be imported when needed
+GPUPipelineConfig = None
+PipelineResult = None
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -194,6 +199,7 @@ class LiveDetectionWorker:
         database_url: str,
         storage_root: Path,
         settings: Settings,
+        legacy: bool = False,
     ):
         self.worker_id = worker_id
         self.database_url = database_url.replace(
@@ -227,30 +233,103 @@ class LiveDetectionWorker:
         self._running = False
         self._pool = None
 
-        # Motion gate (replaces broken MOG2 motion detection)
-        self._motion_gate_enabled = settings.motion_gate_enabled
-        self._motion_gate = MotionGate(
-            threshold=settings.motion_gate_threshold,
-            min_percent=settings.motion_gate_min_percent,
-            min_area=settings.motion_gate_min_area,
-        )
-        self._motion_gate_stale_seconds = settings.motion_gate_stale_seconds
-        # Store motion detections in database
-        self._store_motion_detections = settings.motion_detection_enabled
+        # NextGen pipeline (GPU-accelerated) - enabled by default unless --legacy
+        self._nextgen = settings.nextgen_enabled and not legacy
+        self._orchestrator = None
 
-        # Initialize ML components
-        self.model_manager = ModelManager()
-        self.detector = DetectionService(model_mgr=self.model_manager)
+        if self._nextgen:
+            self._init_nextgen_pipeline()
+        else:
+            # Legacy pipeline: motion gate + DetectionService
+            self._motion_gate_enabled = settings.motion_gate_enabled
+            self._motion_gate = MotionGate(
+                threshold=settings.motion_gate_threshold,
+                min_percent=settings.motion_gate_min_percent,
+                min_area=settings.motion_gate_min_area,
+            )
+            self._motion_gate_stale_seconds = settings.motion_gate_stale_seconds
+            self._store_motion_detections = settings.motion_detection_enabled
+
+            # Initialize ML components
+            self.model_manager = ModelManager()
+            self.detector = DetectionService(model_mgr=self.model_manager)
+
         self.snapshot_service = SnapshotService(storage_root)
 
         # Stream directory
         self.streams_dir = storage_root / ".streams"
 
+    def _init_nextgen_pipeline(self) -> None:
+        """Initialize the nextgen GPU-accelerated pipeline."""
+        global GPUOrchestrator, GPUPipelineConfig, PipelineResult
+
+        logger.info("Initializing NextGen GPU-accelerated pipeline...")
+
+        # Lazy import to avoid loading GPU libs when not needed
+        from app.services.ml.gpu_orchestrator import (
+            GPUOrchestrator as _GPUOrchestrator,
+            GPUPipelineConfig as _GPUPipelineConfig,
+            PipelineResult as _PipelineResult,
+        )
+        GPUOrchestrator = _GPUOrchestrator
+        GPUPipelineConfig = _GPUPipelineConfig
+        PipelineResult = _PipelineResult
+
+        # Parse per-class thresholds from JSON string
+        import json as _json
+        try:
+            class_thresholds = _json.loads(self.settings.nextgen_class_thresholds)
+        except (ValueError, TypeError):
+            class_thresholds = {}
+            logger.warning("Failed to parse nextgen_class_thresholds, using defaults")
+
+        # Build config from settings
+        config = GPUPipelineConfig(
+            model_path=self.settings.nextgen_model_path,
+            motion_history=self.settings.nextgen_motion_history,
+            motion_var_threshold=self.settings.nextgen_motion_var_threshold,
+            motion_min_percent=self.settings.nextgen_motion_min_percent,
+            detection_confidence=self.settings.nextgen_detection_confidence,
+            detection_nms_threshold=self.settings.nextgen_detection_nms_threshold,
+            class_thresholds=class_thresholds,
+            track_high_thresh=self.settings.nextgen_track_high_thresh,
+            track_low_thresh=self.settings.nextgen_track_low_thresh,
+            track_match_thresh=self.settings.nextgen_track_match_thresh,
+            track_buffer=self.settings.nextgen_track_buffer,
+            track_min_hits=self.settings.nextgen_track_min_hits,
+            track_min_displacement=self.settings.nextgen_track_min_displacement,
+            fsm_validation_frames=self.settings.nextgen_fsm_validation_frames,
+            fsm_velocity_threshold=self.settings.nextgen_fsm_velocity_threshold,
+            fsm_stationary_seconds=self.settings.nextgen_fsm_stationary_seconds,
+            fsm_parked_seconds=self.settings.nextgen_fsm_parked_seconds,
+            fsm_lost_seconds=self.settings.nextgen_fsm_lost_seconds,
+            periodic_detection_interval=self.settings.nextgen_periodic_detection_interval,
+        )
+
+        # Create orchestrator (auto-detects GPUs)
+        import cv2
+        try:
+            num_gpus = cv2.cuda.getCudaEnabledDeviceCount()
+            device_ids = list(range(num_gpus)) if num_gpus > 0 else [0]
+        except Exception:
+            device_ids = [0]
+
+        self._orchestrator = GPUOrchestrator(
+            device_ids=device_ids,
+            config=config,
+        )
+
+        logger.info(
+            f"NextGen pipeline initialized: {len(device_ids)} GPU(s), "
+            f"model={self.settings.nextgen_model_path}"
+        )
+
     async def start(self) -> None:
         """Start the worker and begin processing streams."""
         import asyncpg
 
-        logger.info(f"Worker {self.worker_id} starting...")
+        pipeline_mode = "NextGen GPU" if self._nextgen else "Legacy CPU"
+        logger.info(f"Worker {self.worker_id} starting ({pipeline_mode} pipeline)...")
         logger.info(
             f"Config: fps={self.fps}, cooldown={self.cooldown}s, "
             f"confidence={self.confidence}, classes={self.class_filter}"
@@ -288,7 +367,10 @@ class LiveDetectionWorker:
             await self._pool.close()
             self._pool = None
 
-        self.model_manager.unload_all()
+        # Cleanup based on pipeline mode
+        if not self._nextgen and hasattr(self, "model_manager"):
+            self.model_manager.unload_all()
+
         logger.info(f"Worker {self.worker_id} stopped")
 
     async def _load_cameras(self) -> None:
@@ -418,17 +500,228 @@ class LiveDetectionWorker:
                 await asyncio.sleep(5.0)  # Check again in 5 seconds
                 continue
 
-            # Process all cameras in parallel
-            tasks = []
-            for state in self.cameras.values():
-                if state.enabled:
-                    tasks.append(self._process_camera_safe(state))
+            # Use batch processing for NextGen mode (more efficient GPU utilization)
+            if self._nextgen:
+                await self._process_cameras_batch_nextgen()
+            else:
+                # Legacy mode: process cameras in parallel (each runs YOLO independently)
+                tasks = []
+                for state in self.cameras.values():
+                    if state.enabled:
+                        tasks.append(self._process_camera_safe(state))
 
-            if tasks:
-                await asyncio.gather(*tasks)
+                if tasks:
+                    await asyncio.gather(*tasks)
 
             # Brief pause to avoid tight loop when all segments are up to date
             await asyncio.sleep(0.5)
+
+    async def _process_cameras_batch_nextgen(self) -> None:
+        """Process all cameras using batched GPU inference.
+
+        This method collects ready segments from all cameras, extracts frames
+        in parallel, then uses process_batch() for efficient GPU utilization.
+        This is significantly faster than processing each camera independently.
+        """
+        # Step 1: Collect cameras with new segments ready to process
+        ready_cameras: list[tuple[CameraState, Path, float]] = []
+
+        for state in self.cameras.values():
+            if not state.enabled:
+                continue
+
+            camera_dir = self.streams_dir / str(state.camera_id)
+            if not camera_dir.exists():
+                continue
+
+            # Find newest segment
+            try:
+                segments = []
+                for p in camera_dir.glob("segment*.ts"):
+                    try:
+                        segments.append((p, p.stat().st_mtime))
+                    except FileNotFoundError:
+                        continue
+                if not segments:
+                    continue
+
+                segments.sort(key=lambda x: x[1])
+                newest, newest_mtime = segments[-1]
+            except OSError:
+                continue
+
+            # Skip if already processed
+            if (
+                state.last_processed_segment == newest.name
+                and state.last_segment_mtime == newest_mtime
+            ):
+                continue
+
+            # Wait for segment to be fully written
+            age = time.time() - newest_mtime
+            if age < 1.0:
+                continue
+
+            ready_cameras.append((state, newest, newest_mtime))
+
+        if not ready_cameras:
+            return
+
+        # Step 2: Extract frames from all ready cameras in parallel
+        extraction_tasks = []
+        for state, segment_path, segment_mtime in ready_cameras:
+            extraction_tasks.append(self._extract_frames(segment_path))
+
+        all_frames = await asyncio.gather(*extraction_tasks)
+
+        # Build camera -> frames mapping (skip failed extractions)
+        camera_frames: dict[int, tuple[CameraState, list[np.ndarray], float]] = {}
+        for (state, segment_path, segment_mtime), frames in zip(ready_cameras, all_frames):
+            if frames:
+                camera_frames[state.camera_id] = (state, frames, segment_mtime)
+                # Mark segment as processed
+                state.last_processed_segment = segment_path.name
+                state.last_segment_mtime = segment_mtime
+
+                logger.debug(
+                    f"Camera {state.camera_id}: extracted {len(frames)} frames "
+                    f"({frames[0].shape[1]}x{frames[0].shape[0]}) [batch]"
+                )
+
+        if not camera_frames:
+            return
+
+        # Step 3: Process frames in batches across cameras
+        # Find the maximum number of frames across all cameras
+        max_frames = max(len(frames) for _, frames, _ in camera_frames.values())
+
+        for frame_idx in range(max_frames):
+            # Collect frame from each camera for this index
+            batch_frames: dict[int, np.ndarray] = {}
+            batch_timestamps: dict[int, float] = {}
+
+            for camera_id, (state, frames, segment_mtime) in camera_frames.items():
+                if frame_idx < len(frames):
+                    batch_frames[camera_id] = frames[frame_idx]
+                    # Calculate timestamp for this frame within segment
+                    batch_timestamps[camera_id] = segment_mtime + (frame_idx / max(len(frames), 1)) * 2.0
+
+            if not batch_frames:
+                continue
+
+            # Use common timestamp for the batch (average)
+            avg_timestamp = sum(batch_timestamps.values()) / len(batch_timestamps)
+
+            # Batch process all cameras' frames together
+            results = self._orchestrator.process_batch(
+                frames=batch_frames,
+                timestamp=avg_timestamp,
+            )
+
+            # Handle results for each camera
+            for camera_id, result in results.items():
+                state, frames, segment_mtime = camera_frames[camera_id]
+                frame = batch_frames[camera_id]
+                frame_timestamp = batch_timestamps[camera_id]
+                detection_time = datetime.fromtimestamp(frame_timestamp, tz=timezone.utc)
+
+                # Log first frame of each segment
+                if frame_idx == 0:
+                    logger.debug(
+                        f"Camera {camera_id}: motion={result.motion_percent:.1f}%, "
+                        f"detected={result.motion_detected}, dets={len(result.detections)}, "
+                        f"tracks={len(result.tracks)} [batch]"
+                    )
+
+                # Skip if no activity
+                if not result.has_activity:
+                    continue
+
+                # Process detections (same as single-camera nextgen)
+                await self._handle_nextgen_result(
+                    state, frame, result, detection_time
+                )
+
+                # Log FSM events
+                for event in result.events:
+                    logger.info(
+                        f"Camera {camera_id}: {event.event_type.value} - "
+                        f"{event.class_name} track {event.track_id} [batch]"
+                    )
+
+    async def _handle_nextgen_result(
+        self,
+        state: CameraState,
+        frame: np.ndarray,
+        result: "PipelineResult",
+        detection_time: datetime,
+    ) -> None:
+        """Handle detection result from nextgen pipeline.
+
+        Filters tracks, applies debounce, saves snapshots and detections.
+        Shared between single-camera and batch processing modes.
+        """
+        detections_to_save: list[dict] = []
+        all_detections: list[DetectionResult] = []
+
+        for track in result.tracks:
+            # Skip tentative tracks
+            if track.hits < self.settings.nextgen_track_min_hits:
+                continue
+
+            # Filter by class
+            if track.class_name.lower() not in self.class_filter:
+                continue
+
+            # Check debounce
+            if not self.debounce.should_notify(state.camera_id, track.class_name):
+                continue
+
+            # Create DetectionResult for snapshot drawing
+            det = DetectionResult(
+                class_name=track.class_name,
+                class_id=track.class_id,
+                confidence=track.confidence,
+                x=track.x,
+                y=track.y,
+                width=track.width,
+                height=track.height,
+            )
+            all_detections.append(det)
+
+            # Prepare for database
+            detections_to_save.append({
+                "camera_id": state.camera_id,
+                "class_name": track.class_name,
+                "confidence": track.confidence,
+                "bbox_x": track.x,
+                "bbox_y": track.y,
+                "bbox_width": track.width,
+                "bbox_height": track.height,
+                "model_name": "nextgen",
+                "detected_at": detection_time,
+                "snapshot_path": None,
+                "track_id": track.track_id,
+            })
+
+            # Mark as notified for debounce
+            self.debounce.mark_notified(state.camera_id, track.class_name)
+
+        # Save snapshot and detections if any
+        if detections_to_save:
+            snapshot_path = self.snapshot_service.save_snapshot(
+                frame, state.camera_id, all_detections, detection_time
+            )
+
+            logger.info(
+                f"Detection on {state.camera_name}: "
+                f"{', '.join(d.class_name for d in all_detections)} [batch]"
+            )
+
+            for det in detections_to_save:
+                det["snapshot_path"] = str(snapshot_path)
+
+            await self._save_detections(detections_to_save, state.camera_name)
 
     async def _process_camera_safe(self, state: CameraState) -> None:
         """Process camera with exception handling for parallel execution."""
@@ -493,6 +786,12 @@ class LiveDetectionWorker:
             segment_path: Path to the HLS segment file
             segment_mtime: Modification time of the segment (avoids race condition)
         """
+        # Use NextGen pipeline if enabled
+        if self._nextgen:
+            await self._process_segment_nextgen(state, segment_path, segment_mtime)
+            return
+
+        # Legacy pipeline below
         # Extract multiple frames at target FPS, scaled to processing resolution
         frames = await self._extract_frames(segment_path)
         if not frames:
@@ -664,6 +963,150 @@ class LiveDetectionWorker:
             logger.debug(
                 f"Camera {state.camera_id}: processed {len(frames)} frames, "
                 f"YOLO ran {yolo_runs}, skipped {yolo_skipped}"
+            )
+
+    async def _process_segment_nextgen(
+        self, state: CameraState, segment_path: Path, segment_mtime: float
+    ) -> None:
+        """Process segment using the NextGen GPU-accelerated pipeline.
+
+        Uses GPUOrchestrator with:
+        - GPU MOG2 for motion detection
+        - Batched YOLO inference via ONNX Runtime CUDA
+        - ByteTrack for multi-object tracking
+        - FSM for object state management
+
+        Args:
+            state: Camera state for this camera
+            segment_path: Path to the HLS segment file
+            segment_mtime: Modification time of the segment
+        """
+        # Extract frames using the same ffmpeg-based extraction
+        frames = await self._extract_frames(segment_path)
+        if not frames:
+            logger.warning(
+                f"Camera {state.camera_id}: frame extraction failed for {segment_path.name}"
+            )
+            return
+
+        logger.debug(
+            f"Camera {state.camera_id}: extracted {len(frames)} frames "
+            f"({frames[0].shape[1]}x{frames[0].shape[0]}) [nextgen]"
+        )
+
+        # Base detection timestamp from segment modification time
+        base_time = datetime.fromtimestamp(segment_mtime, tz=timezone.utc)
+
+        # Process each frame through the orchestrator
+        detections_saved = 0
+
+        for frame_idx, frame in enumerate(frames):
+            # Calculate timestamp for this frame within the segment
+            frame_timestamp = segment_mtime + (frame_idx / max(len(frames), 1)) * 2.0
+            detection_time = datetime.fromtimestamp(frame_timestamp, tz=timezone.utc)
+
+            # Process through GPUOrchestrator
+            result = self._orchestrator.process(
+                camera_id=state.camera_id,
+                frame=frame,
+                timestamp=frame_timestamp,
+            )
+
+            # Always log first frame of each segment for debugging
+            if frame_idx == 0:
+                logger.debug(
+                    f"Camera {state.camera_id}: motion={result.motion_percent:.1f}%, "
+                    f"detected={result.motion_detected}, dets={len(result.detections)}, "
+                    f"tracks={len(result.tracks)}"
+                )
+
+            # Log motion/detection activity at debug level
+            if result.motion_detected:
+                logger.debug(
+                    f"Camera {state.camera_id}: motion {result.motion_percent:.1f}%, "
+                    f"{len(result.tracks)} tracks, {len(result.events)} events"
+                )
+
+            # Skip if no activity
+            if not result.has_activity:
+                continue
+
+            # Collect detections to save (only confirmed tracks, not tentative)
+            detections_to_save: list[dict] = []
+            all_detections: list[DetectionResult] = []
+
+            # Convert tracks to DetectionResult and filter by class
+            for track in result.tracks:
+                # Skip tentative tracks (not yet confirmed)
+                if track.hits < self.settings.nextgen_track_min_hits:
+                    continue
+
+                # Filter by class
+                if track.class_name.lower() not in self.class_filter:
+                    continue
+
+                # Check debounce
+                if not self.debounce.should_notify(state.camera_id, track.class_name):
+                    continue
+
+                # Create DetectionResult for snapshot drawing
+                det = DetectionResult(
+                    class_name=track.class_name,
+                    class_id=track.class_id,
+                    confidence=track.confidence,
+                    x=track.x,
+                    y=track.y,
+                    width=track.width,
+                    height=track.height,
+                )
+                all_detections.append(det)
+
+                # Prepare for database
+                detections_to_save.append({
+                    "camera_id": state.camera_id,
+                    "class_name": track.class_name,
+                    "confidence": track.confidence,
+                    "bbox_x": track.x,
+                    "bbox_y": track.y,
+                    "bbox_width": track.width,
+                    "bbox_height": track.height,
+                    "model_name": "nextgen",
+                    "detected_at": detection_time,
+                    "snapshot_path": None,
+                    "track_id": track.track_id,
+                })
+
+                # Mark as notified for debounce
+                self.debounce.mark_notified(state.camera_id, track.class_name)
+
+            # Save snapshot and detections if any
+            if detections_to_save:
+                snapshot_path = self.snapshot_service.save_snapshot(
+                    frame, state.camera_id, all_detections, detection_time
+                )
+
+                logger.info(
+                    f"Detection on {state.camera_name}: "
+                    f"{', '.join(d.class_name for d in all_detections)} [nextgen]"
+                )
+
+                for det in detections_to_save:
+                    det["snapshot_path"] = str(snapshot_path)
+
+                await self._save_detections(detections_to_save, state.camera_name)
+                detections_saved += len(detections_to_save)
+
+            # Log FSM events
+            for event in result.events:
+                logger.info(
+                    f"Camera {state.camera_id}: {event.event_type.value} - "
+                    f"{event.class_name} track {event.track_id}"
+                )
+
+        if detections_saved > 0:
+            logger.debug(
+                f"Camera {state.camera_id}: nextgen processed {len(frames)} frames, "
+                f"saved {detections_saved} detections"
             )
 
     async def _extract_frames(self, segment_path: Path) -> list[np.ndarray]:
@@ -866,6 +1309,11 @@ def main() -> None:
         action="store_true",
         help="Enable debug logging",
     )
+    parser.add_argument(
+        "--legacy",
+        action="store_true",
+        help="Use legacy CPU pipeline instead of NextGen GPU-accelerated pipeline",
+    )
 
     args = parser.parse_args()
 
@@ -906,6 +1354,7 @@ def main() -> None:
         database_url=settings.database_url,
         storage_root=Path(settings.storage_root),
         settings=settings,
+        legacy=args.legacy,
     )
 
     # Handle shutdown signals
