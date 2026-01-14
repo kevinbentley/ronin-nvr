@@ -147,7 +147,7 @@ class MLCoordinator:
                 )
             )
             if existing.scalar_one_or_none():
-                logger.warning(
+                logger.debug(
                     f"Job already exists for recording {recording_id} with model {model_name}"
                 )
                 return None
