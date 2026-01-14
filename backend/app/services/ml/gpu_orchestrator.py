@@ -152,6 +152,10 @@ class GPUPipeline:
         self.camera_ids = set(camera_ids)
         self.device_id = config.device_id
 
+        # Set CUDA device before creating any GPU resources
+        # This ensures MOG2, streams, and GpuMats are created on the correct GPU
+        cv2.cuda.setDevice(config.device_id)
+
         # Initialize components
         self._motion_gate = GPUMotionGate(
             history=config.motion_history,
@@ -351,6 +355,9 @@ class GPUPipeline:
             Dict mapping camera_id to PipelineResult
         """
         import time
+
+        # Ensure we're on the correct GPU for this pipeline
+        cv2.cuda.setDevice(self.device_id)
 
         results: dict[int, PipelineResult] = {}
         motion_frames: dict[int, np.ndarray] = {}

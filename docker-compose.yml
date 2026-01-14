@@ -181,7 +181,7 @@ services:
       ML_CLASS_FILTER: ${ML_CLASS_FILTER:-person,car,truck,bus,motorcycle,bicycle,dog,cat}
       # NextGen pipeline settings
       NEXTGEN_ENABLED: ${NEXTGEN_ENABLED:-true}
-      NEXTGEN_MODEL_PATH: /data/storage/.ml/models/yolo11l_dynamic.onnx
+      NEXTGEN_MODEL_PATH: ${NEXTGEN_MODEL_PATH:-/data/storage/.ml/models/yolo11l_dynamic.onnx}
       NEXTGEN_MOTION_MIN_PERCENT: ${NEXTGEN_MOTION_MIN_PERCENT:-0.3}
       NEXTGEN_DETECTION_CONFIDENCE: ${NEXTGEN_DETECTION_CONFIDENCE:-0.65}
       NEXTGEN_CLASS_THRESHOLDS: '${NEXTGEN_CLASS_THRESHOLDS:-{"person": 0.25, "dog": 0.35, "cat": 0.35}}'
