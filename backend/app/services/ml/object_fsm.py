@@ -7,19 +7,22 @@ objects, managing states like ACTIVE, STATIONARY, and PARKED. Key features:
 - Generates arrival/departure events
 - Suppresses notifications for stationary/parked objects
 - Velocity-based state transitions
+- Distinguishes arriving objects from pre-existing parked objects
 
 State Diagram:
 ```
 TENTATIVE (< N frames)
-    → ACTIVE (velocity > threshold, validated)
+    → ACTIVE (validated + has moved) → triggers ARRIVAL
         → STATIONARY (velocity ~0 for T seconds)
             → PARKED (stationary for P minutes)
                 → ACTIVE (movement detected)
                     → exit frame = "Departure"
+    → PARKED (validated + never moved) → NO arrival (pre-existing)
 ```
 
 Notification Rules:
-- TENTATIVE → ACTIVE: triggers "arrival" notification
+- TENTATIVE → ACTIVE: triggers "arrival" notification (object moved into frame)
+- TENTATIVE → PARKED: NO notification (pre-existing parked object)
 - ACTIVE → STATIONARY: no notification (still present)
 - STATIONARY → PARKED: no notification (suppress alerts)
 - PARKED → ACTIVE → exit: triggers "departure" notification
@@ -96,6 +99,10 @@ class ObjectLifecycle:
     # Counters
     frame_count: int = 0
     stationary_frames: int = 0
+
+    # Movement tracking - has this object ever shown significant movement?
+    # Used to distinguish arriving objects from pre-existing parked objects
+    has_ever_moved: bool = False
 
     @property
     def age_seconds(self) -> float:
@@ -267,6 +274,7 @@ class ObjectStateMachine:
 
         if is_moving:
             lifecycle.stationary_frames = 0
+            lifecycle.has_ever_moved = True
         else:
             lifecycle.stationary_frames += 1
 
@@ -280,7 +288,7 @@ class ObjectStateMachine:
 
             # Generate events for state transitions
             if old_state == ObjectState.TENTATIVE and new_state == ObjectState.ACTIVE:
-                # Arrival event
+                # Arrival event - object moved into frame
                 events.append(ObjectEvent(
                     event_type=EventType.ARRIVAL,
                     track_id=lifecycle.track_id,
@@ -294,6 +302,12 @@ class ObjectStateMachine:
                 ))
                 logger.info(
                     f"ARRIVAL: {lifecycle.class_name} (track {lifecycle.track_id})"
+                )
+            elif old_state == ObjectState.TENTATIVE and new_state == ObjectState.PARKED:
+                # Object never moved - skip ARRIVAL, treat as pre-existing parked object
+                logger.debug(
+                    f"Skipping ARRIVAL for {lifecycle.class_name} (track {lifecycle.track_id}) "
+                    f"- never moved, treating as pre-existing parked object"
                 )
 
             # State change event
@@ -344,7 +358,14 @@ class ObjectStateMachine:
 
         if current == ObjectState.TENTATIVE:
             if lifecycle.frame_count >= self.validation_frames:
-                return ObjectState.ACTIVE
+                # Object confirmed - check if it ever moved
+                if lifecycle.has_ever_moved:
+                    # Normal arrival - object moved into frame
+                    return ObjectState.ACTIVE
+                else:
+                    # Object never moved - likely pre-existing parked object
+                    # Skip ACTIVE state and go directly to PARKED (no ARRIVAL event)
+                    return ObjectState.PARKED
             return ObjectState.TENTATIVE
 
         elif current == ObjectState.ACTIVE:

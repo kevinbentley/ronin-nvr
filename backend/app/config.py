@@ -140,7 +140,7 @@ class Settings(BaseSettings):
     nextgen_track_match_thresh: float = 0.7
     nextgen_track_buffer: int = 90  # Frames to keep lost tracks (~30s at 3fps)
     nextgen_track_min_hits: int = 3  # Min detections to confirm track
-    nextgen_track_min_displacement: float = 0.02  # Min movement to confirm (0=disabled)
+    nextgen_track_min_displacement: float = 0.0  # Disabled - FSM handles movement check
 
     # NextGen FSM (Object State Machine)
     nextgen_fsm_validation_frames: int = 5  # Frames to confirm arrival (~2.5s at 2fps)
