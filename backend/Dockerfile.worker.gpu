@@ -1,0 +1,148 @@
+# RoninNVR GPU Worker with OpenCV CUDA Support
+# Builds OpenCV from source with CUDA for GPU-accelerated MOG2 background subtraction
+#
+# Build (takes ~20-30 minutes first time):
+#   docker build -f Dockerfile.worker.gpu -t ronin-worker-gpu .
+#
+# The build is cached, subsequent builds are fast unless OpenCV version changes.
+
+# =============================================================================
+# Stage 1: Build OpenCV with CUDA
+# =============================================================================
+FROM nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04 AS opencv-builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV OPENCV_VERSION=4.10.0
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    wget \
+    unzip \
+    pkg-config \
+    python3 \
+    python3-dev \
+    python3-numpy \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libv4l-dev \
+    libxvidcore-dev \
+    libx264-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    libatlas-base-dev \
+    gfortran \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download OpenCV and contrib modules
+WORKDIR /tmp
+RUN wget -q -O opencv.zip https://github.com/opencv/opencv/archive/${OPENCV_VERSION}.zip && \
+    wget -q -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/${OPENCV_VERSION}.zip && \
+    unzip -q opencv.zip && \
+    unzip -q opencv_contrib.zip && \
+    rm opencv.zip opencv_contrib.zip
+
+# Build OpenCV with CUDA
+WORKDIR /tmp/opencv-${OPENCV_VERSION}/build
+RUN cmake \
+    -D CMAKE_BUILD_TYPE=RELEASE \
+    -D CMAKE_INSTALL_PREFIX=/usr/local \
+    -D OPENCV_EXTRA_MODULES_PATH=/tmp/opencv_contrib-${OPENCV_VERSION}/modules \
+    -D WITH_CUDA=ON \
+    -D WITH_CUDNN=ON \
+    -D OPENCV_DNN_CUDA=ON \
+    -D ENABLE_FAST_MATH=ON \
+    -D CUDA_FAST_MATH=ON \
+    -D CUDA_ARCH_BIN="7.5 8.0 8.6 8.9 9.0" \
+    -D WITH_CUBLAS=ON \
+    -D WITH_NVCUVID=OFF \
+    -D WITH_NVCUVENC=OFF \
+    -D BUILD_opencv_python3=ON \
+    -D PYTHON3_EXECUTABLE=/usr/bin/python3 \
+    -D PYTHON3_INCLUDE_DIR=/usr/include/python3.12 \
+    -D PYTHON3_LIBRARY=/usr/lib/x86_64-linux-gnu/libpython3.12.so \
+    -D PYTHON3_PACKAGES_PATH=/usr/local/lib/python3.12/dist-packages \
+    -D BUILD_TESTS=OFF \
+    -D BUILD_PERF_TESTS=OFF \
+    -D BUILD_EXAMPLES=OFF \
+    -D BUILD_opencv_apps=OFF \
+    -D BUILD_JAVA=OFF \
+    -D WITH_GTK=OFF \
+    -D WITH_QT=OFF \
+    -D WITH_OPENGL=OFF \
+    .. && \
+    make -j$(nproc) && \
+    make install
+
+# =============================================================================
+# Stage 2: Runtime image with OpenCV CUDA
+# =============================================================================
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
+
+WORKDIR /app
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python, FFmpeg, and runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-venv \
+    python3-pip \
+    python3-numpy \
+    ffmpeg \
+    libpq5 \
+    libsm6 \
+    libxext6 \
+    libgl1 \
+    libnuma1 \
+    libavcodec60 \
+    libavformat60 \
+    libswscale7 \
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/bin/python
+
+# Copy OpenCV from builder
+COPY --from=opencv-builder /usr/local/lib /usr/local/lib
+COPY --from=opencv-builder /usr/local/lib/python3.12/dist-packages/cv2 /usr/local/lib/python3.12/dist-packages/cv2
+COPY --from=opencv-builder /usr/local/include/opencv4 /usr/local/include/opencv4
+
+# Update library cache
+RUN ldconfig
+
+# Create and activate virtual environment
+RUN python -m venv /opt/venv --system-site-packages
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
+
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip
+
+# Copy and install requirements (without opencv-python-headless since we have custom build)
+COPY requirements.txt .
+RUN grep -v "opencv-python" requirements.txt > requirements-no-opencv.txt && \
+    pip install --no-cache-dir -r requirements-no-opencv.txt && \
+    rm requirements-no-opencv.txt
+
+# For GPU support, install onnxruntime-gpu instead of onnxruntime
+RUN pip uninstall -y onnxruntime 2>/dev/null || true && \
+    pip install --no-cache-dir onnxruntime-gpu
+
+# Copy application code
+COPY . .
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash appuser && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
+# Default command (override in docker-compose)
+CMD ["python", "ml_worker.py"]

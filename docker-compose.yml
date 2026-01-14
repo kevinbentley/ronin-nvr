@@ -159,7 +159,7 @@ services:
   live-detection:
     build:
       context: ./backend
-      dockerfile: Dockerfile.worker
+      dockerfile: Dockerfile.worker.gpu
     container_name: ronin-live-detection
     restart: unless-stopped
     user: "1000:1000"
@@ -179,10 +179,17 @@ services:
       LIVE_DETECTION_CLASSES: ${LIVE_DETECTION_CLASSES:-person,car,truck}
       ML_CONFIDENCE_THRESHOLD: ${ML_CONFIDENCE_THRESHOLD:-0.5}
       ML_CLASS_FILTER: ${ML_CLASS_FILTER:-person,car,truck,bus,motorcycle,bicycle,dog,cat}
+      # NextGen pipeline settings
+      NEXTGEN_ENABLED: ${NEXTGEN_ENABLED:-true}
+      NEXTGEN_MODEL_PATH: /data/storage/.ml/models/yolo11l_dynamic.onnx
+      NEXTGEN_MOTION_MIN_PERCENT: ${NEXTGEN_MOTION_MIN_PERCENT:-0.3}
+      NEXTGEN_DETECTION_CONFIDENCE: ${NEXTGEN_DETECTION_CONFIDENCE:-0.65}
+      NEXTGEN_CLASS_THRESHOLDS: '${NEXTGEN_CLASS_THRESHOLDS:-{"person": 0.25, "dog": 0.35, "cat": 0.35}}'
+      NEXTGEN_PERIODIC_DETECTION_INTERVAL: ${NEXTGEN_PERIODIC_DETECTION_INTERVAL:-30}
     volumes:
       - /opt3/ronin/storage:/data/storage
       - /opt3/ronin/ml_models:/data/storage/.ml/models
-    command: ["python", "live_detection_worker.py"]
+    command: ["python", "live_detection_worker.py", "--verbose"]
     deploy:
       resources:
         limits:

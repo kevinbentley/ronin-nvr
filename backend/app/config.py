@@ -117,6 +117,43 @@ class Settings(BaseSettings):
     motion_gate_min_area: int = 500  # Minimum contour area in pixels
     motion_gate_stale_seconds: float = 30.0  # Reset previous frame if older than this
 
+    # NextGen Motion Detection Pipeline (GPU-accelerated)
+    # Disable with --legacy flag or NEXTGEN_ENABLED=false
+    nextgen_enabled: bool = True  # Use GPU-accelerated pipeline (default)
+    nextgen_model_path: str = "/opt3/ronin/ml_models/yolov8n_dynamic.onnx"
+
+    # NextGen Motion Detection (GPU MOG2)
+    nextgen_motion_history: int = 500  # Frames for background model
+    nextgen_motion_var_threshold: float = 16.0  # Foreground threshold
+    nextgen_motion_min_percent: float = 0.3  # Min % of frame for motion trigger
+
+    # NextGen Object Detection
+    nextgen_detection_confidence: float = 0.65  # Default threshold for vehicles
+    nextgen_detection_nms_threshold: float = 0.45
+    # Per-class thresholds (JSON string, parsed at runtime)
+    # Lower threshold for people since they're harder to detect at night
+    nextgen_class_thresholds: str = '{"person": 0.45, "dog": 0.45, "cat": 0.45}'
+
+    # NextGen Tracking (ByteTrack)
+    nextgen_track_high_thresh: float = 0.5
+    nextgen_track_low_thresh: float = 0.1
+    nextgen_track_match_thresh: float = 0.7
+    nextgen_track_buffer: int = 90  # Frames to keep lost tracks (~30s at 3fps)
+    nextgen_track_min_hits: int = 3  # Min detections to confirm track
+    nextgen_track_min_displacement: float = 0.02  # Min movement to confirm (0=disabled)
+
+    # NextGen FSM (Object State Machine)
+    nextgen_fsm_validation_frames: int = 5  # Frames to confirm arrival (~2.5s at 2fps)
+    nextgen_fsm_velocity_threshold: float = 0.002  # Normalized units/frame
+    nextgen_fsm_stationary_seconds: float = 10.0  # Time to mark stationary
+    nextgen_fsm_parked_seconds: float = 300.0  # Time to mark parked (5 min)
+    nextgen_fsm_lost_seconds: float = 30.0  # Time without detection before departure
+
+    # NextGen Periodic Detection (bypasses motion gate)
+    # Run detection every N frames regardless of motion to catch small/distant objects
+    # At 3 FPS, 30 frames = 10 seconds. Set to 0 to disable.
+    nextgen_periodic_detection_interval: int = 30
+
 
 @lru_cache
 def get_settings() -> Settings:

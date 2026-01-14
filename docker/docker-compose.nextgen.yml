@@ -1,7 +1,7 @@
 # RoninNVR NextGen Motion Detection Development Environment
 #
 # This compose file creates an isolated development environment with:
-# - Dual GPU access (RTX 2070 x2)
+# - GPU access (single GPU, device 0)
 # - Mounted repository for live code changes
 # - Access to existing video recordings for testing
 # - Network isolation from production services
@@ -26,13 +26,13 @@ services:
       dockerfile: docker/Dockerfile.nextgen-dev
     container_name: ronin-nextgen-dev
 
-    # GPU access - both RTX 2070s
+    # GPU access - single GPU (RTX 3090)
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["0", "1"]
+              device_ids: ["0"]
               capabilities: [gpu, compute, utility, video]
 
     # Increase shared memory for CUDA operations
@@ -42,7 +42,7 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
-      - CUDA_VISIBLE_DEVICES=0,1
+      - CUDA_VISIBLE_DEVICES=0
       # Python settings
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
@@ -101,14 +101,14 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["0", "1"]
+              device_ids: ["0"]
               capabilities: [gpu, compute, utility, video]
 
     shm_size: "8gb"
 
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
-      - CUDA_VISIBLE_DEVICES=0,1
+      - CUDA_VISIBLE_DEVICES=0
       - PYTHONUNBUFFERED=1
       - STORAGE_ROOT=/opt3/ronin/storage
       - ML_MODELS_PATH=/opt3/ronin/ml_models

@@ -69,7 +69,7 @@ RUN mkdir -p /tmp/opencv-${OPENCV_VERSION}/build && \
         -D CMAKE_INSTALL_PREFIX=/usr/local \
         -D OPENCV_EXTRA_MODULES_PATH=/tmp/opencv_contrib-${OPENCV_VERSION}/modules \
         -D WITH_CUDA=ON \
-        -D CUDA_ARCH_BIN="7.5" \
+        -D CUDA_ARCH_BIN="8.6" \
         -D CUDA_ARCH_PTX="" \
         -D ENABLE_FAST_MATH=ON \
         -D CUDA_FAST_MATH=ON \
@@ -109,6 +109,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     python3-pip \
     python3-dev \
+    build-essential \
     ffmpeg \
     libpq5 \
     libsm6 \
@@ -147,6 +148,9 @@ ENV PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
 # Upgrade pip
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
+# Pin NumPy <2 for compatibility with OpenCV compiled against NumPy 1.x
+RUN pip install --no-cache-dir "numpy<2"
+
 # Install TensorRT from NVIDIA (for CUDA 12.x)
 # Note: tensorrt package includes everything needed for Python inference
 RUN pip install --no-cache-dir \
@@ -183,6 +187,10 @@ RUN pip install --no-cache-dir \
     memory_profiler \
     py-spy \
     ultralytics
+
+# Force numpy<2 for compatibility with OpenCV compiled against NumPy 1.x
+# (must be done after all pip installs since some packages try to upgrade it)
+RUN pip install --no-cache-dir --force-reinstall "numpy<2"
 
 # Verify installations
 RUN python -c "import cv2; print(f'OpenCV: {cv2.__version__}')" && \
