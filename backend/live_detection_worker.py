@@ -275,36 +275,47 @@ class LiveDetectionWorker:
         GPUPipelineConfig = _GPUPipelineConfig
         PipelineResult = _PipelineResult
 
-        # Parse per-class thresholds from JSON string
+        # Build config - either from JSON file or from environment settings
         import json as _json
-        try:
-            class_thresholds = _json.loads(self.settings.nextgen_class_thresholds)
-        except (ValueError, TypeError):
-            class_thresholds = {}
-            logger.warning("Failed to parse nextgen_class_thresholds, using defaults")
+        from pathlib import Path as _Path
 
-        # Build config from settings
-        config = GPUPipelineConfig(
-            model_path=self.settings.nextgen_model_path,
-            motion_history=self.settings.nextgen_motion_history,
-            motion_var_threshold=self.settings.nextgen_motion_var_threshold,
-            motion_min_percent=self.settings.nextgen_motion_min_percent,
-            detection_confidence=self.settings.nextgen_detection_confidence,
-            detection_nms_threshold=self.settings.nextgen_detection_nms_threshold,
-            class_thresholds=class_thresholds,
-            track_high_thresh=self.settings.nextgen_track_high_thresh,
-            track_low_thresh=self.settings.nextgen_track_low_thresh,
-            track_match_thresh=self.settings.nextgen_track_match_thresh,
-            track_buffer=self.settings.nextgen_track_buffer,
-            track_min_hits=self.settings.nextgen_track_min_hits,
-            track_min_displacement=self.settings.nextgen_track_min_displacement,
-            fsm_validation_frames=self.settings.nextgen_fsm_validation_frames,
-            fsm_velocity_threshold=self.settings.nextgen_fsm_velocity_threshold,
-            fsm_stationary_seconds=self.settings.nextgen_fsm_stationary_seconds,
-            fsm_parked_seconds=self.settings.nextgen_fsm_parked_seconds,
-            fsm_lost_seconds=self.settings.nextgen_fsm_lost_seconds,
-            periodic_detection_interval=self.settings.nextgen_periodic_detection_interval,
-        )
+        if self.settings.nextgen_config_file and _Path(self.settings.nextgen_config_file).exists():
+            # Load from JSON config file
+            logger.info(f"Loading detection config from {self.settings.nextgen_config_file}")
+            config = GPUPipelineConfig.from_json(self.settings.nextgen_config_file)
+        else:
+            # Build from environment settings
+            try:
+                class_thresholds = _json.loads(self.settings.nextgen_class_thresholds)
+            except (ValueError, TypeError):
+                class_thresholds = {}
+                logger.warning("Failed to parse nextgen_class_thresholds, using defaults")
+
+            config = GPUPipelineConfig(
+                model_path=self.settings.nextgen_model_path,
+                motion_history=self.settings.nextgen_motion_history,
+                motion_var_threshold=self.settings.nextgen_motion_var_threshold,
+                motion_min_percent=self.settings.nextgen_motion_min_percent,
+                detection_confidence=self.settings.nextgen_detection_confidence,
+                detection_nms_threshold=self.settings.nextgen_detection_nms_threshold,
+                class_thresholds=class_thresholds,
+                track_high_thresh=self.settings.nextgen_track_high_thresh,
+                track_low_thresh=self.settings.nextgen_track_low_thresh,
+                track_match_thresh=self.settings.nextgen_track_match_thresh,
+                track_buffer=self.settings.nextgen_track_buffer,
+                track_min_hits=self.settings.nextgen_track_min_hits,
+                track_min_displacement=self.settings.nextgen_track_min_displacement,
+                fsm_validation_frames=self.settings.nextgen_fsm_validation_frames,
+                fsm_velocity_threshold=self.settings.nextgen_fsm_velocity_threshold,
+                fsm_displacement_threshold=self.settings.nextgen_fsm_displacement_threshold,
+                fsm_stationary_seconds=self.settings.nextgen_fsm_stationary_seconds,
+                fsm_parked_seconds=self.settings.nextgen_fsm_parked_seconds,
+                fsm_lost_seconds=self.settings.nextgen_fsm_lost_seconds,
+                fsm_delayed_arrival_threshold=self.settings.nextgen_fsm_delayed_arrival_threshold,
+                fsm_loitering_seconds=self.settings.nextgen_fsm_loitering_seconds,
+                periodic_detection_interval=self.settings.nextgen_periodic_detection_interval,
+                detection_active_seconds=self.settings.nextgen_detection_active_seconds,
+            )
 
         # Create orchestrator (auto-detects GPUs)
         import cv2
@@ -658,14 +669,32 @@ class LiveDetectionWorker:
     ) -> None:
         """Handle detection result from nextgen pipeline.
 
-        Filters tracks, applies debounce, saves snapshots and detections.
-        Shared between single-camera and batch processing modes.
+        Only saves detections for ARRIVAL events from the FSM - this prevents
+        repeated notifications for parked/stationary objects.
         """
+        from app.services.ml.object_fsm import EventType
+
         detections_to_save: list[dict] = []
         all_detections: list[DetectionResult] = []
 
+        # Get track_ids that have ARRIVAL events this frame
+        # Only these should create new detection records
+        arrival_track_ids = {
+            event.track_id
+            for event in result.events
+            if event.event_type == EventType.ARRIVAL
+        }
+
+        # If no arrivals, nothing to save
+        if not arrival_track_ids:
+            return
+
         for track in result.tracks:
-            # Skip tentative tracks
+            # Only save tracks with ARRIVAL events
+            if track.track_id not in arrival_track_ids:
+                continue
+
+            # Skip tentative tracks (shouldn't happen for arrivals, but be safe)
             if track.hits < self.settings.nextgen_track_min_hits:
                 continue
 
@@ -673,7 +702,7 @@ class LiveDetectionWorker:
             if track.class_name.lower() not in self.class_filter:
                 continue
 
-            # Check debounce
+            # Check debounce (extra safety)
             if not self.debounce.should_notify(state.camera_id, track.class_name):
                 continue
 

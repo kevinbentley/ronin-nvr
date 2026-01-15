@@ -25,11 +25,12 @@ GPU 0                          GPU 1
 For single-GPU systems, all cameras are processed on GPU 0.
 """
 
+import json
 import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import cv2
 import numpy as np
@@ -40,6 +41,9 @@ from app.services.ml.tracker import ByteTracker, Detection, TrackedObject
 from app.services.ml.object_fsm import ObjectStateMachine, ObjectEvent, EventType
 
 logger = logging.getLogger(__name__)
+
+# Default config file path
+DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "detection_config.json"
 
 
 @dataclass
@@ -87,44 +91,221 @@ class PipelineResult:
 
 @dataclass
 class GPUPipelineConfig:
-    """Configuration for a GPU pipeline."""
+    """Configuration for a GPU pipeline.
+
+    Default values match config/detection_config.json.
+    Use GPUPipelineConfig.from_json() to load from config file.
+    """
 
     device_id: int = 0
 
-    # Model paths (use dynamic batch model for efficient multi-camera processing)
-    model_path: str = "/opt3/ronin/ml_models/yolov8n_dynamic.onnx"
+    # Model path - should be overridden by config file or env var
+    model_path: str = "/data/storage/.ml/models/yolo11l_dynamic.onnx"
 
-    # Motion detection
-    motion_history: int = 500
-    motion_var_threshold: float = 16.0
-    motion_min_percent: float = 0.1
+    # Motion detection (MOG2)
+    motion_history: int = 500  # Frames for background model (~17s at 30fps)
+    motion_var_threshold: float = 16.0  # Lower = more sensitive
+    motion_min_percent: float = 0.3  # Min % of frame with motion to trigger
 
-    # Detection
-    detection_confidence: float = 0.5  # Default threshold for all classes
-    detection_nms_threshold: float = 0.45
+    # Object detection (YOLO)
+    detection_confidence: float = 0.65  # Default threshold for all classes
+    detection_nms_threshold: float = 0.45  # Non-max suppression threshold
     # Per-class thresholds override detection_confidence for specific classes
-    # e.g., {"person": 0.45, "car": 0.65} - lower threshold for people
-    class_thresholds: dict = field(default_factory=dict)
+    class_thresholds: dict = field(default_factory=lambda: {
+        "person": 0.30,
+        "dog": 0.35,
+        "cat": 0.35,
+    })
 
-    # Tracking
-    track_high_thresh: float = 0.5
-    track_low_thresh: float = 0.1
-    track_match_thresh: float = 0.7
+    # Tracking (ByteTrack)
+    track_high_thresh: float = 0.5  # High-confidence detection threshold
+    track_low_thresh: float = 0.1  # Low-confidence detection threshold
+    track_match_thresh: float = 0.7  # Max IoU distance for matching
     track_buffer: int = 90  # Frames to keep lost tracks (~30s at 3fps)
-    track_min_hits: int = 3
-    track_min_displacement: float = 0.0  # Minimum movement to confirm track (0=disabled)
+    track_min_hits: int = 2  # Detections needed to confirm track
+    track_min_displacement: float = 0.0  # Min movement to confirm (0=disabled)
 
-    # FSM
-    fsm_validation_frames: int = 5
-    fsm_velocity_threshold: float = 0.002
-    fsm_stationary_seconds: float = 10.0
-    fsm_parked_seconds: float = 300.0
-    fsm_lost_seconds: float = 30.0  # Time without detection before departure
+    # FSM (Object State Machine)
+    fsm_validation_frames: int = 2  # Frames to confirm a new track
+    fsm_velocity_threshold: float = 0.002  # Min velocity to be "moving" (normalized)
+    fsm_displacement_threshold: float = 0.005  # Min displacement to be "moved" (normalized)
+    fsm_stationary_seconds: float = 10.0  # Time without movement -> STATIONARY
+    fsm_parked_seconds: float = 300.0  # Time stationary -> PARKED (5 min)
+    fsm_lost_seconds: float = 30.0  # Time without detection -> DEPARTED
+    fsm_delayed_arrival_threshold: float = 60.0  # Max parked time for delayed arrival
+    fsm_loitering_seconds: float = 60.0  # Time stationary -> loitering alert
 
-    # Periodic detection (bypasses motion gate)
-    # Run detection every N frames regardless of motion to catch small/distant objects
-    # that don't trigger motion gate. Set to 0 to disable.
-    periodic_detection_interval: int = 30  # ~10 seconds at 3 FPS
+    # Pipeline behavior
+    periodic_detection_interval: int = 30  # Run YOLO every N frames (0=disabled)
+    detection_active_seconds: float = 10.0  # Keep YOLO active N sec after detection
+
+    @classmethod
+    def from_json(
+        cls,
+        config_path: Union[str, Path, None] = None,
+        **overrides,
+    ) -> "GPUPipelineConfig":
+        """Load configuration from JSON file.
+
+        Args:
+            config_path: Path to JSON config file. If None, uses default path.
+            **overrides: Additional overrides to apply after loading JSON.
+
+        Returns:
+            GPUPipelineConfig instance with values from JSON.
+
+        Example:
+            config = GPUPipelineConfig.from_json()
+            config = GPUPipelineConfig.from_json("/path/to/custom_config.json")
+            config = GPUPipelineConfig.from_json(device_id=1)  # Override device
+        """
+        config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+
+        # Start with defaults
+        kwargs = {}
+
+        if config_path.exists():
+            logger.info(f"Loading detection config from {config_path}")
+            with open(config_path) as f:
+                data = json.load(f)
+
+            # Map JSON structure to flat config fields
+            # Model
+            if "model" in data:
+                if "path" in data["model"]:
+                    kwargs["model_path"] = data["model"]["path"]
+
+            # Motion detection
+            if "motion_detection" in data:
+                md = data["motion_detection"]
+                if "history" in md:
+                    kwargs["motion_history"] = md["history"]
+                if "var_threshold" in md:
+                    kwargs["motion_var_threshold"] = md["var_threshold"]
+                if "min_percent" in md:
+                    kwargs["motion_min_percent"] = md["min_percent"]
+
+            # Object detection
+            if "object_detection" in data:
+                od = data["object_detection"]
+                if "confidence" in od:
+                    kwargs["detection_confidence"] = od["confidence"]
+                if "nms_threshold" in od:
+                    kwargs["detection_nms_threshold"] = od["nms_threshold"]
+                if "class_thresholds" in od:
+                    # Filter out comment keys
+                    thresholds = {
+                        k: v for k, v in od["class_thresholds"].items()
+                        if not k.startswith("_")
+                    }
+                    kwargs["class_thresholds"] = thresholds
+
+            # Tracking
+            if "tracking" in data:
+                tr = data["tracking"]
+                if "high_thresh" in tr:
+                    kwargs["track_high_thresh"] = tr["high_thresh"]
+                if "low_thresh" in tr:
+                    kwargs["track_low_thresh"] = tr["low_thresh"]
+                if "match_thresh" in tr:
+                    kwargs["track_match_thresh"] = tr["match_thresh"]
+                if "buffer_frames" in tr:
+                    kwargs["track_buffer"] = tr["buffer_frames"]
+                if "min_hits" in tr:
+                    kwargs["track_min_hits"] = tr["min_hits"]
+                if "min_displacement" in tr:
+                    kwargs["track_min_displacement"] = tr["min_displacement"]
+
+            # FSM
+            if "fsm" in data:
+                fsm = data["fsm"]
+                if "validation_frames" in fsm:
+                    kwargs["fsm_validation_frames"] = fsm["validation_frames"]
+                if "velocity_threshold" in fsm:
+                    kwargs["fsm_velocity_threshold"] = fsm["velocity_threshold"]
+                if "displacement_threshold" in fsm:
+                    kwargs["fsm_displacement_threshold"] = fsm["displacement_threshold"]
+                if "stationary_seconds" in fsm:
+                    kwargs["fsm_stationary_seconds"] = fsm["stationary_seconds"]
+                if "parked_seconds" in fsm:
+                    kwargs["fsm_parked_seconds"] = fsm["parked_seconds"]
+                if "lost_seconds" in fsm:
+                    kwargs["fsm_lost_seconds"] = fsm["lost_seconds"]
+                if "delayed_arrival_threshold" in fsm:
+                    kwargs["fsm_delayed_arrival_threshold"] = fsm["delayed_arrival_threshold"]
+                if "loitering_seconds" in fsm:
+                    kwargs["fsm_loitering_seconds"] = fsm["loitering_seconds"]
+
+            # Pipeline
+            if "pipeline" in data:
+                pl = data["pipeline"]
+                if "periodic_detection_interval" in pl:
+                    kwargs["periodic_detection_interval"] = pl["periodic_detection_interval"]
+                if "detection_active_seconds" in pl:
+                    kwargs["detection_active_seconds"] = pl["detection_active_seconds"]
+
+            logger.info(f"Loaded {len(kwargs)} settings from config file")
+        else:
+            logger.warning(f"Config file not found: {config_path}, using defaults")
+
+        # Apply overrides
+        kwargs.update(overrides)
+
+        return cls(**kwargs)
+
+    def to_json(self, config_path: Union[str, Path]) -> None:
+        """Save current configuration to JSON file.
+
+        Args:
+            config_path: Path to write JSON config file.
+        """
+        config_path = Path(config_path)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+
+        data = {
+            "_comment": "Detection pipeline configuration for Ronin NVR",
+            "_docs": "See docs/detection-pipeline.md for detailed parameter descriptions",
+            "model": {
+                "path": self.model_path,
+            },
+            "motion_detection": {
+                "history": self.motion_history,
+                "var_threshold": self.motion_var_threshold,
+                "min_percent": self.motion_min_percent,
+            },
+            "object_detection": {
+                "confidence": self.detection_confidence,
+                "nms_threshold": self.detection_nms_threshold,
+                "class_thresholds": self.class_thresholds,
+            },
+            "tracking": {
+                "high_thresh": self.track_high_thresh,
+                "low_thresh": self.track_low_thresh,
+                "match_thresh": self.track_match_thresh,
+                "buffer_frames": self.track_buffer,
+                "min_hits": self.track_min_hits,
+                "min_displacement": self.track_min_displacement,
+            },
+            "fsm": {
+                "validation_frames": self.fsm_validation_frames,
+                "velocity_threshold": self.fsm_velocity_threshold,
+                "displacement_threshold": self.fsm_displacement_threshold,
+                "stationary_seconds": self.fsm_stationary_seconds,
+                "parked_seconds": self.fsm_parked_seconds,
+                "lost_seconds": self.fsm_lost_seconds,
+                "delayed_arrival_threshold": self.fsm_delayed_arrival_threshold,
+                "loitering_seconds": self.fsm_loitering_seconds,
+            },
+            "pipeline": {
+                "periodic_detection_interval": self.periodic_detection_interval,
+                "detection_active_seconds": self.detection_active_seconds,
+            },
+        }
+
+        with open(config_path, "w") as f:
+            json.dump(data, f, indent=2)
+
+        logger.info(f"Saved config to {config_path}")
 
 
 class GPUPipeline:
@@ -192,12 +373,17 @@ class GPUPipeline:
             self._fsms[cam_id] = ObjectStateMachine(
                 validation_frames=config.fsm_validation_frames,
                 velocity_threshold=config.fsm_velocity_threshold,
+                displacement_threshold=config.fsm_displacement_threshold,
                 stationary_seconds=config.fsm_stationary_seconds,
                 parked_seconds=config.fsm_parked_seconds,
                 lost_seconds=config.fsm_lost_seconds,
+                delayed_arrival_threshold=config.fsm_delayed_arrival_threshold,
+                loitering_seconds=config.fsm_loitering_seconds,
             )
 
         self._frame_counts: dict[int, int] = {cid: 0 for cid in camera_ids}
+        # Track last detection time per camera for detection active window
+        self._last_detection_time: dict[int, float] = {cid: 0.0 for cid in camera_ids}
         self._lock = threading.Lock()
 
         logger.info(
@@ -221,11 +407,15 @@ class GPUPipeline:
                 self._fsms[camera_id] = ObjectStateMachine(
                     validation_frames=self.config.fsm_validation_frames,
                     velocity_threshold=self.config.fsm_velocity_threshold,
+                    displacement_threshold=self.config.fsm_displacement_threshold,
                     stationary_seconds=self.config.fsm_stationary_seconds,
                     parked_seconds=self.config.fsm_parked_seconds,
                     lost_seconds=self.config.fsm_lost_seconds,
+                    delayed_arrival_threshold=self.config.fsm_delayed_arrival_threshold,
+                    loitering_seconds=self.config.fsm_loitering_seconds,
                 )
                 self._frame_counts[camera_id] = 0
+                self._last_detection_time[camera_id] = 0.0
 
     def remove_camera(self, camera_id: int) -> None:
         """Remove a camera from this pipeline."""
@@ -234,6 +424,7 @@ class GPUPipeline:
             self._trackers.pop(camera_id, None)
             self._fsms.pop(camera_id, None)
             self._frame_counts.pop(camera_id, None)
+            self._last_detection_time.pop(camera_id, None)
             self._motion_gate.reset_camera(camera_id)
 
     def process(
@@ -284,8 +475,22 @@ class GPUPipeline:
             frame_number % periodic_interval == 0
         )
 
-        # Run detection if motion detected OR periodic frame
-        should_detect = motion_result.motion_detected or is_periodic_frame
+        # Check if we're in a detection active window (bypasses motion gate)
+        # After a detection, keep YOLO running for N seconds to catch objects
+        # that stop moving then move again
+        last_det_time = self._last_detection_time.get(camera_id, 0.0)
+        detection_active_window = self.config.detection_active_seconds
+        is_detection_active = (
+            detection_active_window > 0 and
+            (timestamp - last_det_time) < detection_active_window
+        )
+
+        # Run detection if motion detected OR periodic frame OR detection active window
+        should_detect = (
+            motion_result.motion_detected or
+            is_periodic_frame or
+            is_detection_active
+        )
 
         # Skip detection if requested or no trigger
         if skip_detection or not should_detect:
@@ -304,6 +509,8 @@ class GPUPipeline:
         result.detections = detections
 
         if detections:
+            # Update last detection time to keep detection active window open
+            self._last_detection_time[camera_id] = timestamp
             det_summary = ", ".join(f"{d.class_name}:{d.confidence:.2f}" for d in detections[:5])
             logger.debug(f"Camera {camera_id}: YOLO found {len(detections)} objects: {det_summary}")
         elif motion_result.motion_detected:
@@ -392,8 +599,20 @@ class GPUPipeline:
                 frame_number % periodic_interval == 0
             )
 
-            # Include frame for detection if motion OR periodic
-            should_detect = motion_result.motion_detected or is_periodic_frame
+            # Check if we're in a detection active window (bypasses motion gate)
+            last_det_time = self._last_detection_time.get(camera_id, 0.0)
+            detection_active_window = self.config.detection_active_seconds
+            is_detection_active = (
+                detection_active_window > 0 and
+                (timestamp - last_det_time) < detection_active_window
+            )
+
+            # Include frame for detection if motion OR periodic OR detection active
+            should_detect = (
+                motion_result.motion_detected or
+                is_periodic_frame or
+                is_detection_active
+            )
             if should_detect and not skip_detection:
                 motion_frames[camera_id] = frame
 
@@ -427,6 +646,9 @@ class GPUPipeline:
                 detection_results[camera_id] = detections
                 results[camera_id].detections = detections
                 results[camera_id].detection_time_ms = per_camera_det_ms
+                # Update last detection time to keep detection active window open
+                if detections:
+                    self._last_detection_time[camera_id] = timestamp
 
         # Step 3: Tracking and FSM for all cameras (sequential)
         t0_track = time.perf_counter()
@@ -473,6 +695,7 @@ class GPUPipeline:
             if camera_id in self._fsms:
                 self._fsms[camera_id].reset()
             self._frame_counts[camera_id] = 0
+            self._last_detection_time[camera_id] = 0.0
 
     @property
     def stats(self) -> dict:
@@ -554,10 +777,13 @@ class GPUOrchestrator:
                 # FSM settings
                 fsm_validation_frames=self.config.fsm_validation_frames,
                 fsm_velocity_threshold=self.config.fsm_velocity_threshold,
+                fsm_displacement_threshold=self.config.fsm_displacement_threshold,
                 fsm_stationary_seconds=self.config.fsm_stationary_seconds,
                 fsm_parked_seconds=self.config.fsm_parked_seconds,
-                # Periodic detection
+                fsm_lost_seconds=self.config.fsm_lost_seconds,
+                # Motion gate bypass settings
                 periodic_detection_interval=self.config.periodic_detection_interval,
+                detection_active_seconds=self.config.detection_active_seconds,
             )
             self._pipelines[device_id] = GPUPipeline(device_config, [])
 

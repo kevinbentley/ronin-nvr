@@ -182,13 +182,23 @@ services:
       # NextGen pipeline settings
       NEXTGEN_ENABLED: ${NEXTGEN_ENABLED:-true}
       NEXTGEN_MODEL_PATH: ${NEXTGEN_MODEL_PATH:-/data/storage/.ml/models/yolo11l_dynamic.onnx}
+      # JSON config file for detection pipeline (overrides individual env vars below)
+      NEXTGEN_CONFIG_FILE: ${NEXTGEN_CONFIG_FILE:-/app/config/detection_config.json}
+      # Fallback values if JSON config not found:
       NEXTGEN_MOTION_MIN_PERCENT: ${NEXTGEN_MOTION_MIN_PERCENT:-0.3}
       NEXTGEN_DETECTION_CONFIDENCE: ${NEXTGEN_DETECTION_CONFIDENCE:-0.65}
-      NEXTGEN_CLASS_THRESHOLDS: '${NEXTGEN_CLASS_THRESHOLDS:-{"person": 0.25, "dog": 0.35, "cat": 0.35}}'
+      NEXTGEN_CLASS_THRESHOLDS: '${NEXTGEN_CLASS_THRESHOLDS:-{"person": 0.15, "dog": 0.35, "cat": 0.35}}'
       NEXTGEN_PERIODIC_DETECTION_INTERVAL: ${NEXTGEN_PERIODIC_DETECTION_INTERVAL:-30}
+      NEXTGEN_DETECTION_ACTIVE_SECONDS: ${NEXTGEN_DETECTION_ACTIVE_SECONDS:-10.0}
+      NEXTGEN_TRACK_MIN_HITS: ${NEXTGEN_TRACK_MIN_HITS:-2}
+      NEXTGEN_TRACK_HIGH_THRESH: ${NEXTGEN_TRACK_HIGH_THRESH:-0.15}
+      NEXTGEN_TRACK_LOW_THRESH: ${NEXTGEN_TRACK_LOW_THRESH:-0.1}
+      NEXTGEN_FSM_VALIDATION_FRAMES: ${NEXTGEN_FSM_VALIDATION_FRAMES:-2}
+      NEXTGEN_FSM_DISPLACEMENT_THRESHOLD: ${NEXTGEN_FSM_DISPLACEMENT_THRESHOLD:-0.005}
     volumes:
       - ${STORAGE_PATH:-./data/storage}:/data/storage
       - ${ML_MODELS_PATH:-./data/ml_models}:/data/storage/.ml/models
+      - ./backend/config:/app/config:ro  # Detection config (edit without rebuild)
     command: ["python", "live_detection_worker.py", "--verbose"]
     deploy:
       resources:
@@ -228,7 +238,9 @@ services:
         reservations:
           memory: 64M
 
-  # Transcode Worker (runs 3 replicas)
+  # Transcode Worker
+  # Uses file-based semaphore to limit concurrent transcodes across all replicas
+  # Default: max 2 concurrent transcodes to prevent GPU session exhaustion
   transcode-worker:
     build:
       context: ./backend
@@ -242,11 +254,13 @@ services:
       TZ: ${TZ:-America/Denver}
       TRANSCODE_CRF: ${TRANSCODE_CRF:-28}
       TRANSCODE_PRESET: ${TRANSCODE_PRESET:-medium}
+      TRANSCODE_MAX_CONCURRENT: ${TRANSCODE_MAX_CONCURRENT:-2}
     volumes:
       - ${STORAGE_PATH:-./data/storage}:/data/storage
-    command: ["python", "transcode_worker.py", "--continuous"]
+    command: >
+      python transcode_worker.py --continuous --max-concurrent ${TRANSCODE_MAX_CONCURRENT:-2}
     deploy:
-      replicas: 3
+      replicas: 2
       resources:
         limits:
           cpus: '4'

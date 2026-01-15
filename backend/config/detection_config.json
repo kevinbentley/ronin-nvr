@@ -1,0 +1,75 @@
+{
+  "_comment": "Detection pipeline configuration for Ronin NVR",
+  "_docs": "See docs/detection-pipeline.md for detailed parameter descriptions",
+
+  "model": {
+    "path": "/data/storage/.ml/models/yolo11l_dynamic.onnx",
+    "_path_comment": "Path to YOLO ONNX model (yolov8n/s/m/l or yolo11n/s/m/l)"
+  },
+
+  "motion_detection": {
+    "_comment": "MOG2 background subtraction settings",
+    "history": 500,
+    "var_threshold": 16.0,
+    "min_percent": 0.3,
+    "_history_comment": "Frames for background model (~17s at 30fps)",
+    "_var_threshold_comment": "Lower = more sensitive to changes",
+    "_min_percent_comment": "Minimum % of frame with motion to trigger detection"
+  },
+
+  "object_detection": {
+    "_comment": "YOLO inference settings",
+    "confidence": 0.65,
+    "nms_threshold": 0.45,
+    "class_thresholds": {
+      "_comment": "Per-class confidence overrides (lower = more sensitive)",
+      "person": 0.30,
+      "dog": 0.35,
+      "cat": 0.35
+    }
+  },
+
+  "tracking": {
+    "_comment": "ByteTrack multi-object tracking settings",
+    "high_thresh": 0.5,
+    "low_thresh": 0.1,
+    "match_thresh": 0.7,
+    "buffer_frames": 90,
+    "min_hits": 2,
+    "min_displacement": 0.0,
+    "_high_thresh_comment": "Confidence threshold for primary matching",
+    "_low_thresh_comment": "Confidence threshold for secondary matching",
+    "_match_thresh_comment": "Maximum IoU distance for track matching",
+    "_buffer_frames_comment": "Frames to keep lost tracks (~30s at 3fps)",
+    "_min_hits_comment": "Detections needed to confirm a track",
+    "_min_displacement_comment": "Minimum movement to confirm track (0=disabled)"
+  },
+
+  "fsm": {
+    "_comment": "Finite State Machine for object lifecycle management",
+    "validation_frames": 2,
+    "velocity_threshold": 0.002,
+    "displacement_threshold": 0.005,
+    "stationary_seconds": 10.0,
+    "parked_seconds": 300.0,
+    "lost_seconds": 30.0,
+    "delayed_arrival_threshold": 60.0,
+    "loitering_seconds": 60.0,
+    "_validation_frames_comment": "Frames to confirm a new track",
+    "_velocity_threshold_comment": "Minimum velocity to be considered moving (normalized)",
+    "_displacement_threshold_comment": "Minimum displacement from initial position (normalized)",
+    "_stationary_seconds_comment": "Time without movement to become STATIONARY",
+    "_parked_seconds_comment": "Time stationary to become PARKED (5 min)",
+    "_lost_seconds_comment": "Time without detection to trigger DEPARTURE",
+    "_delayed_arrival_threshold_comment": "Max parked time for delayed arrival (handles arrive-then-stop)",
+    "_loitering_seconds_comment": "Time stationary to trigger loitering alert"
+  },
+
+  "pipeline": {
+    "_comment": "Pipeline behavior settings",
+    "periodic_detection_interval": 30,
+    "detection_active_seconds": 10.0,
+    "_periodic_detection_interval_comment": "Run YOLO every N frames regardless of motion (0=disabled)",
+    "_detection_active_seconds_comment": "Keep YOLO active for N seconds after any detection"
+  }
+}

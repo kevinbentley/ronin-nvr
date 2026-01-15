@@ -122,6 +122,10 @@ class Settings(BaseSettings):
     nextgen_enabled: bool = True  # Use GPU-accelerated pipeline (default)
     nextgen_model_path: str = "/opt3/ronin/ml_models/yolov8n_dynamic.onnx"
 
+    # JSON config file for detection pipeline (overrides env vars if present)
+    # Set to empty string to disable JSON config loading
+    nextgen_config_file: str = ""  # e.g., "/app/config/detection_config.json"
+
     # NextGen Motion Detection (GPU MOG2)
     nextgen_motion_history: int = 500  # Frames for background model
     nextgen_motion_var_threshold: float = 16.0  # Foreground threshold
@@ -132,27 +136,35 @@ class Settings(BaseSettings):
     nextgen_detection_nms_threshold: float = 0.45
     # Per-class thresholds (JSON string, parsed at runtime)
     # Lower threshold for people since they're harder to detect at night
-    nextgen_class_thresholds: str = '{"person": 0.45, "dog": 0.45, "cat": 0.45}'
+    nextgen_class_thresholds: str = '{"person": 0.30, "dog": 0.45, "cat": 0.45}'
 
     # NextGen Tracking (ByteTrack)
     nextgen_track_high_thresh: float = 0.5
     nextgen_track_low_thresh: float = 0.1
     nextgen_track_match_thresh: float = 0.7
     nextgen_track_buffer: int = 90  # Frames to keep lost tracks (~30s at 3fps)
-    nextgen_track_min_hits: int = 3  # Min detections to confirm track
+    nextgen_track_min_hits: int = 2  # Min detections to confirm track (lowered for 1 FPS)
     nextgen_track_min_displacement: float = 0.0  # Disabled - FSM handles movement check
 
     # NextGen FSM (Object State Machine)
-    nextgen_fsm_validation_frames: int = 5  # Frames to confirm arrival (~2.5s at 2fps)
+    nextgen_fsm_validation_frames: int = 2  # Frames to confirm arrival (lowered for 1 FPS)
     nextgen_fsm_velocity_threshold: float = 0.002  # Normalized units/frame
+    nextgen_fsm_displacement_threshold: float = 0.005  # Min displacement to be "moved" (0.5%)
     nextgen_fsm_stationary_seconds: float = 10.0  # Time to mark stationary
     nextgen_fsm_parked_seconds: float = 300.0  # Time to mark parked (5 min)
     nextgen_fsm_lost_seconds: float = 30.0  # Time without detection before departure
+    nextgen_fsm_delayed_arrival_threshold: float = 60.0  # Max parked time for delayed arrival
+    nextgen_fsm_loitering_seconds: float = 60.0  # Time stationary to trigger loitering alert
 
     # NextGen Periodic Detection (bypasses motion gate)
     # Run detection every N frames regardless of motion to catch small/distant objects
     # At 3 FPS, 30 frames = 10 seconds. Set to 0 to disable.
     nextgen_periodic_detection_interval: int = 30
+
+    # NextGen Detection Active Window (bypasses motion gate)
+    # After any detection, keep running YOLO for N seconds regardless of motion.
+    # This handles the case where someone enters frame, stands still, then moves again.
+    nextgen_detection_active_seconds: float = 10.0
 
 
 @lru_cache
