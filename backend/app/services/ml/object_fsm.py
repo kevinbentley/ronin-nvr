@@ -17,12 +17,16 @@ TENTATIVE (< N frames)
             → PARKED (stationary for P minutes)
                 → ACTIVE (movement detected)
                     → exit frame = "Departure"
-    → PARKED (validated + never moved) → NO arrival (pre-existing)
+    → PARKED (validated + never moved) → deferred arrival decision
+        → ACTIVE (moved within threshold) → triggers ARRIVAL (delayed)
+        → stays PARKED (truly pre-existing) → NO arrival
 ```
 
 Notification Rules:
 - TENTATIVE → ACTIVE: triggers "arrival" notification (object moved into frame)
-- TENTATIVE → PARKED: NO notification (pre-existing parked object)
+- TENTATIVE → PARKED: deferred - may trigger delayed arrival if object moves soon
+- PARKED → ACTIVE (within delayed_arrival_threshold): triggers "arrival" (delayed)
+- PARKED → ACTIVE (after threshold): NO arrival (pre-existing object leaving)
 - ACTIVE → STATIONARY: no notification (still present)
 - STATIONARY → PARKED: no notification (suppress alerts)
 - PARKED → ACTIVE → exit: triggers "departure" notification
@@ -96,6 +100,10 @@ class ObjectLifecycle:
     velocity_y: float = 0.0
     confidence: float = 0.0
 
+    # Initial position tracking (for displacement-based movement detection)
+    initial_x: float = 0.0
+    initial_y: float = 0.0
+
     # Counters
     frame_count: int = 0
     stationary_frames: int = 0
@@ -103,6 +111,10 @@ class ObjectLifecycle:
     # Movement tracking - has this object ever shown significant movement?
     # Used to distinguish arriving objects from pre-existing parked objects
     has_ever_moved: bool = False
+
+    # Whether we've already notified arrival for this object
+    # Used to generate delayed arrivals for objects that were briefly stationary
+    arrival_notified: bool = False
 
     @property
     def age_seconds(self) -> float:
@@ -129,6 +141,13 @@ class ObjectLifecycle:
         """Speed (magnitude of velocity)."""
         return (self.velocity_x ** 2 + self.velocity_y ** 2) ** 0.5
 
+    @property
+    def displacement(self) -> float:
+        """Total displacement from initial position (normalized)."""
+        dx = self.last_x - self.initial_x
+        dy = self.last_y - self.initial_y
+        return (dx ** 2 + dy ** 2) ** 0.5
+
 
 class ObjectStateMachine:
     """Finite State Machine for object lifecycle management.
@@ -149,10 +168,12 @@ class ObjectStateMachine:
         self,
         validation_frames: int = 10,
         velocity_threshold: float = 0.002,
+        displacement_threshold: float = 0.02,
         stationary_seconds: float = 10.0,
         parked_seconds: float = 300.0,
         lost_seconds: float = 5.0,
         loitering_seconds: float = 60.0,
+        delayed_arrival_threshold: float = 60.0,
         fps: float = 30.0,
     ):
         """Initialize state machine.
@@ -160,18 +181,26 @@ class ObjectStateMachine:
         Args:
             validation_frames: Frames needed to confirm a track
             velocity_threshold: Min velocity to be considered moving (normalized)
+            displacement_threshold: Min displacement from initial position to be
+                considered "moved" (normalized). This is useful at low frame rates
+                where velocity estimates are unreliable.
             stationary_seconds: Time without movement to become STATIONARY
             parked_seconds: Time stationary to become PARKED
             lost_seconds: Time without detection to consider departed
             loitering_seconds: Time stationary to trigger loitering alert
+            delayed_arrival_threshold: If an object was parked for less than this
+                many seconds before becoming active, generate a delayed arrival.
+                This handles objects that arrive but are briefly stationary.
             fps: Expected frame rate for velocity calculations
         """
         self.validation_frames = validation_frames
         self.velocity_threshold = velocity_threshold
+        self.displacement_threshold = displacement_threshold
         self.stationary_seconds = stationary_seconds
         self.parked_seconds = parked_seconds
         self.lost_seconds = lost_seconds
         self.loitering_seconds = loitering_seconds
+        self.delayed_arrival_threshold = delayed_arrival_threshold
         self.fps = fps
 
         self._objects: dict[int, ObjectLifecycle] = {}
@@ -245,6 +274,8 @@ class ObjectStateMachine:
             velocity_x=track.velocity_x,
             velocity_y=track.velocity_y,
             confidence=track.confidence,
+            initial_x=track.x,  # Track initial position for displacement
+            initial_y=track.y,
             frame_count=1,  # First frame counts
         )
 
@@ -269,8 +300,14 @@ class ObjectStateMachine:
         lifecycle.last_seen = current_time
         lifecycle.frame_count += 1
 
-        # Check for movement
-        is_moving = lifecycle.speed > self.velocity_threshold
+        # Check for movement - use both velocity AND displacement
+        # Velocity check: instant speed from Kalman filter
+        # Displacement check: total distance moved from initial position
+        # At low frame rates (1 FPS), velocity estimates are unreliable, so
+        # displacement provides a more robust movement indicator.
+        has_velocity = lifecycle.speed > self.velocity_threshold
+        has_displacement = lifecycle.displacement > self.displacement_threshold
+        is_moving = has_velocity or has_displacement
 
         if is_moving:
             lifecycle.stationary_frames = 0
@@ -300,15 +337,46 @@ class ObjectStateMachine:
                     bbox=lifecycle.bbox,
                     confidence=lifecycle.confidence,
                 ))
+                lifecycle.arrival_notified = True
                 logger.info(
                     f"ARRIVAL: {lifecycle.class_name} (track {lifecycle.track_id})"
                 )
             elif old_state == ObjectState.TENTATIVE and new_state == ObjectState.PARKED:
-                # Object never moved - skip ARRIVAL, treat as pre-existing parked object
+                # Object never moved - skip ARRIVAL for now, treat as pre-existing
+                # If it starts moving soon, we'll send a delayed arrival
                 logger.debug(
-                    f"Skipping ARRIVAL for {lifecycle.class_name} (track {lifecycle.track_id}) "
-                    f"- never moved, treating as pre-existing parked object"
+                    f"Deferring ARRIVAL for {lifecycle.class_name} (track {lifecycle.track_id}) "
+                    f"- not moving yet, may be pre-existing parked object"
                 )
+            elif old_state == ObjectState.PARKED and new_state == ObjectState.ACTIVE:
+                # Object was parked and started moving
+                # Check if we should send a delayed arrival
+                if not lifecycle.arrival_notified:
+                    if duration < self.delayed_arrival_threshold:
+                        # Was parked briefly - this is likely a new arrival that
+                        # was initially stationary (e.g., person walked in and stood still)
+                        events.append(ObjectEvent(
+                            event_type=EventType.ARRIVAL,
+                            track_id=lifecycle.track_id,
+                            class_name=lifecycle.class_name,
+                            class_id=lifecycle.class_id,
+                            timestamp=current_time,
+                            old_state=old_state,
+                            new_state=new_state,
+                            bbox=lifecycle.bbox,
+                            confidence=lifecycle.confidence,
+                        ))
+                        lifecycle.arrival_notified = True
+                        logger.info(
+                            f"ARRIVAL (delayed): {lifecycle.class_name} (track {lifecycle.track_id}) "
+                            f"- was stationary for {duration:.1f}s before moving"
+                        )
+                    else:
+                        # Was parked for a long time - likely truly pre-existing
+                        logger.debug(
+                            f"Skipping ARRIVAL for {lifecycle.class_name} (track {lifecycle.track_id}) "
+                            f"- was parked for {duration:.1f}s, treating as pre-existing"
+                        )
 
             # State change event
             events.append(ObjectEvent(
