@@ -435,6 +435,7 @@ class LiveDetectionWorker:
                         live_detection_cooldown,
                         live_detection_confidence,
                         live_detection_classes,
+                        class_thresholds,
                         updated_at
                     FROM ml_settings
                     WHERE id = 1
@@ -452,6 +453,7 @@ class LiveDetectionWorker:
                 f"{row['live_detection_cooldown']}"
                 f"{row['live_detection_confidence']}"
                 f"{row['live_detection_classes']}"
+                f"{row['class_thresholds']}"
             )
 
             if settings_hash == self._last_settings_hash:
@@ -473,6 +475,15 @@ class LiveDetectionWorker:
 
             # Update debounce tracker cooldown
             self.debounce.cooldown_seconds = self.cooldown
+
+            # Update class thresholds on orchestrator if available
+            if self._orchestrator and row["class_thresholds"]:
+                try:
+                    import json
+                    thresholds = json.loads(row["class_thresholds"])
+                    self._orchestrator.update_class_thresholds(thresholds)
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning(f"Failed to parse class_thresholds: {e}")
 
             self._last_settings_hash = settings_hash
 

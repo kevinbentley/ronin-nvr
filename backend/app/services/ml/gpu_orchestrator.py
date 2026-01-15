@@ -826,6 +826,21 @@ class GPUOrchestrator:
         }
         return min(counts, key=counts.get)
 
+    def update_class_thresholds(self, thresholds: dict[str, float]) -> None:
+        """Update per-class confidence thresholds at runtime.
+
+        Args:
+            thresholds: Dict mapping class names to confidence thresholds
+        """
+        with self._lock:
+            self.config.class_thresholds = thresholds
+            for pipeline in self._pipelines.values():
+                pipeline.config.class_thresholds = thresholds
+                # Update detector if it exists
+                if hasattr(pipeline, "_detector") and pipeline._detector is not None:
+                    pipeline._detector.config.class_thresholds = thresholds
+        logger.info(f"Updated class thresholds: {thresholds}")
+
     def process(
         self,
         camera_id: int,

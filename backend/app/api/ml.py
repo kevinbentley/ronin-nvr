@@ -626,8 +626,7 @@ async def get_ml_settings(
         live_detection_cooldown=settings.live_detection_cooldown,
         live_detection_confidence=settings.live_detection_confidence,
         live_detection_classes=settings.live_detection_classes.split(","),
-        historical_confidence=settings.historical_confidence,
-        historical_classes=settings.historical_classes.split(","),
+        class_thresholds=settings.get_class_thresholds(),
         updated_at=settings.updated_at,
     )
 
@@ -654,8 +653,12 @@ async def update_ml_settings(
     for key, value in update_data.items():
         if value is not None:
             # Convert class lists to comma-separated strings
-            if key in ("live_detection_classes", "historical_classes"):
+            if key == "live_detection_classes":
                 value = ",".join(value)
+            # Handle class_thresholds with special method
+            elif key == "class_thresholds":
+                settings.set_class_thresholds(value)
+                continue
             setattr(settings, key, value)
 
     await db.commit()
@@ -667,8 +670,7 @@ async def update_ml_settings(
         live_detection_cooldown=settings.live_detection_cooldown,
         live_detection_confidence=settings.live_detection_confidence,
         live_detection_classes=settings.live_detection_classes.split(","),
-        historical_confidence=settings.historical_confidence,
-        historical_classes=settings.historical_classes.split(","),
+        class_thresholds=settings.get_class_thresholds(),
         updated_at=settings.updated_at,
     )
 

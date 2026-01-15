@@ -1,11 +1,22 @@
 """ML Settings model for persistent configuration."""
 
+import json
 from datetime import datetime, timezone
+from typing import Optional
 
-from sqlalchemy import DateTime, Float, String, Boolean
+from sqlalchemy import DateTime, Float, String, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+
+# Default per-class thresholds (lower = more sensitive)
+DEFAULT_CLASS_THRESHOLDS = {
+    "person": 0.30,
+    "car": 0.65,
+    "truck": 0.65,
+    "dog": 0.35,
+    "cat": 0.35,
+}
 
 
 class MLSettings(Base):
@@ -37,7 +48,12 @@ class MLSettings(Base):
         String, default="person,car,truck", nullable=False
     )
 
-    # Historical processing settings
+    # Per-class confidence thresholds (JSON-encoded dict)
+    class_thresholds: Mapped[Optional[str]] = mapped_column(
+        Text, default=None, nullable=True
+    )
+
+    # Legacy columns (kept for backwards compatibility, not used in UI)
     historical_confidence: Mapped[float] = mapped_column(
         Float, default=0.5, nullable=False
     )
@@ -53,6 +69,19 @@ class MLSettings(Base):
         nullable=False,
     )
 
+    def get_class_thresholds(self) -> dict[str, float]:
+        """Get class thresholds as dict, using defaults if not set."""
+        if self.class_thresholds:
+            try:
+                return json.loads(self.class_thresholds)
+            except json.JSONDecodeError:
+                pass
+        return DEFAULT_CLASS_THRESHOLDS.copy()
+
+    def set_class_thresholds(self, thresholds: dict[str, float]) -> None:
+        """Set class thresholds from dict."""
+        self.class_thresholds = json.dumps(thresholds)
+
     def to_dict(self) -> dict:
         """Convert to dictionary for API responses."""
         return {
@@ -61,7 +90,6 @@ class MLSettings(Base):
             "live_detection_cooldown": self.live_detection_cooldown,
             "live_detection_confidence": self.live_detection_confidence,
             "live_detection_classes": self.live_detection_classes.split(","),
-            "historical_confidence": self.historical_confidence,
-            "historical_classes": self.historical_classes.split(","),
+            "class_thresholds": self.get_class_thresholds(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

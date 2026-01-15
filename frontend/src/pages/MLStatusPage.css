@@ -648,6 +648,13 @@
   letter-spacing: 0.5px;
 }
 
+.settings-section-note {
+  margin: 0 0 14px 0;
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+}
+
 .setting-row {
   margin-bottom: 14px;
 }

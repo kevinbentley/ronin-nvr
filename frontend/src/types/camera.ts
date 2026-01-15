@@ -313,8 +313,7 @@ export interface MLSettings {
   live_detection_cooldown: number;
   live_detection_confidence: number;
   live_detection_classes: string[];
-  historical_confidence: number;
-  historical_classes: string[];
+  class_thresholds: Record<string, number>;
   updated_at: string | null;
 }
 
@@ -324,8 +323,7 @@ export interface MLSettingsUpdate {
   live_detection_cooldown?: number;
   live_detection_confidence?: number;
   live_detection_classes?: string[];
-  historical_confidence?: number;
-  historical_classes?: string[];
+  class_thresholds?: Record<string, number>;
 }
 
 // Transcode types

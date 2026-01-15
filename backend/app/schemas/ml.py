@@ -207,8 +207,7 @@ class MLSettingsResponse(BaseModel):
     live_detection_cooldown: float
     live_detection_confidence: float
     live_detection_classes: list[str]
-    historical_confidence: float
-    historical_classes: list[str]
+    class_thresholds: dict[str, float]
     updated_at: Optional[datetime]
 
 
@@ -220,5 +219,4 @@ class MLSettingsUpdateRequest(BaseModel):
     live_detection_cooldown: Optional[float] = Field(None, ge=1.0, le=300.0)
     live_detection_confidence: Optional[float] = Field(None, ge=0.1, le=1.0)
     live_detection_classes: Optional[list[str]] = None
-    historical_confidence: Optional[float] = Field(None, ge=0.1, le=1.0)
-    historical_classes: Optional[list[str]] = None
+    class_thresholds: Optional[dict[str, float]] = None
