@@ -26,6 +26,7 @@ The worker:
 
 import argparse
 import asyncio
+import fcntl
 import json
 import logging
 import os
@@ -104,6 +105,99 @@ NVENC_PRESET_MAP = {
     "slower": "p6",
     "veryslow": "p7",
 }
+
+# Maximum concurrent transcode operations across all workers
+# NVENC typically supports 3-5 simultaneous sessions on consumer GPUs
+MAX_CONCURRENT_TRANSCODES = 2
+
+
+class GlobalTranscodeSemaphore:
+    """Process-safe semaphore using file locks.
+
+    Limits concurrent transcode operations across all worker processes
+    to prevent GPU session exhaustion and system overload.
+    """
+
+    def __init__(self, storage_root: Path, max_concurrent: int = MAX_CONCURRENT_TRANSCODES):
+        """Initialize the global semaphore.
+
+        Args:
+            storage_root: Root storage directory (for lock files)
+            max_concurrent: Maximum number of concurrent transcodes
+        """
+        self.lock_dir = storage_root / ".transcode_locks"
+        self.lock_dir.mkdir(parents=True, exist_ok=True)
+        self.max_concurrent = max_concurrent
+        self._held_slot: Optional[int] = None
+        self._held_fd: Optional[int] = None
+
+    def acquire(self, timeout: float = 60.0) -> bool:
+        """Try to acquire a transcode slot.
+
+        Args:
+            timeout: Maximum seconds to wait for a slot
+
+        Returns:
+            True if slot acquired, False if timeout
+        """
+        start_time = datetime.now()
+
+        while (datetime.now() - start_time).total_seconds() < timeout:
+            # Try each slot
+            for slot in range(self.max_concurrent):
+                lock_file = self.lock_dir / f"slot_{slot}.lock"
+
+                try:
+                    # Open or create the lock file
+                    fd = os.open(str(lock_file), os.O_RDWR | os.O_CREAT, 0o644)
+
+                    # Try non-blocking exclusive lock
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        # Got the lock!
+                        self._held_slot = slot
+                        self._held_fd = fd
+                        # Write PID for debugging
+                        os.ftruncate(fd, 0)
+                        os.write(fd, f"{os.getpid()}\n".encode())
+                        logger.debug(f"Acquired transcode slot {slot}")
+                        return True
+                    except (BlockingIOError, OSError):
+                        # Slot is taken, try next
+                        os.close(fd)
+                        continue
+
+                except OSError as e:
+                    logger.warning(f"Error trying slot {slot}: {e}")
+                    continue
+
+            # All slots taken, wait a bit and retry
+            import time
+            time.sleep(1.0)
+
+        logger.warning(f"Timeout waiting for transcode slot after {timeout}s")
+        return False
+
+    def release(self) -> None:
+        """Release the held transcode slot."""
+        if self._held_fd is not None:
+            try:
+                fcntl.flock(self._held_fd, fcntl.LOCK_UN)
+                os.close(self._held_fd)
+                logger.debug(f"Released transcode slot {self._held_slot}")
+            except OSError as e:
+                logger.warning(f"Error releasing slot: {e}")
+            finally:
+                self._held_fd = None
+                self._held_slot = None
+
+    def __enter__(self) -> bool:
+        """Context manager entry - acquire slot."""
+        return self.acquire()
+
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        """Context manager exit - release slot."""
+        self.release()
 
 
 def detect_nvenc_support() -> bool:
@@ -220,6 +314,18 @@ class TranscodeTracker:
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Could not load tracking file: {e}")
                 self._data = {"transcoded": {}, "failed": {}}
+
+    def reload(self) -> None:
+        """Reload tracking data from disk to see other workers' progress.
+
+        Call this at the start of each processing cycle to ensure we don't
+        re-process files that other workers have already completed.
+        """
+        self._load()
+        logger.debug(
+            f"Reloaded tracking: {len(self._data.get('transcoded', {}))} transcoded, "
+            f"{len(self._data.get('failed', {}))} failed"
+        )
 
     def _save(self) -> None:
         """Save tracking data to file."""
@@ -399,6 +505,7 @@ class TranscodeWorker:
         dry_run: bool = False,
         force_gpu: Optional[bool] = None,
         show_ffmpeg_output: bool = False,
+        max_concurrent: int = MAX_CONCURRENT_TRANSCODES,
     ):
         """Initialize worker.
 
@@ -410,6 +517,7 @@ class TranscodeWorker:
             dry_run: If True, only show what would be done
             force_gpu: True=require GPU, False=use CPU, None=auto-detect
             show_ffmpeg_output: If True, stream FFmpeg output to console
+            max_concurrent: Maximum concurrent transcode operations (global)
         """
         self.storage_root = storage_root
         self.crf = crf
@@ -417,6 +525,7 @@ class TranscodeWorker:
         self.min_age = timedelta(minutes=min_age_minutes)
         self.dry_run = dry_run
         self.show_ffmpeg_output = show_ffmpeg_output
+        self.max_concurrent = max_concurrent
 
         # Detect and configure encoder
         self.encoder = get_encoder(force_gpu)
@@ -425,6 +534,9 @@ class TranscodeWorker:
         self.tracker = TranscodeTracker(storage_root)
         self._running = False
         self._current_file: Optional[Path] = None
+
+        # Global semaphore to limit concurrent transcodes across all workers
+        self._global_semaphore = GlobalTranscodeSemaphore(storage_root, max_concurrent)
 
     def _get_effective_preset(self) -> str:
         """Get the effective preset for the current encoder."""
@@ -810,6 +922,10 @@ class TranscodeWorker:
         total_savings_mb = 0.0
         files_found = 0
 
+        # Reload tracking data to see other workers' progress
+        # This prevents re-processing files that were completed since startup
+        self.tracker.reload()
+
         # Scan all .mp4 files and try to claim them one at a time
         # This lock-first approach prevents multiple workers from
         # grabbing the same file
@@ -834,33 +950,48 @@ class TranscodeWorker:
                 continue
 
             try:
-                result = self.transcode_file(mp4_file)
-
-                if result.success:
-                    self.tracker.mark_transcoded(
-                        mp4_file,
-                        result.original_size,
-                        result.new_size,
-                        result.duration_seconds,
-                        result.encoder_used,
+                # Acquire global semaphore slot to limit concurrent ffmpeg processes
+                # This prevents GPU session exhaustion and system overload
+                if not self._global_semaphore.acquire(timeout=300.0):
+                    logger.warning(
+                        f"Could not acquire transcode slot for {mp4_file.name}, "
+                        "will retry next cycle"
                     )
-                    # Calculate speed relative to video duration
-                    video_duration = self._get_video_duration(mp4_file)
-                    speed_str = ""
-                    if video_duration and result.duration_seconds > 0:
-                        speed = video_duration / result.duration_seconds
-                        speed_str = f", {speed:.1f}x realtime"
+                    self.tracker.unlock_file(mp4_file)
+                    self._current_file = None
+                    continue
 
-                    logger.info(
-                        f"Transcoded {mp4_file.name}: "
-                        f"{result.savings_mb:.1f} MB saved ({result.savings_percent:.1f}%) "
-                        f"in {result.duration_seconds:.1f}s{speed_str}"
-                    )
-                    processed += 1
-                    total_savings_mb += result.savings_mb
-                else:
-                    self.tracker.mark_failed(mp4_file, result.error_message or "Unknown")
-                    logger.error(f"Failed to transcode {mp4_file.name}: {result.error_message}")
+                try:
+                    result = self.transcode_file(mp4_file)
+
+                    if result.success:
+                        self.tracker.mark_transcoded(
+                            mp4_file,
+                            result.original_size,
+                            result.new_size,
+                            result.duration_seconds,
+                            result.encoder_used,
+                        )
+                        # Calculate speed relative to video duration
+                        video_duration = self._get_video_duration(mp4_file)
+                        speed_str = ""
+                        if video_duration and result.duration_seconds > 0:
+                            speed = video_duration / result.duration_seconds
+                            speed_str = f", {speed:.1f}x realtime"
+
+                        logger.info(
+                            f"Transcoded {mp4_file.name}: "
+                            f"{result.savings_mb:.1f} MB saved ({result.savings_percent:.1f}%) "
+                            f"in {result.duration_seconds:.1f}s{speed_str}"
+                        )
+                        processed += 1
+                        total_savings_mb += result.savings_mb
+                    else:
+                        self.tracker.mark_failed(mp4_file, result.error_message or "Unknown")
+                        logger.error(f"Failed to transcode {mp4_file.name}: {result.error_message}")
+                finally:
+                    # Always release the semaphore slot
+                    self._global_semaphore.release()
             finally:
                 self.tracker.unlock_file(mp4_file)
 
@@ -1023,6 +1154,12 @@ Examples:
         action="store_true",
         help="Stream FFmpeg output to console (for debugging encoder issues)",
     )
+    parser.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=None,
+        help=f"Max concurrent transcode operations across all workers (default: {MAX_CONCURRENT_TRANSCODES})",
+    )
 
     args = parser.parse_args()
 
@@ -1100,6 +1237,9 @@ Examples:
         print(f"Cleared {cleared} failed entries")
         return
 
+    # Resolve max concurrent (from args or default)
+    max_concurrent = args.max_concurrent if args.max_concurrent is not None else MAX_CONCURRENT_TRANSCODES
+
     # Create worker
     try:
         worker = TranscodeWorker(
@@ -1110,10 +1250,13 @@ Examples:
             dry_run=args.dry_run,
             force_gpu=force_gpu,
             show_ffmpeg_output=args.show_ffmpeg_output,
+            max_concurrent=max_concurrent,
         )
     except RuntimeError as e:
         logger.error(str(e))
         sys.exit(1)
+
+    logger.info(f"Max concurrent transcodes: {max_concurrent}")
 
     # Handle shutdown signals
     def signal_handler(sig: int, frame: object) -> None:

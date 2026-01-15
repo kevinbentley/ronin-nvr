@@ -389,9 +389,10 @@ class TensorRTDetector:
 
             box = boxes[idx]
             class_id = int(filtered_class_ids[idx])
+            class_name = self.class_names[class_id] if class_id < len(self.class_names) else f"class_{class_id}"
 
             detections.append(TensorRTDetection(
-                class_name=self.class_names[class_id] if class_id < len(self.class_names) else f"class_{class_id}",
+                class_name=class_name,
                 class_id=class_id,
                 confidence=scores[idx],
                 x=box[0] / original_width,
@@ -399,6 +400,11 @@ class TensorRTDetector:
                 width=box[2] / original_width,
                 height=box[3] / original_height,
             ))
+
+        # Debug: Log what detections were produced
+        if detections and logger.isEnabledFor(logging.DEBUG):
+            det_summary = ", ".join(f"{d.class_name}:{d.confidence:.2f}" for d in detections[:5])
+            logger.debug(f"Postprocess output: {len(detections)} dets [{det_summary}]")
 
         return detections
 
@@ -473,6 +479,18 @@ class TensorRTDetector:
         for i, (output, (scale_x, scale_y), (orig_w, orig_h)) in enumerate(
             zip(outputs, scales, original_sizes)
         ):
+            # Debug: log raw scores for each frame in batch
+            if logger.isEnabledFor(logging.DEBUG):
+                class_scores = output[4:]
+                max_scores = np.max(class_scores, axis=0)
+                best_score = max_scores.max()
+                person_max = class_scores[0].max()  # Person is class 0
+                car_max = class_scores[2].max() if class_scores.shape[0] > 2 else 0  # Car
+                logger.debug(
+                    f"YOLO batch[{i}]: best={best_score:.3f}, "
+                    f"person_max={person_max:.3f}, car_max={car_max:.3f}"
+                )
+
             detections = self.postprocess(output, scale_x, scale_y, orig_w, orig_h)
             results.append(detections)
 

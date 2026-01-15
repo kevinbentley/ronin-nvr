@@ -351,6 +351,10 @@ class ByteTracker:
             _kf_state=state,
             _kf_covariance=covariance,
         )
+        logger.debug(
+            f"New track {self._next_id}: {detection.class_name} conf={detection.confidence:.2f} "
+            f"pos=({detection.x:.3f}, {detection.y:.3f})"
+        )
         self._next_id += 1
         return track
 
@@ -408,6 +412,9 @@ class ByteTracker:
         if track.is_tentative and track.hits >= self.min_hits:
             if self.min_displacement <= 0 or track.max_displacement >= self.min_displacement:
                 track.state = TrackState.CONFIRMED
+                logger.debug(
+                    f"Track {track.track_id} CONFIRMED: {track.class_name} hits={track.hits}"
+                )
             # If min_displacement is set but not met, track stays tentative
             # It will eventually be removed if it never moves
 
@@ -461,6 +468,16 @@ class ByteTracker:
         """
         self._frame_count += 1
 
+        # Debug: Log track state before update
+        tentative_count = sum(1 for t in self._tracks if t.is_tentative)
+        confirmed_count = sum(1 for t in self._tracks if t.is_confirmed)
+        if detections:
+            det_summary = ", ".join(f"{d.class_name}:{d.confidence:.2f}" for d in detections[:3])
+            logger.debug(
+                f"Tracker update: dets={len(detections)} [{det_summary}], "
+                f"tracks={len(self._tracks)} (tent={tentative_count}, conf={confirmed_count})"
+            )
+
         # Run prediction step
         self._predict_tracks()
 
@@ -492,8 +509,20 @@ class ByteTracker:
         remaining_high_dets = [high_dets[i] for i in unmatched_dets1]
         matches3, unmatched_tent, unmatched_high = self._match(tentative, remaining_high_dets)
 
+        if tentative and remaining_high_dets:
+            logger.debug(
+                f"Tentative matching: {len(tentative)} tracks, {len(remaining_high_dets)} dets, "
+                f"{len(matches3)} matches"
+            )
+
         for track_idx, det_idx in matches3:
-            self._update_track(tentative[track_idx], remaining_high_dets[det_idx])
+            track = tentative[track_idx]
+            det = remaining_high_dets[det_idx]
+            logger.debug(
+                f"Match tentative track {track.track_id} ({track.class_name}) with "
+                f"{det.class_name}:{det.confidence:.2f}"
+            )
+            self._update_track(track, det)
 
         # === Fourth association: lost tracks with remaining detections ===
         remaining_dets = [remaining_high_dets[i] for i in unmatched_high]

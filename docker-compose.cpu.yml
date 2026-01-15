@@ -144,6 +144,8 @@ services:
           memory: 1G
 
   # Transcode Worker (CPU only)
+  # Uses file-based semaphore to limit concurrent transcodes
+  # For CPU-only, default to 1 concurrent (libx265 is CPU-intensive)
   transcode-worker:
     build:
       context: ./backend
@@ -155,9 +157,11 @@ services:
       STORAGE_ROOT: /data/storage
       TRANSCODE_CRF: ${TRANSCODE_CRF:-28}
       TRANSCODE_PRESET: ${TRANSCODE_PRESET:-medium}
+      TRANSCODE_MAX_CONCURRENT: ${TRANSCODE_MAX_CONCURRENT:-1}
     volumes:
       - ${STORAGE_PATH:-storage_data}:/data/storage
-    command: ["python", "transcode_worker.py", "--continuous", "--no-gpu"]
+    command: >
+      python transcode_worker.py --continuous --no-gpu --max-concurrent ${TRANSCODE_MAX_CONCURRENT:-1}
     deploy:
       resources:
         limits:

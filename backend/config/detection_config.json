@@ -67,7 +67,7 @@
 
   "pipeline": {
     "_comment": "Pipeline behavior settings",
-    "periodic_detection_interval": 30,
+    "periodic_detection_interval": 60,
     "detection_active_seconds": 10.0,
     "_periodic_detection_interval_comment": "Run YOLO every N frames regardless of motion (0=disabled)",
     "_detection_active_seconds_comment": "Keep YOLO active for N seconds after any detection"

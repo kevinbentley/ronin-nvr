@@ -51,4 +51,4 @@ backend/benchmark_results
 backend/tools/detection_output
 backend/test_output
 backend/test_output_perclass
-benchmark_results
+benchmark_resultsbackend/yolov8l.pt
