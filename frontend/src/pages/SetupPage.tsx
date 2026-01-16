@@ -5,8 +5,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { CameraModal } from '../components/CameraModal';
-import type { Camera, RecordingStatus, RetentionSettings } from '../types/camera';
+import type { Camera, RecordingStatus, RetentionSettings, MLSettings } from '../types/camera';
 import './SetupPage.css';
+
+// Available detection classes from YOLO COCO dataset
+const AVAILABLE_CLASSES = [
+  'person', 'car', 'truck', 'bus', 'motorcycle', 'bicycle',
+  'dog', 'cat', 'bird', 'backpack', 'handbag', 'suitcase',
+];
+
+// Classes that support per-class confidence thresholds
+const THRESHOLD_CLASSES = ['person', 'car', 'truck', 'dog', 'cat'];
 
 interface SetupPageProps {
   cameras: Camera[];
@@ -28,6 +37,13 @@ export function SetupPage({ cameras, recordingStatus, onRefresh }: SetupPageProp
   const [retentionUnlimitedDays, setRetentionUnlimitedDays] = useState(false);
   const [retentionUnlimitedSize, setRetentionUnlimitedSize] = useState(false);
   const [retentionSuccess, setRetentionSuccess] = useState<string | null>(null);
+
+  // ML settings state
+  const [mlSettings, setMlSettings] = useState<MLSettings | null>(null);
+  const [editedMlSettings, setEditedMlSettings] = useState<MLSettings | null>(null);
+  const [mlLoading, setMlLoading] = useState(true);
+  const [mlSaving, setMlSaving] = useState(false);
+  const [mlSuccess, setMlSuccess] = useState<string | null>(null);
 
   const loadRetentionSettings = useCallback(async () => {
     try {
@@ -62,9 +78,27 @@ export function SetupPage({ cameras, recordingStatus, onRefresh }: SetupPageProp
     }
   }, []);
 
+  const loadMlSettings = useCallback(async () => {
+    try {
+      setMlLoading(true);
+      const settings = await api.getMLSettings();
+      setMlSettings(settings);
+      setEditedMlSettings(settings);
+    } catch (err) {
+      setActionError(
+        `Failed to load ML settings: ${
+          err instanceof Error ? err.message : 'Unknown error'
+        }`
+      );
+    } finally {
+      setMlLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadRetentionSettings();
-  }, [loadRetentionSettings]);
+    loadMlSettings();
+  }, [loadRetentionSettings, loadMlSettings]);
 
   const handleSaveRetentionSettings = async () => {
     setActionError(null);
@@ -107,6 +141,73 @@ export function SetupPage({ cameras, recordingStatus, onRefresh }: SetupPageProp
     } finally {
       setRetentionSaving(false);
     }
+  };
+
+  const handleSaveMlSettings = async () => {
+    if (!editedMlSettings) return;
+
+    setActionError(null);
+    setMlSuccess(null);
+    setMlSaving(true);
+
+    try {
+      const updated = await api.updateMLSettings({
+        live_detection_enabled: editedMlSettings.live_detection_enabled,
+        live_detection_fps: editedMlSettings.live_detection_fps,
+        live_detection_cooldown: editedMlSettings.live_detection_cooldown,
+        live_detection_confidence: editedMlSettings.live_detection_confidence,
+        live_detection_classes: editedMlSettings.live_detection_classes,
+        class_thresholds: editedMlSettings.class_thresholds,
+      });
+      setMlSettings(updated);
+      setEditedMlSettings(updated);
+      setMlSuccess('ML settings saved successfully');
+      setTimeout(() => setMlSuccess(null), 3000);
+    } catch (err) {
+      setActionError(
+        `Failed to save ML settings: ${
+          err instanceof Error ? err.message : 'Unknown error'
+        }`
+      );
+    } finally {
+      setMlSaving(false);
+    }
+  };
+
+  const handleResetMlSettings = () => {
+    if (mlSettings) {
+      setEditedMlSettings(mlSettings);
+    }
+  };
+
+  const hasMlSettingsChanges = (): boolean => {
+    if (!mlSettings || !editedMlSettings) return false;
+    return (
+      mlSettings.live_detection_enabled !== editedMlSettings.live_detection_enabled ||
+      mlSettings.live_detection_fps !== editedMlSettings.live_detection_fps ||
+      mlSettings.live_detection_cooldown !== editedMlSettings.live_detection_cooldown ||
+      mlSettings.live_detection_confidence !== editedMlSettings.live_detection_confidence ||
+      JSON.stringify(mlSettings.live_detection_classes) !== JSON.stringify(editedMlSettings.live_detection_classes) ||
+      JSON.stringify(mlSettings.class_thresholds) !== JSON.stringify(editedMlSettings.class_thresholds)
+    );
+  };
+
+  const toggleClass = (classList: string[], className: string): string[] => {
+    if (classList.includes(className)) {
+      return classList.filter(c => c !== className);
+    }
+    return [...classList, className];
+  };
+
+  const updateClassThreshold = (className: string, value: number) => {
+    if (!editedMlSettings) return;
+    setEditedMlSettings({
+      ...editedMlSettings,
+      class_thresholds: {
+        ...editedMlSettings.class_thresholds,
+        [className]: value,
+      },
+    });
   };
 
   const handleAddCamera = () => {
@@ -380,19 +481,181 @@ export function SetupPage({ cameras, recordingStatus, onRefresh }: SetupPageProp
         )}
       </section>
 
-      {/* Future Settings Placeholder */}
+      {/* ML Detection Settings Section */}
       <section className="setup-section">
         <div className="section-header">
-          <h3>Additional Settings</h3>
+          <h3>ML Detection Settings</h3>
+          <div className="section-actions">
+            {hasMlSettingsChanges() && (
+              <button
+                className="action-button"
+                onClick={handleResetMlSettings}
+                disabled={mlSaving}
+              >
+                Reset
+              </button>
+            )}
+            <button
+              className="save-button"
+              onClick={handleSaveMlSettings}
+              disabled={mlSaving || !hasMlSettingsChanges()}
+            >
+              {mlSaving ? 'Saving...' : 'Save ML Settings'}
+            </button>
+          </div>
         </div>
-        <div className="settings-placeholder">
-          <p>More settings coming in future updates:</p>
-          <ul>
-            <li>User management</li>
-            <li>Email/notification settings</li>
-            <li>Storage path configuration</li>
-          </ul>
-        </div>
+
+        {mlSuccess && (
+          <div className="success-banner">
+            {mlSuccess}
+          </div>
+        )}
+
+        {mlLoading ? (
+          <div className="settings-loading">Loading ML settings...</div>
+        ) : editedMlSettings && (
+          <div className="ml-settings">
+            <div className="ml-settings-grid">
+              {/* Basic Detection Settings */}
+              <div className="ml-settings-column">
+                <h4>Detection</h4>
+
+                <div className="form-group">
+                  <label className="checkbox-label standalone">
+                    <input
+                      type="checkbox"
+                      checked={editedMlSettings.live_detection_enabled}
+                      onChange={(e) =>
+                        setEditedMlSettings({
+                          ...editedMlSettings,
+                          live_detection_enabled: e.target.checked,
+                        })
+                      }
+                    />
+                    Live Detection Enabled
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    Default Confidence
+                    <span className="value-display">
+                      {(editedMlSettings.live_detection_confidence * 100).toFixed(0)}%
+                    </span>
+                  </label>
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    value={editedMlSettings.live_detection_confidence * 100}
+                    onChange={(e) =>
+                      setEditedMlSettings({
+                        ...editedMlSettings,
+                        live_detection_confidence: parseInt(e.target.value) / 100,
+                      })
+                    }
+                    className="range-slider"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    FPS
+                    <span className="value-display">{editedMlSettings.live_detection_fps.toFixed(1)}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="50"
+                    value={editedMlSettings.live_detection_fps * 10}
+                    onChange={(e) =>
+                      setEditedMlSettings({
+                        ...editedMlSettings,
+                        live_detection_fps: parseInt(e.target.value) / 10,
+                      })
+                    }
+                    className="range-slider"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    Cooldown
+                    <span className="value-display">{editedMlSettings.live_detection_cooldown.toFixed(0)}s</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="5"
+                    max="120"
+                    value={editedMlSettings.live_detection_cooldown}
+                    onChange={(e) =>
+                      setEditedMlSettings({
+                        ...editedMlSettings,
+                        live_detection_cooldown: parseInt(e.target.value),
+                      })
+                    }
+                    className="range-slider"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Detection Classes</label>
+                  <div className="class-checkboxes">
+                    {AVAILABLE_CLASSES.map((cls) => (
+                      <label key={cls} className="class-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={editedMlSettings.live_detection_classes.includes(cls)}
+                          onChange={() =>
+                            setEditedMlSettings({
+                              ...editedMlSettings,
+                              live_detection_classes: toggleClass(
+                                editedMlSettings.live_detection_classes,
+                                cls
+                              ),
+                            })
+                          }
+                        />
+                        {cls}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Per-Class Confidence Thresholds */}
+              <div className="ml-settings-column">
+                <h4>Per-Class Confidence</h4>
+                <p className="form-hint">
+                  Override confidence threshold for specific classes (lower = more sensitive)
+                </p>
+
+                {THRESHOLD_CLASSES.map((cls) => (
+                  <div key={cls} className="form-group">
+                    <label>
+                      {cls}
+                      <span className="value-display">
+                        {((editedMlSettings.class_thresholds?.[cls] ?? editedMlSettings.live_detection_confidence) * 100).toFixed(0)}%
+                      </span>
+                    </label>
+                    <input
+                      type="range"
+                      min="10"
+                      max="100"
+                      value={(editedMlSettings.class_thresholds?.[cls] ?? editedMlSettings.live_detection_confidence) * 100}
+                      onChange={(e) => updateClassThreshold(cls, parseInt(e.target.value) / 100)}
+                      className="range-slider"
+                    />
+                  </div>
+                ))}
+
+                <p className="form-hint" style={{ marginTop: '16px' }}>
+                  Changes take effect within 60 seconds
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {showModal && (

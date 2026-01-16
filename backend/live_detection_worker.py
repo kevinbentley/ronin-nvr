@@ -687,6 +687,57 @@ class LiveDetectionWorker:
 
         detections_to_save: list[dict] = []
         all_detections: list[DetectionResult] = []
+        events_to_save: list[dict] = []
+
+        # Filter events by class first
+        filtered_events = [
+            e for e in result.events
+            if e.class_name.lower() in self.class_filter
+        ]
+
+        # Save snapshot for filtered events if there are any
+        event_snapshot_path: str | None = None
+        if filtered_events:
+            # Build DetectionResult list for drawing boxes on event snapshot
+            event_detections: list[DetectionResult] = []
+            event_track_ids = {e.track_id for e in filtered_events}
+            for track in result.tracks:
+                # Include tracks that have filtered events
+                if track.track_id in event_track_ids:
+                    event_detections.append(DetectionResult(
+                        class_name=track.class_name,
+                        class_id=track.class_id,
+                        confidence=track.confidence,
+                        x=track.x,
+                        y=track.y,
+                        width=track.width,
+                        height=track.height,
+                    ))
+
+            if event_detections:
+                snapshot_path = self.snapshot_service.save_snapshot(
+                    frame, state.camera_id, event_detections, detection_time
+                )
+                event_snapshot_path = str(snapshot_path)
+
+        # Save filtered FSM events to the object_events table
+        for event in filtered_events:
+            events_to_save.append({
+                "event_type": event.event_type.value,
+                "class_name": event.class_name,
+                "track_id": event.track_id,
+                "old_state": event.old_state.value if event.old_state else None,
+                "new_state": event.new_state.value if event.new_state else None,
+                "confidence": event.confidence,
+                "duration_seconds": event.duration_seconds,
+                "camera_id": state.camera_id,
+                "event_time": detection_time,
+                "snapshot_path": event_snapshot_path,
+            })
+
+        # Save events to database
+        if events_to_save:
+            await self._save_object_events(events_to_save)
 
         # Get track_ids that have ARRIVAL events this frame
         # Only these should create new detection records
@@ -696,7 +747,7 @@ class LiveDetectionWorker:
             if event.event_type == EventType.ARRIVAL
         }
 
-        # If no arrivals, nothing to save
+        # If no arrivals, nothing more to save (detections only for arrivals)
         if not arrival_track_ids:
             return
 
@@ -1316,6 +1367,42 @@ class LiveDetectionWorker:
                 await conn.execute(
                     "SELECT pg_notify('live_detection', $1)", payload
                 )
+
+    async def _save_object_events(
+        self, events: list[dict]
+    ) -> None:
+        """Save object events (arrivals, departures, etc.) to database."""
+        if not self._pool or not events:
+            return
+
+        async with self._pool.acquire() as conn:
+            await conn.executemany(
+                """
+                INSERT INTO object_events (
+                    event_type, class_name, track_id,
+                    old_state, new_state, confidence,
+                    duration_seconds, camera_id, event_time,
+                    snapshot_path
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+                )
+                """,
+                [
+                    (
+                        e["event_type"],
+                        e["class_name"],
+                        e["track_id"],
+                        e["old_state"],
+                        e["new_state"],
+                        e["confidence"],
+                        e["duration_seconds"],
+                        e["camera_id"],
+                        e["event_time"],
+                        e.get("snapshot_path"),
+                    )
+                    for e in events
+                ],
+            )
 
 
 def main() -> None:

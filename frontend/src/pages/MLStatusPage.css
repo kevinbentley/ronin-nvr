@@ -130,10 +130,17 @@
   margin-bottom: 24px;
 }
 
-.ml-status-grid {
+.ml-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: 20px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+  .ml-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ml-status-card {
@@ -948,4 +955,119 @@
   color: #888;
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* Object Events Panel */
+.events-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.events-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.events-header h3 {
+  margin: 0;
+}
+
+.events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.event-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: #1a1a1a;
+  border-radius: 6px;
+  border-left: 3px solid #444;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.event-item:hover {
+  background: #252525;
+}
+
+.event-item.selected {
+  background: #252525;
+  box-shadow: inset 0 0 0 1px #444;
+}
+
+.event-item.event-arrival {
+  border-left-color: #4caf50;
+}
+
+.event-item.event-departure {
+  border-left-color: #ff9800;
+}
+
+.event-item.event-loitering {
+  border-left-color: #f44336;
+}
+
+.event-item.event-state-change {
+  border-left-color: #2196f3;
+}
+
+.event-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.event-type {
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 90px;
+}
+
+.event-type.event-arrival {
+  color: #4caf50;
+}
+
+.event-type.event-departure {
+  color: #ff9800;
+}
+
+.event-type.event-loitering {
+  color: #f44336;
+}
+
+.event-type.event-state-change {
+  color: #2196f3;
+}
+
+.event-class {
+  font-size: 14px;
+  color: #ccc;
+  text-transform: capitalize;
+}
+
+.event-camera {
+  font-size: 12px;
+  color: #888;
+}
+
+.event-details {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #888;
+}
+
+.event-duration {
+  color: #666;
 }

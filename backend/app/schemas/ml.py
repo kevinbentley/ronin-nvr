@@ -220,3 +220,32 @@ class MLSettingsUpdateRequest(BaseModel):
     live_detection_confidence: Optional[float] = Field(None, ge=0.1, le=1.0)
     live_detection_classes: Optional[list[str]] = None
     class_thresholds: Optional[dict[str, float]] = None
+
+
+# === Object Events ===
+
+
+class ObjectEventResponse(UTCBaseModel):
+    """Response for a single object event."""
+
+    id: int
+    event_type: str
+    class_name: str
+    track_id: int
+    old_state: Optional[str]
+    new_state: Optional[str]
+    confidence: float
+    duration_seconds: float
+    snapshot_url: Optional[str]
+    camera_id: int
+    camera_name: Optional[str]
+    event_time: datetime
+
+
+class ObjectEventListResponse(BaseModel):
+    """Paginated list of object events."""
+
+    events: list[ObjectEventResponse]
+    total: int
+    offset: int
+    limit: int

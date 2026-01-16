@@ -25,6 +25,7 @@ import type {
   LiveDetectionsResponse,
   MLSettings,
   MLSettingsUpdate,
+  ObjectEventListResponse,
   TranscodeStatus,
   RetentionSettings,
   RetentionSettingsUpdate,
@@ -430,6 +431,17 @@ class ApiClient {
 
   async updateMLSettings(settings: MLSettingsUpdate): Promise<MLSettings> {
     const response = await this.client.put('/ml/settings', settings);
+    return response.data;
+  }
+
+  async getObjectEvents(params?: {
+    camera_id?: number;
+    event_type?: string;
+    class_name?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ObjectEventListResponse> {
+    const response = await this.client.get('/ml/object-events', { params });
     return response.data;
   }
 

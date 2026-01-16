@@ -326,6 +326,29 @@ export interface MLSettingsUpdate {
   class_thresholds?: Record<string, number>;
 }
 
+// Object Event types (FSM state transitions)
+export interface ObjectEvent {
+  id: number;
+  event_type: string;
+  class_name: string;
+  track_id: number;
+  old_state: string | null;
+  new_state: string | null;
+  confidence: number;
+  duration_seconds: number;
+  snapshot_url: string | null;
+  camera_id: number;
+  camera_name: string | null;
+  event_time: string;
+}
+
+export interface ObjectEventListResponse {
+  events: ObjectEvent[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 // Transcode types
 export interface TranscodeQueueStatus {
   pending_files: number;

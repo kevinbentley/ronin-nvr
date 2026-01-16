@@ -18,6 +18,7 @@ from app.models.detection import Detection
 from app.models.ml_job import JobStatus, MLJob
 from app.models.ml_model import MLModel
 from app.models.ml_settings import MLSettings
+from app.models.object_event import ObjectEvent
 from app.models.recording import Recording
 from app.models.user import User
 from app.schemas.ml import (
@@ -36,6 +37,8 @@ from app.schemas.ml import (
     ModelConfigRequest,
     ModelListResponse,
     ModelResponse,
+    ObjectEventListResponse,
+    ObjectEventResponse,
     QueueStatusResponse,
     TimelineEvent,
     TimelineEventsResponse,
@@ -675,7 +678,84 @@ async def update_ml_settings(
     )
 
 
-# === Events ===
+# === Object Events ===
+
+
+@router.get("/object-events", response_model=ObjectEventListResponse)
+async def get_object_events(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    camera_id: Optional[int] = Query(None, description="Filter by camera"),
+    event_type: Optional[str] = Query(None, description="Filter by event type"),
+    class_name: Optional[str] = Query(None, description="Filter by class"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> ObjectEventListResponse:
+    """Get paginated list of object events (arrivals, departures, etc.)."""
+    # Build query
+    query = select(ObjectEvent).options(selectinload(ObjectEvent.camera))
+
+    # Apply filters
+    if camera_id:
+        query = query.where(ObjectEvent.camera_id == camera_id)
+    if event_type:
+        query = query.where(ObjectEvent.event_type == event_type)
+    if class_name:
+        query = query.where(ObjectEvent.class_name == class_name)
+
+    # Get total count
+    count_query = select(func.count(ObjectEvent.id))
+    if camera_id:
+        count_query = count_query.where(ObjectEvent.camera_id == camera_id)
+    if event_type:
+        count_query = count_query.where(ObjectEvent.event_type == event_type)
+    if class_name:
+        count_query = count_query.where(ObjectEvent.class_name == class_name)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Get paginated results
+    query = query.order_by(ObjectEvent.event_time.desc()).offset(offset).limit(limit)
+    result = await db.execute(query)
+    events = result.scalars().all()
+
+    # Build snapshot URLs
+    settings = get_settings()
+
+    def get_snapshot_url(snapshot_path: str | None) -> str | None:
+        if not snapshot_path:
+            return None
+        # Remove storage_root prefix if present, then .snapshots/ prefix
+        path = snapshot_path.replace(str(settings.storage_root) + '/', '')
+        path = path.removeprefix('.snapshots/')
+        return f"/api/ml/snapshots/{path}"
+
+    return ObjectEventListResponse(
+        events=[
+            ObjectEventResponse(
+                id=e.id,
+                event_type=e.event_type,
+                class_name=e.class_name,
+                track_id=e.track_id,
+                old_state=e.old_state,
+                new_state=e.new_state,
+                confidence=e.confidence,
+                duration_seconds=e.duration_seconds,
+                snapshot_url=get_snapshot_url(e.snapshot_path),
+                camera_id=e.camera_id,
+                camera_name=e.camera.name if e.camera else None,
+                event_time=e.event_time,
+            )
+            for e in events
+        ],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+# === SSE Events ===
 
 
 @router.get("/events")
