@@ -2,7 +2,7 @@
  * Hook for fetching and managing detection data for bounding box overlay.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { api } from '../../../services/api';
 import type { Detection } from '../../../types/camera';
 
@@ -13,10 +13,12 @@ interface UseDetectionOverlayOptions {
   duration: number;
   isLive: boolean;
   enabled: boolean;
+  visibleObjectTypes?: Set<string>;
 }
 
 interface UseDetectionOverlayReturn {
   detections: Detection[];
+  typeCounts: Map<string, number>;
   isLoading: boolean;
   error: string | null;
 }
@@ -37,12 +39,23 @@ export function useDetectionOverlay({
   duration: _duration, // Reserved for future use
   isLive,
   enabled,
+  visibleObjectTypes,
 }: UseDetectionOverlayOptions): UseDetectionOverlayReturn {
   const [detections, setDetections] = useState<Detection[]>([]);
   const [allDetections, setAllDetections] = useState<Detection[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceTimeoutRef = useRef<number | null>(null);
+
+  // Compute type counts from all detections
+  const typeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of allDetections) {
+      const className = d.class_name.toLowerCase();
+      counts.set(className, (counts.get(className) || 0) + 1);
+    }
+    return counts;
+  }, [allDetections]);
 
   // Fetch all detections for the recording (once)
   const fetchAllDetections = useCallback(async () => {
@@ -86,7 +99,7 @@ export function useDetectionOverlay({
     fetchAllDetections();
   }, [enabled, recordingId, fetchAllDetections]);
 
-  // Filter detections for current time (with debounce)
+  // Filter detections for current time and visible types (with debounce)
   useEffect(() => {
     if (!enabled || allDetections.length === 0) {
       setDetections([]);
@@ -103,10 +116,17 @@ export function useDetectionOverlay({
       const currentTimeMs = currentTime * 1000;
 
       // Find detections within the time window
-      const windowDetections = allDetections.filter((d) => {
+      let windowDetections = allDetections.filter((d) => {
         const diff = Math.abs(d.timestamp_ms - currentTimeMs);
         return diff <= FETCH_WINDOW_MS;
       });
+
+      // Filter by visible object types if specified
+      if (visibleObjectTypes && visibleObjectTypes.size > 0) {
+        windowDetections = windowDetections.filter((d) =>
+          visibleObjectTypes.has(d.class_name.toLowerCase())
+        );
+      }
 
       // Limit to top 20 detections by confidence to avoid performance issues
       const sortedDetections = windowDetections
@@ -121,10 +141,11 @@ export function useDetectionOverlay({
         clearTimeout(debounceTimeoutRef.current);
       }
     };
-  }, [enabled, allDetections, currentTime]);
+  }, [enabled, allDetections, currentTime, visibleObjectTypes]);
 
   return {
     detections,
+    typeCounts,
     isLoading,
     error,
   };

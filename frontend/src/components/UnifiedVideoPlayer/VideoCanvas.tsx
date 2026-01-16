@@ -1,5 +1,6 @@
 /**
  * Canvas overlay component for drawing bounding boxes on video.
+ * Handles letterboxing alignment when video uses object-fit: contain.
  */
 
 import { useRef, useEffect, useCallback } from 'react';
@@ -8,8 +9,54 @@ import { getEventColor } from './types';
 import type { Detection } from '../../types/camera';
 import './VideoCanvas.css';
 
-// Use Detection type from camera.ts which has the correct fields
 type DetectionWithBbox = Detection;
+
+interface VideoDisplayInfo {
+  // The actual rendered video area within the container
+  offsetX: number;
+  offsetY: number;
+  displayWidth: number;
+  displayHeight: number;
+}
+
+/**
+ * Calculate the actual display area of a video with object-fit: contain.
+ * This accounts for letterboxing (black bars) around the video.
+ */
+function getVideoDisplayInfo(video: HTMLVideoElement): VideoDisplayInfo {
+  const containerWidth = video.clientWidth;
+  const containerHeight = video.clientHeight;
+  const videoWidth = video.videoWidth;
+  const videoHeight = video.videoHeight;
+
+  if (videoWidth === 0 || videoHeight === 0) {
+    return { offsetX: 0, offsetY: 0, displayWidth: 0, displayHeight: 0 };
+  }
+
+  const containerAspect = containerWidth / containerHeight;
+  const videoAspect = videoWidth / videoHeight;
+
+  let displayWidth: number;
+  let displayHeight: number;
+  let offsetX: number;
+  let offsetY: number;
+
+  if (videoAspect > containerAspect) {
+    // Video is wider than container - letterbox top/bottom
+    displayWidth = containerWidth;
+    displayHeight = containerWidth / videoAspect;
+    offsetX = 0;
+    offsetY = (containerHeight - displayHeight) / 2;
+  } else {
+    // Video is taller than container - letterbox left/right
+    displayHeight = containerHeight;
+    displayWidth = containerHeight * videoAspect;
+    offsetX = (containerWidth - displayWidth) / 2;
+    offsetY = 0;
+  }
+
+  return { offsetX, offsetY, displayWidth, displayHeight };
+}
 
 export function VideoCanvas({ videoRef, detections, visible }: VideoCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -20,16 +67,16 @@ export function VideoCanvas({ videoRef, detections, visible }: VideoCanvasProps)
     (
       ctx: CanvasRenderingContext2D,
       detection: DetectionWithBbox,
-      videoWidth: number,
-      videoHeight: number
+      displayInfo: VideoDisplayInfo
     ) => {
       const { bbox_x, bbox_y, bbox_width, bbox_height, class_name, confidence } = detection;
+      const { offsetX, offsetY, displayWidth, displayHeight } = displayInfo;
 
-      // Denormalize coordinates (bbox values are normalized 0-1)
-      const x = bbox_x * videoWidth;
-      const y = bbox_y * videoHeight;
-      const width = bbox_width * videoWidth;
-      const height = bbox_height * videoHeight;
+      // Denormalize coordinates relative to the actual video display area
+      const x = offsetX + bbox_x * displayWidth;
+      const y = offsetY + bbox_y * displayHeight;
+      const width = bbox_width * displayWidth;
+      const height = bbox_height * displayHeight;
 
       const color = getEventColor(class_name);
 
@@ -55,7 +102,7 @@ export function VideoCanvas({ videoRef, detections, visible }: VideoCanvasProps)
       const labelHeight = textHeight + padding;
 
       // Position label inside box if it would go off screen
-      const finalLabelY = labelY < 0 ? y : labelY;
+      const finalLabelY = labelY < offsetY ? y : labelY;
 
       ctx.fillStyle = color;
       ctx.fillRect(labelX, finalLabelY, labelWidth, labelHeight);
@@ -78,28 +125,32 @@ export function VideoCanvas({ videoRef, detections, visible }: VideoCanvasProps)
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Get video dimensions
-    const videoWidth = video.videoWidth;
-    const videoHeight = video.videoHeight;
-
     // Skip if video hasn't loaded yet
-    if (videoWidth === 0 || videoHeight === 0) return;
+    if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
-    // Update canvas size to match video
-    if (canvas.width !== videoWidth || canvas.height !== videoHeight) {
-      canvas.width = videoWidth;
-      canvas.height = videoHeight;
+    // Get the container dimensions (where video is displayed)
+    const containerWidth = video.clientWidth;
+    const containerHeight = video.clientHeight;
+
+    if (containerWidth === 0 || containerHeight === 0) return;
+
+    // Update canvas size to match container
+    if (canvas.width !== containerWidth || canvas.height !== containerHeight) {
+      canvas.width = containerWidth;
+      canvas.height = containerHeight;
     }
+
+    // Calculate video display area (accounting for object-fit: contain)
+    const displayInfo = getVideoDisplayInfo(video);
 
     // Clear previous frame
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Draw all detection bounding boxes
     for (const detection of detections) {
-      // Cast to our type that has bbox fields
       const det = detection as unknown as DetectionWithBbox;
       if (det.bbox_x !== undefined && det.bbox_y !== undefined) {
-        drawBoundingBox(ctx, det, videoWidth, videoHeight);
+        drawBoundingBox(ctx, det, displayInfo);
       }
     }
   }, [videoRef, detections, visible, drawBoundingBox]);

@@ -75,6 +75,9 @@ export interface PlayerControlsProps {
   isAtLiveEdge: boolean;
   timeBehindLive: number;
   showDetectionOverlay: boolean;
+  // Object type filter props
+  visibleObjectTypes: Set<string>;
+  typeCounts: Map<string, number>;
   onPlayPause: () => void;
   onSeek: (time: number) => void;
   onVolumeChange: (volume: number) => void;
@@ -83,6 +86,16 @@ export interface PlayerControlsProps {
   onFullscreen: () => void;
   onReturnToLive: () => void;
   onToggleDetectionOverlay: () => void;
+  onToggleObjectType: (className: string) => void;
+  onToggleAllTypes: (visible: boolean) => void;
+}
+
+export interface ObjectTypeFilterProps {
+  visible: boolean;
+  visibleTypes: Set<string>;
+  typeCounts: Map<string, number>;
+  onToggleType: (className: string) => void;
+  onToggleAll: (visible: boolean) => void;
 }
 
 export interface ThumbnailSprite {

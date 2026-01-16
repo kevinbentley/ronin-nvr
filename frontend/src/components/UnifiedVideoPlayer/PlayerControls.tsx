@@ -5,6 +5,7 @@
 import { useCallback } from 'react';
 import type { PlayerControlsProps } from './types';
 import { PLAYBACK_SPEEDS } from './types';
+import { ObjectTypeFilter } from './ObjectTypeFilter';
 import './PlayerControls.css';
 
 export function PlayerControls({
@@ -18,6 +19,8 @@ export function PlayerControls({
   isAtLiveEdge,
   timeBehindLive,
   showDetectionOverlay,
+  visibleObjectTypes,
+  typeCounts,
   onPlayPause,
   onSeek,
   onVolumeChange,
@@ -26,6 +29,8 @@ export function PlayerControls({
   onFullscreen,
   onReturnToLive,
   onToggleDetectionOverlay,
+  onToggleObjectType,
+  onToggleAllTypes,
 }: PlayerControlsProps) {
   const formatTime = useCallback((seconds: number): string => {
     if (!isFinite(seconds) || isNaN(seconds)) return '0:00';
@@ -159,6 +164,15 @@ export function PlayerControls({
             <rect x="7" y="7" width="10" height="10" rx="1" strokeDasharray="2 2" />
           </svg>
         </button>
+
+        {/* Object type filter (only visible when detection overlay is on) */}
+        <ObjectTypeFilter
+          visible={showDetectionOverlay}
+          visibleTypes={visibleObjectTypes}
+          typeCounts={typeCounts}
+          onToggleType={onToggleObjectType}
+          onToggleAll={onToggleAllTypes}
+        />
 
         {/* Volume controls */}
         <button

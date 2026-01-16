@@ -399,6 +399,7 @@ export function PlaybackPage() {
               src={api.getRecordingStreamUrl(selectedRecording.id)}
               cameraId={0}
               cameraName={`${selectedCamera} - ${formatRecordingTime(selectedRecording.start_time)}`}
+              recordingId={Number(selectedRecording.id)}
               recordingIdString={selectedRecording.id}
               recordingStartTime={new Date(selectedRecording.start_time)}
               showControls={true}

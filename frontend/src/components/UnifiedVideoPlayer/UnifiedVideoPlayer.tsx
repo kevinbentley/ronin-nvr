@@ -41,6 +41,8 @@ export function UnifiedVideoPlayer({
   const [isMuted, setIsMuted] = useState(true);
   const [showDetectionOverlay, setShowDetectionOverlay] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
+  const [visibleObjectTypes, setVisibleObjectTypes] = useState<Set<string>>(new Set());
+  const [hasInitializedTypes, setHasInitializedTypes] = useState(false);
   const controlsTimeoutRef = useRef<number | null>(null);
 
   const {
@@ -80,14 +82,51 @@ export function UnifiedVideoPlayer({
   });
 
   // Detection overlay
-  const { detections } = useDetectionOverlay({
+  const { detections, typeCounts } = useDetectionOverlay({
     recordingId,
     cameraId,
     currentTime,
     duration,
     isLive,
     enabled: showDetectionOverlay && mode === 'playback',
+    visibleObjectTypes: hasInitializedTypes ? visibleObjectTypes : undefined,
   });
+
+  // Initialize visible object types when we first get type counts
+  useEffect(() => {
+    if (!hasInitializedTypes && typeCounts.size > 0) {
+      setVisibleObjectTypes(new Set(typeCounts.keys()));
+      setHasInitializedTypes(true);
+    }
+  }, [typeCounts, hasInitializedTypes]);
+
+  // Reset initialization when recording changes
+  useEffect(() => {
+    setHasInitializedTypes(false);
+    setVisibleObjectTypes(new Set());
+  }, [recordingId]);
+
+  // Toggle a single object type visibility
+  const handleToggleObjectType = useCallback((className: string) => {
+    setVisibleObjectTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(className)) {
+        next.delete(className);
+      } else {
+        next.add(className);
+      }
+      return next;
+    });
+  }, []);
+
+  // Toggle all object types on or off
+  const handleToggleAllTypes = useCallback((visible: boolean) => {
+    if (visible) {
+      setVisibleObjectTypes(new Set(typeCounts.keys()));
+    } else {
+      setVisibleObjectTypes(new Set());
+    }
+  }, [typeCounts]);
 
   // Thumbnail preview (playback mode only)
   const { thumbnailData: rawThumbnailData, getThumbnailForTime } = useThumbnails({
@@ -355,6 +394,8 @@ export function UnifiedVideoPlayer({
           isAtLiveEdge={isAtLiveEdge}
           timeBehindLive={timeBehindLive}
           showDetectionOverlay={showDetectionOverlay}
+          visibleObjectTypes={visibleObjectTypes}
+          typeCounts={typeCounts}
           onPlayPause={togglePlay}
           onSeek={handleSeek}
           onVolumeChange={handleVolumeChange}
@@ -363,6 +404,8 @@ export function UnifiedVideoPlayer({
           onFullscreen={handleFullscreen}
           onReturnToLive={seekToLive}
           onToggleDetectionOverlay={() => setShowDetectionOverlay((prev) => !prev)}
+          onToggleObjectType={handleToggleObjectType}
+          onToggleAllTypes={handleToggleAllTypes}
         />
       )}
 
