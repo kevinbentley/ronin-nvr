@@ -166,6 +166,15 @@ class Settings(BaseSettings):
     # This handles the case where someone enters frame, stands still, then moves again.
     nextgen_detection_active_seconds: float = 10.0
 
+    # VLLM Activity Characterization settings
+    vllm_enabled: bool = False  # Enable VLLM activity characterization
+    vllm_endpoint: str = "http://192.168.1.125:9001"  # VLLM server endpoint
+    vllm_timeout: int = 60  # Request timeout in seconds
+    vllm_frame_count: int = 4  # Number of frames to capture for analysis
+    vllm_frame_interval_ms: int = 1000  # Milliseconds between frames
+    vllm_poll_interval: float = 5.0  # Seconds between polling for new detections
+    vllm_max_age_seconds: float = 300.0  # Max age of detection to process (5 minutes)
+
 
 @lru_cache
 def get_settings() -> Settings:
