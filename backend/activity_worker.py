@@ -62,7 +62,9 @@ class ActivityWorker:
             database_url: Optional database URL override
         """
         self.settings = settings
-        self.database_url = database_url or str(settings.database_url)
+        # Convert SQLAlchemy URL to plain PostgreSQL for asyncpg
+        raw_url = database_url or str(settings.database_url)
+        self.database_url = raw_url.replace("postgresql+asyncpg://", "postgresql://")
         self.storage_root = settings.storage_root
         self.worker_id = f"activity-{socket.gethostname()}-{id(self)}"
 
