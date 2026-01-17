@@ -22,6 +22,8 @@ export interface Camera {
   onvif_profile_token?: string;
   onvif_device_info?: ONVIFDeviceInfo;
   onvif_events_enabled?: boolean;
+  // VLLM Activity Characterization
+  scene_description?: string;
 }
 
 export interface CameraCreate {
@@ -52,6 +54,8 @@ export interface CameraUpdate {
   onvif_port?: number;
   onvif_enabled?: boolean;
   onvif_events_enabled?: boolean;
+  // VLLM Activity Characterization
+  scene_description?: string;
 }
 
 export interface CameraTestResult {
