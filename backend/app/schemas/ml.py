@@ -50,7 +50,7 @@ class DetectionResponse(UTCBaseModel):
     """Response for a detection."""
 
     id: int
-    recording_id: int
+    recording_id: Optional[int] = None  # Nullable for live detections
     camera_id: int
     class_name: str
     confidence: float
@@ -61,8 +61,9 @@ class DetectionResponse(UTCBaseModel):
     bbox_width: float
     bbox_height: float
     model_name: str
-    model_version: Optional[str]
+    model_version: Optional[str] = None
     created_at: datetime
+    detected_at: Optional[datetime] = None  # Actual detection time for live detections
 
 
 class DetectionListResponse(BaseModel):

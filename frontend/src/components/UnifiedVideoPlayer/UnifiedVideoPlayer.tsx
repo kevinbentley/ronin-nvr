@@ -1,6 +1,6 @@
 /**
  * Unified video player component supporting both live HLS streams and recorded playback.
- * Features: DVR/timeshift, playback speed control, detection overlay toggle, keyboard shortcuts.
+ * Features: DVR/timeshift, playback speed control, timeline with detection events, keyboard shortcuts.
  */
 
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
@@ -8,13 +8,10 @@ import type { UnifiedVideoPlayerProps, ThumbnailData } from './types';
 import { useHlsPlayer } from './hooks/useHlsPlayer';
 import { usePlaybackSpeed, applyPlaybackSpeed } from './hooks/usePlaybackSpeed';
 import { useTimelineEvents } from './hooks/useTimelineEvents';
-import { useDetectionOverlay } from './hooks/useDetectionOverlay';
 import { useThumbnails } from './hooks/useThumbnails';
 import { PlayerControls } from './PlayerControls';
 import { LiveIndicator } from './LiveIndicator';
 import { MiniTimeline } from './MiniTimeline';
-import { VideoCanvas } from './VideoCanvas';
-import type { Detection } from '../../types/camera';
 import './UnifiedVideoPlayer.css';
 
 const DVR_WINDOW_DURATION = 900; // 15 minutes in seconds
@@ -29,6 +26,7 @@ export function UnifiedVideoPlayer({
   recordingId,
   recordingIdString,
   recordingStartTime,
+  recordingDuration,
   showControls = true,
   showTimeline = true,
   initialSpeed = 1,
@@ -39,10 +37,7 @@ export function UnifiedVideoPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(true);
-  const [showDetectionOverlay, setShowDetectionOverlay] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
-  const [visibleObjectTypes, setVisibleObjectTypes] = useState<Set<string>>(new Set());
-  const [hasInitializedTypes, setHasInitializedTypes] = useState(false);
   const controlsTimeoutRef = useRef<number | null>(null);
 
   const {
@@ -76,57 +71,11 @@ export function UnifiedVideoPlayer({
     cameraId,
     cameraName,
     recordingStartTime,
+    recordingDuration,
     duration: isLive ? DVR_WINDOW_DURATION : duration,
     isLive,
     enabled: showTimeline,
   });
-
-  // Detection overlay
-  const { detections, typeCounts } = useDetectionOverlay({
-    recordingId,
-    cameraId,
-    currentTime,
-    duration,
-    isLive,
-    enabled: showDetectionOverlay && mode === 'playback',
-    visibleObjectTypes: hasInitializedTypes ? visibleObjectTypes : undefined,
-  });
-
-  // Initialize visible object types when we first get type counts
-  useEffect(() => {
-    if (!hasInitializedTypes && typeCounts.size > 0) {
-      setVisibleObjectTypes(new Set(typeCounts.keys()));
-      setHasInitializedTypes(true);
-    }
-  }, [typeCounts, hasInitializedTypes]);
-
-  // Reset initialization when recording changes
-  useEffect(() => {
-    setHasInitializedTypes(false);
-    setVisibleObjectTypes(new Set());
-  }, [recordingId]);
-
-  // Toggle a single object type visibility
-  const handleToggleObjectType = useCallback((className: string) => {
-    setVisibleObjectTypes((prev) => {
-      const next = new Set(prev);
-      if (next.has(className)) {
-        next.delete(className);
-      } else {
-        next.add(className);
-      }
-      return next;
-    });
-  }, []);
-
-  // Toggle all object types on or off
-  const handleToggleAllTypes = useCallback((visible: boolean) => {
-    if (visible) {
-      setVisibleObjectTypes(new Set(typeCounts.keys()));
-    } else {
-      setVisibleObjectTypes(new Set());
-    }
-  }, [typeCounts]);
 
   // Thumbnail preview (playback mode only)
   const { thumbnailData: rawThumbnailData, getThumbnailForTime } = useThumbnails({
@@ -232,10 +181,6 @@ export function UnifiedVideoPlayer({
           }
           showControlsTemporarily();
           break;
-        case 'd':
-          setShowDetectionOverlay((prev) => !prev);
-          showControlsTemporarily();
-          break;
         case 'arrowleft':
           handleSeek(Math.max(0, currentTime - 10));
           showControlsTemporarily();
@@ -332,13 +277,6 @@ export function UnifiedVideoPlayer({
               preload={mode === 'playback' ? 'metadata' : 'auto'}
             />
 
-            {/* Detection bounding box overlay */}
-            <VideoCanvas
-              videoRef={videoRef}
-              detections={detections as unknown as Detection[]}
-              visible={showDetectionOverlay}
-            />
-
             {/* Loading overlay */}
             {connectionState === 'connecting' && (
               <div className="video-overlay">
@@ -393,9 +331,6 @@ export function UnifiedVideoPlayer({
           isLive={isLive}
           isAtLiveEdge={isAtLiveEdge}
           timeBehindLive={timeBehindLive}
-          showDetectionOverlay={showDetectionOverlay}
-          visibleObjectTypes={visibleObjectTypes}
-          typeCounts={typeCounts}
           onPlayPause={togglePlay}
           onSeek={handleSeek}
           onVolumeChange={handleVolumeChange}
@@ -403,9 +338,6 @@ export function UnifiedVideoPlayer({
           onSpeedChange={setSpeed}
           onFullscreen={handleFullscreen}
           onReturnToLive={seekToLive}
-          onToggleDetectionOverlay={() => setShowDetectionOverlay((prev) => !prev)}
-          onToggleObjectType={handleToggleObjectType}
-          onToggleAllTypes={handleToggleAllTypes}
         />
       )}
 

@@ -5,7 +5,6 @@
 import { useCallback } from 'react';
 import type { PlayerControlsProps } from './types';
 import { PLAYBACK_SPEEDS } from './types';
-import { ObjectTypeFilter } from './ObjectTypeFilter';
 import './PlayerControls.css';
 
 export function PlayerControls({
@@ -18,9 +17,6 @@ export function PlayerControls({
   isLive,
   isAtLiveEdge,
   timeBehindLive,
-  showDetectionOverlay,
-  visibleObjectTypes,
-  typeCounts,
   onPlayPause,
   onSeek,
   onVolumeChange,
@@ -28,9 +24,6 @@ export function PlayerControls({
   onSpeedChange,
   onFullscreen,
   onReturnToLive,
-  onToggleDetectionOverlay,
-  onToggleObjectType,
-  onToggleAllTypes,
 }: PlayerControlsProps) {
   const formatTime = useCallback((seconds: number): string => {
     if (!isFinite(seconds) || isNaN(seconds)) return '0:00';
@@ -152,27 +145,6 @@ export function PlayerControls({
             ))}
           </select>
         ) : null}
-
-        {/* Detection overlay toggle */}
-        <button
-          className={`control-btn detection-btn ${showDetectionOverlay ? 'active' : ''}`}
-          onClick={onToggleDetectionOverlay}
-          title={showDetectionOverlay ? 'Hide detections (D)' : 'Show detections (D)'}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <rect x="7" y="7" width="10" height="10" rx="1" strokeDasharray="2 2" />
-          </svg>
-        </button>
-
-        {/* Object type filter (only visible when detection overlay is on) */}
-        <ObjectTypeFilter
-          visible={showDetectionOverlay}
-          visibleTypes={visibleObjectTypes}
-          typeCounts={typeCounts}
-          onToggleType={onToggleObjectType}
-          onToggleAll={onToggleAllTypes}
-        />
 
         {/* Volume controls */}
         <button

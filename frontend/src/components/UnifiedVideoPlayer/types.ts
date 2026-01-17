@@ -50,6 +50,8 @@ export interface UnifiedVideoPlayerProps {
   recordingIdString?: string;
   /** Recording start timestamp (for playback mode detection queries) */
   recordingStartTime?: Date;
+  /** Recording duration in seconds (for playback mode time-range queries) */
+  recordingDuration?: number;
   /** Whether to show controls */
   showControls?: boolean;
   /** Whether to show the mini-timeline */
@@ -74,10 +76,6 @@ export interface PlayerControlsProps {
   isLive: boolean;
   isAtLiveEdge: boolean;
   timeBehindLive: number;
-  showDetectionOverlay: boolean;
-  // Object type filter props
-  visibleObjectTypes: Set<string>;
-  typeCounts: Map<string, number>;
   onPlayPause: () => void;
   onSeek: (time: number) => void;
   onVolumeChange: (volume: number) => void;
@@ -85,17 +83,6 @@ export interface PlayerControlsProps {
   onSpeedChange: (speed: number) => void;
   onFullscreen: () => void;
   onReturnToLive: () => void;
-  onToggleDetectionOverlay: () => void;
-  onToggleObjectType: (className: string) => void;
-  onToggleAllTypes: (visible: boolean) => void;
-}
-
-export interface ObjectTypeFilterProps {
-  visible: boolean;
-  visibleTypes: Set<string>;
-  typeCounts: Map<string, number>;
-  onToggleType: (className: string) => void;
-  onToggleAll: (visible: boolean) => void;
 }
 
 export interface ThumbnailSprite {
@@ -120,12 +107,6 @@ export interface MiniTimelineProps {
   onSeek: (time: number) => void;
   onHover?: (time: number | null) => void;
   thumbnailData?: ThumbnailData | null;
-}
-
-export interface VideoCanvasProps {
-  videoRef: React.RefObject<HTMLVideoElement | null>;
-  detections: Detection[];
-  visible: boolean;
 }
 
 export interface LiveIndicatorProps {

@@ -247,18 +247,6 @@ export function PlaybackPage() {
     setSelectedRecording(recording);
   }, []);
 
-  const handleEventClick = useCallback((event: TimelineEvent) => {
-    // Find the recording that contains this event
-    const targetRecording = dayRecordings.find(
-      (rec) => rec.id === String(event.recording_id)
-    );
-
-    if (targetRecording) {
-      setSelectedRecording(targetRecording);
-      // Future: could also seek to the specific time within the recording
-    }
-  }, [dayRecordings]);
-
   const handleDownload = useCallback(() => {
     if (selectedRecording) {
       window.open(api.getRecordingDownloadUrl(selectedRecording.id), '_blank');
@@ -397,11 +385,12 @@ export function PlaybackPage() {
             <UnifiedVideoPlayer
               mode="playback"
               src={api.getRecordingStreamUrl(selectedRecording.id)}
-              cameraId={0}
+              cameraId={selectedRecording.camera_id ?? 0}
               cameraName={`${selectedCamera} - ${formatRecordingTime(selectedRecording.start_time)}`}
-              recordingId={Number(selectedRecording.id)}
+              recordingId={selectedRecording.recording_id}
               recordingIdString={selectedRecording.id}
               recordingStartTime={new Date(selectedRecording.start_time)}
+              recordingDuration={selectedRecording.duration_seconds ?? 900}
               showControls={true}
               showTimeline={true}
             />
@@ -419,7 +408,6 @@ export function PlaybackPage() {
               selectedRecording={selectedRecording}
               onSelectRecording={handleTimelineClick}
               events={filteredEvents}
-              onEventClick={handleEventClick}
             />
           )}
         </div>

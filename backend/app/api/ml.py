@@ -170,9 +170,9 @@ async def list_detections(
     if min_confidence > 0:
         query = query.where(Detection.confidence >= min_confidence)
     if start_time:
-        query = query.where(Detection.created_at >= start_time)
+        query = query.where(Detection.detected_at >= start_time)
     if end_time:
-        query = query.where(Detection.created_at <= end_time)
+        query = query.where(Detection.detected_at <= end_time)
 
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())

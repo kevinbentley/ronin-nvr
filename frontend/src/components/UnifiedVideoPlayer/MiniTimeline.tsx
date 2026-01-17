@@ -36,6 +36,12 @@ export function MiniTimeline({
   const eventMarkers = useMemo(() => {
     if (effectiveDuration <= 0) return [];
 
+    // Debug logging
+    if (events.length > 0) {
+      console.log('[MiniTimeline] Mapping', events.length, 'events, duration:', effectiveDuration);
+      console.log('[MiniTimeline] First event timestamp_ms:', events[0].timestamp_ms);
+    }
+
     return events.map((event, index) => {
       // For playback: timestamp_ms is ms from recording start
       // For live: timestamp_ms might need adjustment based on DVR window

@@ -24,38 +24,93 @@
 }
 
 .timeline-track {
-  height: 28px;
+  height: 32px;
   flex-shrink: 0;
   position: relative;
   background: #2a2a2a;
   border-radius: 4px;
   margin: 8px 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .recording-block {
   position: absolute;
   top: 4px;
   bottom: 4px;
-  background: #4caf50;
+  background: #555;
   border: none;
-  border-radius: 2px;
+  border-radius: 3px;
   cursor: pointer;
   transition: all 0.2s;
   min-width: 4px;
+  overflow: hidden;
 }
 
 .recording-block:hover {
-  background: #66bb6a;
-  transform: scaleY(1.1);
+  background: #666;
+  transform: scaleY(1.15);
+  z-index: 5;
 }
 
 .recording-block.selected {
   background: #1976d2;
   box-shadow: 0 0 0 2px #fff;
+  z-index: 10;
+}
+
+/* Recordings with activity get colored based on dominant event type */
+.recording-block.has-activity {
+  background: linear-gradient(
+    to bottom,
+    #555 0%,
+    #555 60%,
+    var(--activity-color, #ffc107) 60%,
+    var(--activity-color, #ffc107) 100%
+  );
+  box-shadow: 0 0 4px var(--activity-color, #ffc107);
+}
+
+.recording-block.has-activity:hover {
+  background: linear-gradient(
+    to bottom,
+    #666 0%,
+    #666 55%,
+    var(--activity-color, #ffc107) 55%,
+    var(--activity-color, #ffc107) 100%
+  );
+  box-shadow: 0 0 8px var(--activity-color, #ffc107);
+}
+
+.recording-block.has-activity.selected {
+  background: linear-gradient(
+    to bottom,
+    #1976d2 0%,
+    #1976d2 60%,
+    var(--activity-color, #ffc107) 60%,
+    var(--activity-color, #ffc107) 100%
+  );
+  box-shadow: 0 0 0 2px #fff, 0 0 8px var(--activity-color, #ffc107);
+}
+
+/* Activity dots for multiple event types */
+.activity-dots {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
   z-index: 1;
 }
 
+.activity-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* In-progress recordings */
 .recording-block.in-progress {
   background: linear-gradient(90deg, #ff9800 0%, #ffc107 100%);
   animation: pulse-recording 1.5s ease-in-out infinite;
@@ -65,6 +120,11 @@
   background: linear-gradient(90deg, #e65100 0%, #ff8f00 100%);
 }
 
+.recording-block.in-progress.has-activity {
+  /* In-progress always shows orange, activity indicator via dots only */
+  background: linear-gradient(90deg, #ff9800 0%, #ffc107 100%);
+}
+
 @keyframes pulse-recording {
   0%, 100% {
     opacity: 1;
@@ -72,46 +132,6 @@
   50% {
     opacity: 0.7;
   }
-}
-
-/* Events track for detection markers */
-.timeline-events-track {
-  height: 16px;
-  position: relative;
-  background: #1a1a1a;
-  border-radius: 4px;
-  margin-bottom: 8px;
-  overflow: visible;
-}
-
-.event-marker {
-  position: absolute;
-  width: 6px;
-  height: 12px;
-  top: 2px;
-  transform: translateX(-50%);
-  border: none;
-  border-radius: 2px;
-  cursor: pointer;
-  transition: all 0.15s;
-  opacity: 0.85;
-}
-
-.event-marker:hover {
-  opacity: 1;
-  transform: translateX(-50%) scale(1.3);
-  z-index: 10;
-  box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
-}
-
-/* ONVIF camera events have a distinct white border */
-.event-marker.onvif-event {
-  border: 2px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
-}
-
-.event-marker.onvif-event:hover {
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.7);
 }
 
 .timeline-hours {

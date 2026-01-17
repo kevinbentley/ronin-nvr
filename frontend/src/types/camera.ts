@@ -100,6 +100,8 @@ export interface RecordingFile {
   size_bytes: number;
   filename: string;
   is_in_progress?: boolean;  // True if recording is currently being written
+  recording_id?: number;  // Database recording ID for detection queries
+  camera_id?: number;  // Database camera ID for detection queries
 }
 
 export interface DayRecordings {
@@ -258,6 +260,7 @@ export interface Detection {
   model_name: string;
   model_version?: string;
   created_at: string;
+  detected_at?: string | null;  // Actual detection time (for live detections)
   snapshot_url?: string;
 }
 

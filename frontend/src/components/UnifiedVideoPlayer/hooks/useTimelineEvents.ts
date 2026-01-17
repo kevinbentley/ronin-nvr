@@ -1,5 +1,9 @@
 /**
  * Hook for fetching detection events for the timeline.
+ *
+ * Supports two query modes for playback:
+ * 1. By recording_id (historical detections with recording_id set)
+ * 2. By camera_id + time range (live detections correlated by timestamp)
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -11,6 +15,7 @@ interface UseTimelineEventsOptions {
   cameraId?: number;
   cameraName?: string;
   recordingStartTime?: Date;
+  recordingDuration?: number;
   duration: number;
   isLive: boolean;
   enabled?: boolean;
@@ -31,7 +36,8 @@ export function useTimelineEvents({
   recordingId,
   cameraId,
   cameraName,
-  recordingStartTime: _recordingStartTime, // Reserved for future use
+  recordingStartTime,
+  recordingDuration,
   duration,
   isLive,
   enabled = true,
@@ -53,7 +59,11 @@ export function useTimelineEvents({
     // Generate cache key
     const cacheKey = isLive
       ? `live-${cameraId}`
-      : `recording-${recordingId}`;
+      : recordingId
+        ? `recording-${recordingId}`
+        : recordingStartTime
+          ? `timerange-${cameraId}-${recordingStartTime.toISOString()}`
+          : 'invalid';
 
     // Check cache
     const cached = eventsCache.get(cacheKey);
@@ -89,26 +99,45 @@ export function useTimelineEvents({
           const eventDateMs = new Date(dateStr).getTime() + event.timestamp_ms;
           return eventDateMs >= cutoffMs;
         });
-      } else if (recordingId) {
-        // For playback: fetch events for the specific recording
+      } else if (cameraId && recordingStartTime) {
+        // For playback: prefer time-range query since live detections use detected_at
+        // (recording_id is often null for live detections)
+        const startTime = recordingStartTime.toISOString();
+        const durationSec = recordingDuration ?? 900; // Default 15 min
+        const endTime = new Date(
+          recordingStartTime.getTime() + durationSec * 1000
+        ).toISOString();
+
         const response = await api.getDetections({
-          recording_id: recordingId,
+          camera_id: cameraId,
+          start_time: startTime,
+          end_time: endTime,
           limit: 500,
         });
 
-        // Convert detection response to timeline events
+        // Convert to timeline events with relative timestamps
+        const recordingStartMs = recordingStartTime.getTime();
         fetchedEvents = (response.detections || []).map((d: {
           timestamp_ms: number;
           class_name: string;
           confidence: number;
           recording_id: number | null;
-        }) => ({
-          timestamp_ms: d.timestamp_ms,
-          class_name: d.class_name,
-          confidence: d.confidence,
-          recording_id: d.recording_id ?? recordingId ?? 0,
-          count: 1,
-        }));
+          detected_at?: string | null;
+        }) => {
+          // Calculate timestamp_ms relative to recording start
+          const detectedAtMs = d.detected_at
+            ? new Date(d.detected_at).getTime()
+            : recordingStartMs;
+          const relativeMs = Math.max(0, detectedAtMs - recordingStartMs);
+
+          return {
+            timestamp_ms: relativeMs,
+            class_name: d.class_name,
+            confidence: d.confidence,
+            recording_id: d.recording_id ?? 0,
+            count: 1,
+          };
+        });
       }
 
       // Update cache
@@ -116,6 +145,12 @@ export function useTimelineEvents({
         events: fetchedEvents,
         timestamp: Date.now(),
       });
+
+      // Debug logging
+      console.log('[Timeline Events] Fetched', fetchedEvents.length, 'events for', cacheKey);
+      if (fetchedEvents.length > 0) {
+        console.log('[Timeline Events] First event:', fetchedEvents[0]);
+      }
 
       setEvents(fetchedEvents);
     } catch (err: unknown) {
@@ -127,7 +162,7 @@ export function useTimelineEvents({
     } finally {
       setIsLoading(false);
     }
-  }, [enabled, isLive, cameraId, cameraName, recordingId, duration]);
+  }, [enabled, isLive, cameraId, cameraName, recordingId, recordingStartTime, recordingDuration, duration]);
 
   // Fetch on mount and when dependencies change
   useEffect(() => {
@@ -152,10 +187,14 @@ export function useTimelineEvents({
     // Clear cache for this item
     const cacheKey = isLive
       ? `live-${cameraId}`
-      : `recording-${recordingId}`;
+      : recordingId
+        ? `recording-${recordingId}`
+        : recordingStartTime
+          ? `timerange-${cameraId}-${recordingStartTime.toISOString()}`
+          : 'invalid';
     eventsCache.delete(cacheKey);
     fetchEvents();
-  }, [isLive, cameraId, recordingId, fetchEvents]);
+  }, [isLive, cameraId, recordingId, recordingStartTime, fetchEvents]);
 
   return {
     events,

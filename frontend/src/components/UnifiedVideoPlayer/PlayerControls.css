@@ -218,16 +218,6 @@
   color: #fff;
 }
 
-/* Detection button */
-.detection-btn svg rect {
-  transition: stroke-opacity 0.15s ease;
-}
-
-.detection-btn.active svg rect:last-child {
-  stroke: var(--accent-color);
-  stroke-dasharray: none;
-}
-
 /* Responsive adjustments */
 @media (max-width: 600px) {
   .player-controls {

@@ -1,6 +1,8 @@
 """Playback API endpoints for viewing recorded videos."""
 
+from dataclasses import dataclass
 from datetime import date, datetime
+from pathlib import Path
 from typing import Optional, Union
 
 import aiofiles
@@ -15,13 +17,46 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import get_db
 from app.dependencies import get_current_user
+from app.models.recording import Recording
 from app.models.user import User
 from app.rate_limiter import limiter
-from app.services.playback import playback_service
+from app.services.playback import playback_service, RecordingFile
 
 router = APIRouter(prefix="/playback", tags=["playback"])
+
+
+@dataclass
+class RecordingDbInfo:
+    """Database info for a recording."""
+
+    recording_id: int
+    camera_id: int
+
+
+async def get_recording_info_by_paths(
+    db: AsyncSession, file_paths: list[Path]
+) -> dict[str, RecordingDbInfo]:
+    """Look up database recording info by file paths.
+
+    Returns a dict mapping file path string to RecordingDbInfo.
+    """
+    if not file_paths:
+        return {}
+
+    path_strings = [str(p) for p in file_paths]
+    query = select(Recording.id, Recording.camera_id, Recording.file_path).where(
+        Recording.file_path.in_(path_strings)
+    )
+    result = await db.execute(query)
+    return {
+        row.file_path: RecordingDbInfo(recording_id=row.id, camera_id=row.camera_id)
+        for row in result
+    }
 
 
 class RecordingFileResponse(BaseModel):
@@ -35,6 +70,8 @@ class RecordingFileResponse(BaseModel):
     size_bytes: int
     filename: str
     is_in_progress: bool = False  # True if recording is currently being written
+    recording_id: Optional[int] = None  # Database recording ID for detection queries
+    camera_id: Optional[int] = None  # Database camera ID for detection queries
 
 
 class DayRecordingsResponse(BaseModel):
@@ -104,6 +141,7 @@ async def get_available_dates(
 async def get_day_recordings(
     camera_name: str,
     date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DayRecordingsResponse:
     """Get all recordings for a camera on a specific date."""
@@ -123,19 +161,37 @@ async def get_day_recordings(
             detail=f"No recordings found for {camera_name} on {date}",
         )
 
-    files = [
-        RecordingFileResponse(
-            id=f.id,
-            camera_name=f.camera_name,
-            date=f.date.isoformat(),
-            start_time=f.start_time.isoformat(),
-            duration_seconds=f.duration_seconds,
-            size_bytes=f.size,
-            filename=f.filename,
-            is_in_progress=f.is_in_progress,
+    # Look up database recording info for detection queries
+    recording_info = await get_recording_info_by_paths(
+        db, [f.path for f in day_recs.files]
+    )
+
+    # Debug: log path matching
+    import logging
+    logger = logging.getLogger(__name__)
+    if day_recs.files:
+        sample_path = str(day_recs.files[0].path)
+        logger.warning(f"[PATH DEBUG] File path from playback: {sample_path}")
+        logger.warning(f"[PATH DEBUG] DB paths (first 3): {list(recording_info.keys())[:3]}")
+        logger.warning(f"[PATH DEBUG] Match found: {sample_path in recording_info}")
+
+    files = []
+    for f in day_recs.files:
+        info = recording_info.get(str(f.path))
+        files.append(
+            RecordingFileResponse(
+                id=f.id,
+                camera_name=f.camera_name,
+                date=f.date.isoformat(),
+                start_time=f.start_time.isoformat(),
+                duration_seconds=f.duration_seconds,
+                size_bytes=f.size,
+                filename=f.filename,
+                is_in_progress=f.is_in_progress,
+                recording_id=info.recording_id if info else None,
+                camera_id=info.camera_id if info else None,
+            )
         )
-        for f in day_recs.files
-    ]
 
     return DayRecordingsResponse(
         camera_name=day_recs.camera_name,
@@ -155,6 +211,7 @@ async def list_recordings(
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """List recordings with optional filters."""
@@ -188,21 +245,30 @@ async def list_recordings(
 
     # Apply pagination
     total = len(recordings)
-    recordings = recordings[offset:offset + limit]
+    paginated = recordings[offset:offset + limit]
 
-    files = [
-        RecordingFileResponse(
-            id=f.id,
-            camera_name=f.camera_name,
-            date=f.date.isoformat(),
-            start_time=f.start_time.isoformat(),
-            duration_seconds=f.duration_seconds,
-            size_bytes=f.size,
-            filename=f.filename,
-            is_in_progress=f.is_in_progress,
+    # Look up database recording info for detection queries
+    recording_info = await get_recording_info_by_paths(
+        db, [f.path for f in paginated]
+    )
+
+    files = []
+    for f in paginated:
+        info = recording_info.get(str(f.path))
+        files.append(
+            RecordingFileResponse(
+                id=f.id,
+                camera_name=f.camera_name,
+                date=f.date.isoformat(),
+                start_time=f.start_time.isoformat(),
+                duration_seconds=f.duration_seconds,
+                size_bytes=f.size,
+                filename=f.filename,
+                is_in_progress=f.is_in_progress,
+                recording_id=info.recording_id if info else None,
+                camera_id=info.camera_id if info else None,
+            )
         )
-        for f in recordings
-    ]
 
     return {
         "recordings": files,
