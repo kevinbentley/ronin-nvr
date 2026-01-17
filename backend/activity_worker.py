@@ -405,11 +405,14 @@ class ActivityWorker:
         }
 
         async with self._pool.acquire() as conn:
+            # extra_data is JSON type, use jsonb_concat for merging
             await conn.execute(
                 """
                 UPDATE detections
                 SET llm_description = $2,
-                    extra_data = COALESCE(extra_data, '{}'::jsonb) || $3::jsonb
+                    extra_data = (
+                        COALESCE(extra_data::jsonb, '{}'::jsonb) || $3::jsonb
+                    )::json
                 WHERE id = $1
                 """,
                 detection_id,
