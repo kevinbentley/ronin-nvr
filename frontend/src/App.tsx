@@ -83,7 +83,8 @@ function AppContent() {
   if (authLoading) {
     return (
       <div className="app loading">
-        <div className="loading-spinner">Loading...</div>
+        <div className="loading-spinner" />
+        <div className="loading-text">Loading...</div>
       </div>
     );
   }
@@ -96,7 +97,8 @@ function AppContent() {
   if (loading && currentPage === 'live') {
     return (
       <div className="app loading">
-        <div className="loading-spinner">Loading...</div>
+        <div className="loading-spinner" />
+        <div className="loading-text">Loading...</div>
       </div>
     );
   }

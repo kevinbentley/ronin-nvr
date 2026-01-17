@@ -141,9 +141,9 @@ export function MLStatusPage() {
           <div className="events-header">
             <h3>Activity Log ({eventsTotal} total)</h3>
             {eventsTotal > EVENTS_PER_PAGE && (
-              <div className="pagination-controls">
+              <div className="pagination-controls2">
                 <button
-                  className="pagination-button"
+                  className="pagination-button2"
                   onClick={() => setEventsPage((p) => Math.max(0, p - 1))}
                   disabled={eventsPage === 0}
                 >
@@ -153,7 +153,7 @@ export function MLStatusPage() {
                   Page {eventsPage + 1} of {Math.ceil(eventsTotal / EVENTS_PER_PAGE)}
                 </span>
                 <button
-                  className="pagination-button"
+                  className="pagination-button2"
                   onClick={() =>
                     setEventsPage((p) =>
                       Math.min(Math.ceil(eventsTotal / EVENTS_PER_PAGE) - 1, p + 1)

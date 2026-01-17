@@ -9,9 +9,31 @@
 
 .ml-status-page.loading {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 16px;
   height: 400px;
+}
+
+.ml-status-page .loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.ml-status-page .loading-text {
+  color: #888;
+  font-size: 14px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .ml-status-header {
@@ -957,6 +979,46 @@
   flex-shrink: 0;
 }
 
+/* Activity Log pagination - must override global .pagination-button 36px width */
+.events-card .pagination-controls2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+events-card .pagination-button2 {
+  width: auto;
+  height: auto;
+  padding: 4px 10px;
+  background: #3a3a3a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #aaa;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.events-card .pagination-button:hover:not(:disabled) {
+  background: #444;
+  color: #fff;
+}
+
+.events-card .pagination-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.events-card .pagination-info {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* Object Events Panel */
 .events-card {
   display: flex;
@@ -1071,3 +1133,4 @@
 .event-duration {
   color: #666;
 }
+
