@@ -14,6 +14,7 @@ import logging
 import os
 import shutil
 import signal
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -33,6 +34,11 @@ logger = logging.getLogger("stream-manager")
 STORAGE_ROOT = Path(os.environ.get("STORAGE_ROOT", "/data/storage"))
 STREAM_MANAGER_PORT = int(os.environ.get("STREAM_MANAGER_PORT", "8001"))
 SEGMENT_DURATION_MINUTES = int(os.environ.get("SEGMENT_DURATION_MINUTES", "15"))
+
+# Watchdog settings - detect and restart stuck streams
+WATCHDOG_CHECK_INTERVAL = int(os.environ.get("WATCHDOG_CHECK_INTERVAL", "15"))
+WATCHDOG_STALE_THRESHOLD = int(os.environ.get("WATCHDOG_STALE_THRESHOLD", "30"))
+WATCHDOG_GRACE_PERIOD = int(os.environ.get("WATCHDOG_GRACE_PERIOD", "30"))
 
 
 class CameraConfig(BaseModel):
@@ -108,6 +114,32 @@ class CameraStream:
             return False
         current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         return current_date != self._recording_date
+
+    def is_stale(self) -> bool:
+        """Check if stream is stuck (running but not producing output).
+
+        Returns True if the playlist file hasn't been updated within the
+        stale threshold, indicating FFmpeg may be alive but not receiving data.
+        """
+        if self._state != "running":
+            return False
+
+        # Grace period after start - don't check streams that just started
+        if self._start_time:
+            age = (datetime.now(timezone.utc) - self._start_time).total_seconds()
+            if age < WATCHDOG_GRACE_PERIOD:
+                return False
+
+        # Check if playlist exists and when it was last modified
+        if not self.playlist_path.exists():
+            return True  # No playlist means definitely stale
+
+        try:
+            mtime = self.playlist_path.stat().st_mtime
+            age = time.time() - mtime
+            return age > WATCHDOG_STALE_THRESHOLD
+        except OSError:
+            return True  # Can't stat file, assume stale
 
     def _build_command(self) -> list[str]:
         ffmpeg = shutil.which("ffmpeg")
@@ -303,6 +335,7 @@ class StreamManager:
         self._locks: dict[int, asyncio.Lock] = {}
         self._global_lock = asyncio.Lock()
         self._date_rollover_task: Optional[asyncio.Task] = None
+        self._watchdog_task: Optional[asyncio.Task] = None
 
     async def start_date_rollover_monitor(self) -> None:
         """Start the background task that monitors for date changes."""
@@ -355,6 +388,55 @@ class StreamManager:
                 logger.info(f"Stream '{config.name}' restarted for new date")
             except Exception as e:
                 logger.error(f"Failed to restart stream {camera_id} for date rollover: {e}")
+
+    async def start_watchdog(self) -> None:
+        """Start the background task that detects stuck streams."""
+        if self._watchdog_task is None:
+            self._watchdog_task = asyncio.create_task(self._watchdog_loop())
+            logger.info("Stream watchdog started")
+
+    async def stop_watchdog(self) -> None:
+        """Stop the watchdog task."""
+        if self._watchdog_task:
+            self._watchdog_task.cancel()
+            try:
+                await self._watchdog_task
+            except asyncio.CancelledError:
+                pass
+            self._watchdog_task = None
+
+    async def _watchdog_loop(self) -> None:
+        """Periodically check for stuck streams and restart them."""
+        while True:
+            try:
+                await asyncio.sleep(WATCHDOG_CHECK_INTERVAL)
+                await self._check_stale_streams()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.exception(f"Error in watchdog check: {e}")
+                await asyncio.sleep(60)
+
+    async def _check_stale_streams(self) -> None:
+        """Check all streams and restart any that are stuck."""
+        stale_streams = []
+
+        for camera_id, stream in self._streams.items():
+            if stream.is_stale():
+                stale_streams.append((camera_id, stream))
+
+        for camera_id, stream in stale_streams:
+            try:
+                config = stream.config
+                logger.warning(
+                    f"Watchdog: stream '{config.name}' appears stuck, restarting"
+                )
+                await stream.stop()
+                await asyncio.sleep(1)
+                await stream.start()
+                logger.info(f"Watchdog: stream '{config.name}' restarted successfully")
+            except Exception as e:
+                logger.error(f"Watchdog: failed to restart stream {camera_id}: {e}")
 
     def _get_lock(self, camera_id: int) -> asyncio.Lock:
         """Get or create a lock for a camera (thread-safe)."""
@@ -443,11 +525,14 @@ async def list_streams():
 async def startup():
     logger.info("Starting date rollover monitor")
     await manager.start_date_rollover_monitor()
+    logger.info("Starting stream watchdog")
+    await manager.start_watchdog()
 
 
 @app.on_event("shutdown")
 async def shutdown():
     logger.info("Shutting down stream manager")
+    await manager.stop_watchdog()
     await manager.stop_date_rollover_monitor()
     await manager.stop_all()
 
