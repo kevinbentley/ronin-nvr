@@ -7,37 +7,37 @@
   height: 100%;
 }
 
-.video-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  background: #2a2a2a;
-}
-
-.camera-name {
-  font-weight: 500;
-  color: #fff;
-  font-size: 14px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.status-indicators {
+.video-info-overlay {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
   display: flex;
   align-items: center;
   gap: 8px;
+  pointer-events: none;
+  z-index: 5;
 }
 
-.recording-indicator {
+.recording-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
   background: #e53935;
-  color: #fff;
-  font-size: 10px;
-  font-weight: bold;
-  padding: 2px 6px;
-  border-radius: 4px;
+  box-shadow: 0 0 6px #e53935;
   animation: pulse 1.5s infinite;
+  flex-shrink: 0;
+}
+
+.camera-name-overlay {
+  font-weight: 500;
+  color: #fff;
+  font-size: 13px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 8px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
 
 @keyframes pulse {
@@ -49,6 +49,7 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .status-online {

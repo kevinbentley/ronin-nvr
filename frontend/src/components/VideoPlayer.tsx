@@ -245,14 +245,6 @@ export function VideoPlayer({
 
   return (
     <div className="video-player">
-      <div className="video-header">
-        <span className="camera-name">{cameraName}</span>
-        <div className="status-indicators">
-          {isRecording && <span className="recording-indicator">REC</span>}
-          <span className={`status-dot ${getStatusClass()}`} />
-        </div>
-      </div>
-
       <div className="video-container">
         {status === 'online' ? (
           <>
@@ -262,6 +254,11 @@ export function VideoPlayer({
               playsInline
               className="video-element"
             />
+            <div className="video-info-overlay">
+              {isRecording && <span className="recording-dot" />}
+              <span className="camera-name-overlay">{cameraName}</span>
+              <span className={`status-dot ${getStatusClass()}`} />
+            </div>
             {connectionState === 'connecting' && (
               <div className="video-overlay">
                 <span className="loading-text">Connecting...</span>
@@ -280,11 +277,18 @@ export function VideoPlayer({
             )}
           </>
         ) : (
-          <div className="video-placeholder">
-            <span className="placeholder-text">
-              {status === 'offline' ? 'Camera Offline' : 'Connecting...'}
-            </span>
-          </div>
+          <>
+            <div className="video-placeholder">
+              <span className="placeholder-text">
+                {status === 'offline' ? 'Camera Offline' : 'Connecting...'}
+              </span>
+            </div>
+            <div className="video-info-overlay">
+              {isRecording && <span className="recording-dot" />}
+              <span className="camera-name-overlay">{cameraName}</span>
+              <span className={`status-dot ${getStatusClass()}`} />
+            </div>
+          </>
         )}
       </div>
     </div>
