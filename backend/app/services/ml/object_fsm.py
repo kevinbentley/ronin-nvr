@@ -116,6 +116,9 @@ class ObjectLifecycle:
     # Used to generate delayed arrivals for objects that were briefly stationary
     arrival_notified: bool = False
 
+    # Whether we've already notified loitering for this object in this stationary period
+    loitering_notified: bool = False
+
     @property
     def age_seconds(self) -> float:
         """Time since first detection."""
@@ -344,10 +347,14 @@ class ObjectStateMachine:
             elif old_state == ObjectState.TENTATIVE and new_state == ObjectState.PARKED:
                 # Object never moved - skip ARRIVAL for now, treat as pre-existing
                 # If it starts moving soon, we'll send a delayed arrival
+                # Also skip STATE_CHANGE event - this transition is not meaningful
+                # and often caused by false positive detections
                 logger.debug(
                     f"Deferring ARRIVAL for {lifecycle.class_name} (track {lifecycle.track_id}) "
                     f"- not moving yet, may be pre-existing parked object"
                 )
+                # Return early - don't emit state_change for tentative→parked
+                return events
             elif old_state == ObjectState.PARKED and new_state == ObjectState.ACTIVE:
                 # Object was parked and started moving
                 # Check if we should send a delayed arrival
@@ -392,27 +399,26 @@ class ObjectStateMachine:
                 duration_seconds=duration,
             ))
 
-        # Check for loitering
+        # Check for loitering - only emit once per stationary period
         if (lifecycle.state == ObjectState.STATIONARY and
-                lifecycle.time_in_state > self.loitering_seconds):
-            # Only send once per loitering period
-            loiter_periods = int(lifecycle.time_in_state / self.loitering_seconds)
-            if loiter_periods == 1:
-                events.append(ObjectEvent(
-                    event_type=EventType.LOITERING,
-                    track_id=lifecycle.track_id,
-                    class_name=lifecycle.class_name,
-                    class_id=lifecycle.class_id,
-                    timestamp=current_time,
-                    new_state=lifecycle.state,
-                    bbox=lifecycle.bbox,
-                    confidence=lifecycle.confidence,
-                    duration_seconds=lifecycle.time_in_state,
-                ))
-                logger.info(
-                    f"LOITERING: {lifecycle.class_name} (track {lifecycle.track_id}) "
-                    f"stationary for {lifecycle.time_in_state:.1f}s"
-                )
+                lifecycle.time_in_state > self.loitering_seconds and
+                not lifecycle.loitering_notified):
+            events.append(ObjectEvent(
+                event_type=EventType.LOITERING,
+                track_id=lifecycle.track_id,
+                class_name=lifecycle.class_name,
+                class_id=lifecycle.class_id,
+                timestamp=current_time,
+                new_state=lifecycle.state,
+                bbox=lifecycle.bbox,
+                confidence=lifecycle.confidence,
+                duration_seconds=lifecycle.time_in_state,
+            ))
+            lifecycle.loitering_notified = True
+            logger.info(
+                f"LOITERING: {lifecycle.class_name} (track {lifecycle.track_id}) "
+                f"stationary for {lifecycle.time_in_state:.1f}s"
+            )
 
         return events
 
@@ -445,6 +451,8 @@ class ObjectStateMachine:
 
         elif current == ObjectState.STATIONARY:
             if is_moving:
+                # Reset loitering flag when object starts moving again
+                lifecycle.loitering_notified = False
                 return ObjectState.ACTIVE
             if lifecycle.time_in_state >= self.parked_seconds:
                 return ObjectState.PARKED

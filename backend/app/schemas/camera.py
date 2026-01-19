@@ -29,6 +29,14 @@ class CameraBase(BaseModel):
         default=False, description="Subscribe to camera events"
     )
 
+    # VLLM Activity Characterization
+    scene_description: Optional[str] = Field(
+        default=None,
+        max_length=2000,
+        description="Baseline description of camera view for VLLM analysis "
+        "(e.g., 'White house with driveway, black trashcan on left, planter on porch')",
+    )
+
     @field_validator("transport")
     @classmethod
     def validate_transport(cls, v: str) -> str:
@@ -70,6 +78,9 @@ class CameraUpdate(BaseModel):
     onvif_enabled: Optional[bool] = Field(default=None)
     onvif_events_enabled: Optional[bool] = Field(default=None)
 
+    # VLLM Activity Characterization
+    scene_description: Optional[str] = Field(default=None, max_length=2000)
+
     @field_validator("transport")
     @classmethod
     def validate_transport(cls, v: Optional[str]) -> Optional[str]:
@@ -110,6 +121,9 @@ class CameraResponse(UTCBaseModel, CameraBase):
     onvif_device_info: Optional[dict] = Field(
         default=None, description="Cached device information"
     )
+
+    # VLLM Activity Characterization (inherited from CameraBase, explicitly listed for clarity)
+    scene_description: Optional[str] = None
 
     @property
     def rtsp_url(self) -> str:

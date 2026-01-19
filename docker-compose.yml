@@ -4,11 +4,13 @@
 #   docker compose up -d                    # Start all services (live detection only)
 #   docker compose --profile historical up -d  # Include historical ML processing
 #   docker compose logs -f backend          # View backend logs
+#   docker compose logs -f activity-worker  # View VLLM activity analysis logs
 #   docker compose down                     # Stop all services
 #
 # ML Processing Modes:
 #   - live-detection: Real-time alerts from live streams (default, ~2-5s latency)
 #   - ml-worker: Historical analysis of completed recordings (use --profile historical)
+#   - activity-worker: VLLM-based activity characterization (classifies concern levels)
 #   - Both can run together if you want real-time alerts AND deeper historical analysis
 #
 # GPU Support:
@@ -210,6 +212,43 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  # Activity Characterization Worker (VLLM-based analysis)
+  # Analyzes detections using Vision LLM to classify activity concern levels
+  activity-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: ronin-activity-worker
+    restart: unless-stopped
+    user: "1000:1000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ronin_nvr_user}:${POSTGRES_PASSWORD:-ronin_pass}@postgres:5432/${POSTGRES_DB:-ronin_nvr}
+      STORAGE_ROOT: /data/storage
+      TZ: ${TZ:-America/Denver}
+      # VLLM settings
+      VLLM_ENABLED: ${VLLM_ENABLED:-true}
+      VLLM_ENDPOINT: ${VLLM_ENDPOINT:-http://192.168.1.125:9001}
+      VLLM_TIMEOUT: ${VLLM_TIMEOUT:-60}
+      VLLM_FRAME_COUNT: ${VLLM_FRAME_COUNT:-4}
+      VLLM_FRAME_INTERVAL_MS: ${VLLM_FRAME_INTERVAL_MS:-1000}
+      VLLM_POLL_INTERVAL: ${VLLM_POLL_INTERVAL:-5.0}
+      VLLM_MAX_AGE_SECONDS: ${VLLM_MAX_AGE_SECONDS:-300}
+      VLLM_SAVE_MOSAICS: ${VLLM_SAVE_MOSAICS:-true}
+    volumes:
+      - ${STORAGE_PATH:-./data/storage}:/data/storage
+    command: ["python", "activity_worker.py"]
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
 
   # ONVIF Event Worker (receives camera motion events)
   onvif-events:

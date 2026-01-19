@@ -10,6 +10,7 @@ import { CameraSidebar } from './components/CameraSidebar';
 import { PlaybackPage } from './pages/PlaybackPage';
 import { StatusPage } from './pages/StatusPage';
 import { MLStatusPage } from './pages/MLStatusPage';
+import { DeepAnalysisPage } from './pages/DeepAnalysisPage';
 import { SetupPage } from './pages/SetupPage';
 import { LoginPage } from './pages/LoginPage';
 import { useCameras } from './hooks/useCameras';
@@ -144,6 +145,14 @@ function AppContent() {
         );
       case 'ml':
         return <MLStatusPage />;
+      case 'analysis':
+        return (
+          <DeepAnalysisPage
+            cameras={cameras}
+            recordingStatus={recordingStatus}
+            onCameraUpdated={refresh}
+          />
+        );
       case 'setup':
         return (
           <SetupPage

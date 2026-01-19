@@ -54,6 +54,10 @@ class Camera(Base):
     # Recording settings
     recording_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Scene description for VLLM activity characterization
+    # e.g., "White house with driveway, black trashcan on left, planter on porch"
+    scene_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     # ONVIF protocol settings
     onvif_port: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     onvif_enabled: Mapped[bool] = mapped_column(Boolean, default=False)

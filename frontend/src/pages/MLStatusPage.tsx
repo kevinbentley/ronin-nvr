@@ -340,7 +340,23 @@ export function MLStatusPage() {
                   <span className="snapshot-label">Time</span>
                   <span className="snapshot-value">{formatDetectionTime(selectedDetection.detected_at)}</span>
                 </div>
+                {selectedDetection.concern_level && (
+                  <div className="snapshot-detail">
+                    <span className="snapshot-label">Concern</span>
+                    <span className={`snapshot-value concern-level concern-${selectedDetection.concern_level}`}>
+                      {selectedDetection.concern_level.toUpperCase()}
+                    </span>
+                  </div>
+                )}
               </div>
+              {selectedDetection.llm_description && (
+                <div className="llm-analysis">
+                  <div className="llm-description">{selectedDetection.llm_description}</div>
+                  {selectedDetection.activity_type && (
+                    <div className="llm-activity-type">Activity: {selectedDetection.activity_type}</div>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <p className="no-data">Select a detection to view snapshot</p>
