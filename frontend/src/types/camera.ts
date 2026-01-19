@@ -303,6 +303,10 @@ export interface LiveDetection {
     width: number;
     height: number;
   };
+  // VLLM activity characterization
+  llm_description: string | null;
+  concern_level: 'none' | 'low' | 'medium' | 'high' | 'emergency' | null;
+  activity_type: string | null;
 }
 
 export interface LiveDetectionsResponse {

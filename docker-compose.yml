@@ -239,6 +239,7 @@ services:
       VLLM_FRAME_INTERVAL_MS: ${VLLM_FRAME_INTERVAL_MS:-1000}
       VLLM_POLL_INTERVAL: ${VLLM_POLL_INTERVAL:-5.0}
       VLLM_MAX_AGE_SECONDS: ${VLLM_MAX_AGE_SECONDS:-300}
+      VLLM_SAVE_MOSAICS: ${VLLM_SAVE_MOSAICS:-true}
     volumes:
       - ${STORAGE_PATH:-./data/storage}:/data/storage
     command: ["python", "activity_worker.py"]

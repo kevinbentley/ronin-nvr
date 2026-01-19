@@ -977,27 +977,40 @@ async def get_live_detections(
     result = await db.execute(query)
     detections = result.scalars().all()
 
+    def build_detection_response(d: Detection) -> dict:
+        """Build detection response with LLM analysis if available."""
+        response = {
+            "id": d.id,
+            "camera_id": d.camera_id,
+            "camera_name": d.camera.name if d.camera else f"Camera {d.camera_id}",
+            "class_name": d.class_name,
+            "confidence": d.confidence,
+            "detected_at": d.detected_at.isoformat() if d.detected_at else None,
+            "snapshot_url": f"/api/ml/snapshots/{d.snapshot_path.removeprefix('.snapshots/')}"
+            if d.snapshot_path
+            else None,
+            "bbox": {
+                "x": d.bbox_x,
+                "y": d.bbox_y,
+                "width": d.bbox_width,
+                "height": d.bbox_height,
+            },
+            "llm_description": d.llm_description,
+        }
+
+        # Extract VLLM analysis from extra_data if present
+        if d.extra_data and "vllm_analysis" in d.extra_data:
+            analysis = d.extra_data["vllm_analysis"]
+            response["concern_level"] = analysis.get("concern_level")
+            response["activity_type"] = analysis.get("activity_type")
+        else:
+            response["concern_level"] = None
+            response["activity_type"] = None
+
+        return response
+
     return {
-        "detections": [
-            {
-                "id": d.id,
-                "camera_id": d.camera_id,
-                "camera_name": d.camera.name if d.camera else f"Camera {d.camera_id}",
-                "class_name": d.class_name,
-                "confidence": d.confidence,
-                "detected_at": d.detected_at.isoformat() if d.detected_at else None,
-                "snapshot_url": f"/api/ml/snapshots/{d.snapshot_path.removeprefix('.snapshots/')}"
-                if d.snapshot_path
-                else None,
-                "bbox": {
-                    "x": d.bbox_x,
-                    "y": d.bbox_y,
-                    "width": d.bbox_width,
-                    "height": d.bbox_height,
-                },
-            }
-            for d in detections
-        ],
+        "detections": [build_detection_response(d) for d in detections],
         "count": len(detections),
         "total": total,
         "offset": offset,

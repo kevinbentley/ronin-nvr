@@ -174,6 +174,7 @@ class Settings(BaseSettings):
     vllm_frame_interval_ms: int = 1000  # Milliseconds between frames
     vllm_poll_interval: float = 5.0  # Seconds between polling for new detections
     vllm_max_age_seconds: float = 300.0  # Max age of detection to process (5 minutes)
+    vllm_save_mosaics: bool = True  # Save mosaic images for debugging
 
 
 @lru_cache

@@ -75,6 +75,7 @@ class ActivityWorker:
         self.frame_interval_ms = settings.vllm_frame_interval_ms
         self.poll_interval = settings.vllm_poll_interval
         self.max_age_seconds = settings.vllm_max_age_seconds
+        self.save_mosaics = settings.vllm_save_mosaics
 
         # Components (initialized on start)
         self._pool = None
@@ -224,6 +225,7 @@ class ActivityWorker:
         class_name = row["class_name"]
         recording_path = row["recording_path"]
         timestamp_ms = row["timestamp_ms"]
+        detected_at = row["detected_at"]
         scene_description = row["scene_description"]
 
         logger.info(
@@ -231,36 +233,47 @@ class ActivityWorker:
             f"camera={camera_name}, class={class_name}"
         )
 
-        # We need a recording to extract frames
-        if not recording_path:
-            logger.warning(
-                f"Detection {detection_id} has no recording, skipping VLLM analysis"
-            )
-            # Mark as processed with note
-            await self._update_detection(
-                detection_id,
-                "No recording available for frame extraction",
-                ConcernLevel.NONE,
-            )
-            return
+        frames = []
+        timestamps = []
 
-        video_path = Path(recording_path)
-        if not video_path.is_absolute():
-            video_path = self.storage_root / recording_path
+        if recording_path:
+            # Historical detection - extract from recording file
+            video_path = Path(recording_path)
+            if not video_path.is_absolute():
+                video_path = self.storage_root / recording_path
 
-        if not video_path.exists():
-            logger.error(f"Recording file not found: {video_path}")
-            await self._update_detection(
-                detection_id,
-                f"Recording file not found: {recording_path}",
-                ConcernLevel.NONE,
+            if not video_path.exists():
+                logger.error(f"Recording file not found: {video_path}")
+                await self._update_detection(
+                    detection_id,
+                    f"Recording file not found: {recording_path}",
+                    ConcernLevel.NONE,
+                )
+                return
+
+            # Extract frames around the detection time
+            frames, timestamps = await self._extract_frames_around(
+                video_path, timestamp_ms
             )
-            return
+        else:
+            # Live detection - extract from HLS segments
+            if not detected_at:
+                logger.warning(
+                    f"Detection {detection_id} has no recording or detected_at timestamp"
+                )
+                await self._update_detection(
+                    detection_id,
+                    "No recording or timestamp available",
+                    ConcernLevel.NONE,
+                )
+                return
 
-        # Extract frames around the detection time
-        frames, timestamps = await self._extract_frames_around(
-            video_path, timestamp_ms
-        )
+            logger.info(
+                f"Live detection {detection_id}: extracting frames from HLS segments"
+            )
+            frames, timestamps = await self._extract_frames_from_segments(
+                camera_id, detected_at
+            )
 
         if not frames:
             logger.error(f"Failed to extract frames for detection {detection_id}")
@@ -271,11 +284,25 @@ class ActivityWorker:
             )
             return
 
+        # Create mosaic for VLLM analysis
+        labels = add_frame_numbers(frames, timestamps)
+        mosaic = create_mosaic(
+            frames,
+            grid_size=(2, 2),
+            labels=labels,
+            target_size=(1280, 720),
+        )
+
+        # Save mosaic for debugging if enabled
+        if self.save_mosaics:
+            await self._save_mosaic(
+                mosaic, camera_id, detection_id, detected_at or datetime.now(timezone.utc)
+            )
+
         # Analyze with VLLM
         try:
-            analysis = await self._characterizer.analyze_frames(
-                frames=frames,
-                timestamps_ms=timestamps,
+            analysis = await self._characterizer.analyze_from_mosaic(
+                mosaic=mosaic,
                 scene_description=scene_description,
                 detected_class=class_name,
             )
@@ -306,6 +333,192 @@ class ActivityWorker:
         except Exception as e:
             logger.error(f"VLLM analysis failed for detection {detection_id}: {e}")
             raise
+
+    async def _extract_frames_from_segments(
+        self,
+        camera_id: int,
+        detected_at: datetime,
+    ) -> tuple[list[np.ndarray], list[float]]:
+        """Extract frames from HLS segments for live detections.
+
+        Finds segments by modification time and extracts frames from them.
+
+        Args:
+            camera_id: Camera ID
+            detected_at: Detection timestamp
+
+        Returns:
+            Tuple of (frames list, timestamps list in ms)
+        """
+        import subprocess
+
+        # Find the stream directory
+        stream_dir = self.storage_root / ".streams" / str(camera_id)
+        if not stream_dir.exists():
+            logger.error(f"Stream directory not found: {stream_dir}")
+            return [], []
+
+        # List all segment files with their modification times
+        segments = []
+        for segment_file in stream_dir.glob("segment*.ts"):
+            mtime = segment_file.stat().st_mtime
+            segments.append((segment_file, mtime))
+
+        if not segments:
+            logger.error(f"No segments found in {stream_dir}")
+            return [], []
+
+        # Sort by modification time (newest first)
+        segments.sort(key=lambda x: x[1], reverse=True)
+
+        # Convert detected_at to unix timestamp
+        detection_ts = detected_at.timestamp()
+
+        # Find segments around the detection time
+        # We need 4 frames over ~3 seconds, segments are ~2 seconds each
+        # So we need at least 2 segments
+        relevant_segments = []
+        for seg_path, mtime in segments:
+            # Segment mtime is when it was written, so the content is
+            # from ~2 seconds before that time
+            segment_start_ts = mtime - 2.0  # Approximate segment start
+
+            # Include segments within 5 seconds before and 3 seconds after detection
+            if detection_ts - 5.0 <= mtime <= detection_ts + 3.0:
+                relevant_segments.append((seg_path, segment_start_ts, mtime))
+
+        if not relevant_segments:
+            # Fallback: use most recent segments if detection is very recent
+            logger.warning(
+                f"No segments found around detection time {detected_at}, "
+                "using most recent segments"
+            )
+            for seg_path, mtime in segments[:3]:  # Use 3 most recent
+                segment_start_ts = mtime - 2.0
+                relevant_segments.append((seg_path, segment_start_ts, mtime))
+
+        if not relevant_segments:
+            logger.error("No usable segments found")
+            return [], []
+
+        # Sort by approximate start time (oldest first)
+        relevant_segments.sort(key=lambda x: x[1])
+
+        logger.info(
+            f"Found {len(relevant_segments)} relevant segments for camera {camera_id}"
+        )
+
+        # Concatenate segments for frame extraction
+        # Create a concat file for FFmpeg
+        import tempfile
+        concat_content = "ffconcat version 1.0\n"
+        for seg_path, _, _ in relevant_segments:
+            concat_content += f"file '{seg_path}'\n"
+
+        frames = []
+        actual_timestamps = []
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as concat_file:
+            concat_file.write(concat_content)
+            concat_file.flush()
+            concat_path = concat_file.name
+
+            try:
+                # Calculate total duration of concatenated segments
+                total_duration = len(relevant_segments) * 2.0  # ~2s per segment
+
+                # Calculate frame extraction points
+                # For 4 frames at 1s intervals over ~3 seconds
+                # Start 0.5s in, then every 1 second
+                frame_times = [0.5 + i * 1.0 for i in range(self.frame_count)]
+
+                for i, frame_time in enumerate(frame_times):
+                    if frame_time >= total_duration:
+                        logger.warning(
+                            f"Frame time {frame_time}s exceeds segment duration"
+                        )
+                        continue
+
+                    # Extract frame to temporary PNG file (more robust than raw output)
+                    import cv2
+
+                    with tempfile.NamedTemporaryFile(
+                        suffix=".png", delete=False
+                    ) as tmp_frame:
+                        tmp_frame_path = tmp_frame.name
+
+                    cmd = [
+                        "ffmpeg",
+                        "-y",
+                        "-f", "concat",
+                        "-safe", "0",
+                        "-i", concat_path,
+                        "-ss", str(frame_time),
+                        "-frames:v", "1",
+                        "-f", "image2",
+                        tmp_frame_path
+                    ]
+
+                    try:
+                        result = subprocess.run(
+                            cmd,
+                            capture_output=True,
+                            timeout=30
+                        )
+
+                        if result.returncode == 0:
+                            # Read the frame using OpenCV
+                            frame_bgr = cv2.imread(tmp_frame_path)
+                            if frame_bgr is not None:
+                                # Convert BGR to RGB
+                                frame = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                                frames.append(frame)
+
+                                # Calculate timestamp relative to detection
+                                timestamp_ms = int(
+                                    (frame_time - 1.5) * 1000
+                                )
+                                actual_timestamps.append(timestamp_ms)
+
+                                logger.debug(
+                                    f"Extracted frame {i+1} at {frame_time}s "
+                                    f"({frame.shape[1]}x{frame.shape[0]})"
+                                )
+                            else:
+                                logger.warning(
+                                    f"Failed to read frame {i+1} from {tmp_frame_path}"
+                                )
+                        else:
+                            logger.warning(
+                                f"Failed to extract frame at {frame_time}s: "
+                                f"{result.stderr.decode()[:200]}"
+                            )
+
+                    except subprocess.TimeoutExpired:
+                        logger.error(f"Timeout extracting frame at {frame_time}s")
+                    except Exception as e:
+                        logger.error(f"Error extracting frame at {frame_time}s: {e}")
+                    finally:
+                        # Clean up temp frame file
+                        try:
+                            os.unlink(tmp_frame_path)
+                        except Exception:
+                            pass
+
+            finally:
+                # Clean up concat file
+                import os
+                try:
+                    os.unlink(concat_path)
+                except Exception:
+                    pass
+
+        logger.info(
+            f"Extracted {len(frames)} frames from HLS segments for camera {camera_id}"
+        )
+        return frames, actual_timestamps
 
     async def _extract_frames_around(
         self,
@@ -419,6 +632,41 @@ class ActivityWorker:
                 description,
                 json.dumps(extra_data),
             )
+
+    async def _save_mosaic(
+        self,
+        mosaic: np.ndarray,
+        camera_id: int,
+        detection_id: int,
+        detected_at: datetime,
+    ) -> None:
+        """Save mosaic image for debugging.
+
+        Args:
+            mosaic: Mosaic image as numpy array (RGB)
+            camera_id: Camera ID
+            detection_id: Detection ID
+            detected_at: Detection timestamp
+        """
+        import cv2
+
+        # Create debug directory structure: .vllm_debug/{camera_id}/{date}/
+        debug_dir = self.storage_root / ".vllm_debug" / str(camera_id)
+        date_str = detected_at.strftime("%Y-%m-%d")
+        debug_dir = debug_dir / date_str
+        debug_dir.mkdir(parents=True, exist_ok=True)
+
+        # Filename: {time}-{detection_id}.jpg
+        time_str = detected_at.strftime("%H-%M-%S")
+        mosaic_path = debug_dir / f"{time_str}-{detection_id}.jpg"
+
+        try:
+            # Convert RGB to BGR for OpenCV
+            mosaic_bgr = cv2.cvtColor(mosaic, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(str(mosaic_path), mosaic_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            logger.debug(f"Saved debug mosaic: {mosaic_path}")
+        except Exception as e:
+            logger.warning(f"Failed to save debug mosaic: {e}")
 
     async def process_recording(self, recording_id: int) -> int:
         """Process all detections for a specific recording.
