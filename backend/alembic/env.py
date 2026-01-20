@@ -1,6 +1,8 @@
 """Alembic environment configuration for async migrations."""
 
 import asyncio
+import re
+from datetime import datetime
 from logging.config import fileConfig
 
 from alembic import context
@@ -23,6 +25,32 @@ target_metadata = Base.metadata
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
 
+def process_revision_directives(context, revision, directives):
+    """Generate date-based revision IDs matching filename convention.
+
+    This ensures the revision ID matches the filename pattern (YYYYMMDD_description),
+    preventing the common mistake of referencing filenames instead of revision IDs.
+    """
+    if not directives:
+        return
+
+    script = directives[0]
+    if script.rev_id is None:
+        return
+
+    # Get the message/slug from the revision
+    message = script.message or "migration"
+    # Sanitize the message for use in revision ID
+    slug = re.sub(r"[^a-z0-9_]", "_", message.lower())
+    slug = re.sub(r"_+", "_", slug).strip("_")
+
+    # Generate date-based revision ID: YYYYMMDD_slug
+    date_prefix = datetime.now().strftime("%Y%m%d")
+    new_rev_id = f"{date_prefix}_{slug}"
+
+    script.rev_id = new_rev_id
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
@@ -31,6 +59,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        process_revision_directives=process_revision_directives,
     )
 
     with context.begin_transaction():
@@ -39,7 +68,11 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     """Run migrations with connection."""
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        process_revision_directives=process_revision_directives,
+    )
 
     with context.begin_transaction():
         context.run_migrations()

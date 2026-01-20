@@ -12,6 +12,8 @@ import sqlalchemy as sa
 ${imports if imports else ""}
 
 # revision identifiers, used by Alembic.
+# IMPORTANT: When creating a new migration that depends on this one,
+# use THIS exact value for its down_revision (not the filename).
 revision: str = ${repr(up_revision)}
 down_revision: Union[str, None] = ${repr(down_revision)}
 branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}

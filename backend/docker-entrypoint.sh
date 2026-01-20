@@ -1,7 +1,35 @@
 #!/bin/bash
 set -e
 
+echo "========================================"
 echo "Running database migrations..."
+echo "========================================"
+
+# Function to handle migration failures
+handle_migration_failure() {
+    local exit_code=$1
+    echo ""
+    echo "========================================"
+    echo "MIGRATION FAILED (exit code: $exit_code)"
+    echo "========================================"
+    echo ""
+    echo "Possible causes:"
+    echo "  1. Broken migration chain (down_revision references non-existent revision)"
+    echo "  2. Database connection issue"
+    echo "  3. SQL syntax error in migration"
+    echo "  4. Table/column already exists (migration partially applied)"
+    echo ""
+    echo "Debugging steps:"
+    echo "  1. Check current migration state: alembic current"
+    echo "  2. View migration history: alembic history"
+    echo "  3. Validate migration chain: python scripts/validate_migrations.py"
+    echo "  4. Check logs above for specific error"
+    echo ""
+    echo "To manually apply migrations:"
+    echo "  docker compose exec backend alembic upgrade head"
+    echo ""
+    exit "$exit_code"
+}
 
 # Check if alembic_version table exists - if not, but tables exist,
 # we need to stamp the database first (handles pre-Alembic databases)
@@ -40,7 +68,32 @@ if [ "$TABLES_EXIST" = "stamp_needed" ]; then
     alembic stamp bfc3f1b7eb27
 fi
 
-alembic upgrade head
+# Validate migration chain before attempting upgrade
+echo "Validating migration chain..."
+if ! python scripts/validate_migrations.py 2>/dev/null; then
+    echo ""
+    echo "WARNING: Migration chain validation failed!"
+    echo "Attempting migration anyway, but this may fail."
+    echo ""
+fi
+
+# Show current state
+echo ""
+echo "Current migration state:"
+alembic current 2>/dev/null || echo "(no migrations applied yet)"
+echo ""
+
+# Run migrations with error handling
+echo "Applying migrations..."
+if ! alembic upgrade head; then
+    handle_migration_failure $?
+fi
+
+echo ""
+echo "Migrations completed successfully!"
+echo "Current head:"
+alembic current
+echo ""
 
 echo "Starting application..."
 exec "$@"
