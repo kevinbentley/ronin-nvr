@@ -75,9 +75,9 @@ class GPUBackgroundSubtractor:
         detect_shadows: bool = True,
         learning_rate: float = -1.0,
         min_motion_percent: float = 0.1,
-        min_contour_area: int = 500,
-        erosion_kernel_size: int = 3,
-        dilation_kernel_size: int = 5,
+        min_contour_area: int = 100,
+        erosion_kernel_size: int = 2,
+        dilation_kernel_size: int = 3,
         shadow_threshold: int = 127,
     ):
         """Initialize GPU background subtractor.
@@ -188,9 +188,10 @@ class GPUBackgroundSubtractor:
         # Download mask to CPU for analysis
         mask = self._gpu_mask_filtered.download()
 
-        # Remove shadow pixels (value 127) - only keep definite foreground (255)
+        # Include shadow pixels (value 127) as motion - some lighting conditions
+        # cause MOG2 to classify legitimate motion as shadows
         if self.detect_shadows:
-            mask = np.where(mask > self.shadow_threshold, 255, 0).astype(np.uint8)
+            mask = np.where(mask >= self.shadow_threshold, 255, 0).astype(np.uint8)
 
         # Calculate motion percentage
         total_pixels = mask.shape[0] * mask.shape[1]
@@ -412,9 +413,9 @@ class GPUMotionGate:
         # Re-download the filtered mask if available
         if subtractor._gpu_mask_filtered is not None:
             mask = subtractor._gpu_mask_filtered.download()
-            # Remove shadow pixels
+            # Include shadow pixels as motion
             if subtractor.detect_shadows:
-                mask = np.where(mask > subtractor.shadow_threshold, 255, 0).astype(np.uint8)
+                mask = np.where(mask >= subtractor.shadow_threshold, 255, 0).astype(np.uint8)
             return mask
 
         return None
