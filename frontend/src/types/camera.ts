@@ -297,6 +297,7 @@ export interface LiveDetection {
   confidence: number;
   detected_at: string | null;
   snapshot_url: string | null;
+  mosaic_url: string | null;  // 2x2 time sequence grid for VLLM analysis
   bbox: {
     x: number;
     y: number;

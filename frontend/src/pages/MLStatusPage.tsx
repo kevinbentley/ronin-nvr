@@ -19,6 +19,7 @@ export function MLStatusPage() {
   const [detectionsPage, setDetectionsPage] = useState(0);
   const [selectedDetection, setSelectedDetection] = useState<LiveDetection | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [showMosaic, setShowMosaic] = useState(false);  // Toggle between snapshot and time sequence
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -309,10 +310,39 @@ export function MLStatusPage() {
 
         {/* Detection Snapshot Preview */}
         <div className="ml-status-card snapshot-preview-card">
-          <h3>Detection Snapshot</h3>
+          <div className="snapshot-header">
+            <h3>Detection Snapshot</h3>
+            {selectedDetection && (selectedDetection.snapshot_url || selectedDetection.mosaic_url) && (
+              <div className="snapshot-view-toggle">
+                <button
+                  className={`toggle-button ${!showMosaic ? 'active' : ''}`}
+                  onClick={() => setShowMosaic(false)}
+                  title="Show single frame snapshot"
+                >
+                  Single Frame
+                </button>
+                <button
+                  className={`toggle-button ${showMosaic ? 'active' : ''}`}
+                  onClick={() => setShowMosaic(true)}
+                  disabled={!selectedDetection.mosaic_url}
+                  title="Show 2x2 time sequence grid"
+                >
+                  Time Sequence
+                </button>
+              </div>
+            )}
+          </div>
           {selectedDetection ? (
             <div className="snapshot-preview">
-              {selectedDetection.snapshot_url ? (
+              {showMosaic && selectedDetection.mosaic_url ? (
+                <img
+                  src={selectedDetection.mosaic_url}
+                  alt={`Time sequence: ${selectedDetection.class_name}`}
+                  className="snapshot-image mosaic-image clickable"
+                  onClick={() => setZoomedImage(selectedDetection.mosaic_url)}
+                  title="Click to enlarge - 2x2 time sequence (T+0s to T+3s)"
+                />
+              ) : selectedDetection.snapshot_url ? (
                 <img
                   src={selectedDetection.snapshot_url}
                   alt={`Detection: ${selectedDetection.class_name}`}

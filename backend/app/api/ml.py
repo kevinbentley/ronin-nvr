@@ -989,6 +989,9 @@ async def get_live_detections(
             "snapshot_url": f"/api/ml/snapshots/{d.snapshot_path.removeprefix('.snapshots/')}"
             if d.snapshot_path
             else None,
+            "mosaic_url": f"/api/ml/mosaics/{d.mosaic_path.removeprefix('.mosaics/')}"
+            if d.mosaic_path
+            else None,
             "bbox": {
                 "x": d.bbox_x,
                 "y": d.bbox_y,
@@ -1096,6 +1099,42 @@ async def get_snapshot(
 
     return FileResponse(
         snapshot_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "max-age=86400"},  # Cache for 24 hours
+    )
+
+
+@router.get("/mosaics/{path:path}")
+async def get_mosaic(
+    path: str,
+) -> FileResponse:
+    """Serve mosaic images (2x2 time sequence grids for VLLM analysis).
+
+    Mosaics are JPG images showing 4 frames captured 1 second apart,
+    stored in .mosaics/{camera_id}/{date}/{time}-{detection_id}.jpg
+    """
+    settings = get_settings()
+    mosaic_path = Path(settings.storage_root) / ".mosaics" / path
+
+    if not mosaic_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Mosaic not found",
+        )
+
+    # Security: ensure path doesn't escape mosaic directory
+    try:
+        mosaic_path.resolve().relative_to(
+            (Path(settings.storage_root) / ".mosaics").resolve()
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid mosaic path",
+        )
+
+    return FileResponse(
+        mosaic_path,
         media_type="image/jpeg",
         headers={"Cache-Control": "max-age=86400"},  # Cache for 24 hours
     )

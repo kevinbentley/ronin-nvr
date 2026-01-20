@@ -98,6 +98,10 @@ class Detection(Base):
     # Used for previews and future Vision LLM integration
     snapshot_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
+    # Mosaic path for VLLM 2x2 time sequence grid
+    # Stored in .vllm_debug/{camera_id}/{date}/{time}-{id}.jpg
+    mosaic_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     # Vision LLM scene description (future feature)
     # e.g., "A delivery driver placing a package on the front porch"
     llm_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

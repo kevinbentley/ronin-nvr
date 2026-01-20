@@ -293,11 +293,10 @@ class ActivityWorker:
             target_size=(1280, 720),
         )
 
-        # Save mosaic for debugging if enabled
-        if self.save_mosaics:
-            await self._save_mosaic(
-                mosaic, camera_id, detection_id, detected_at or datetime.now(timezone.utc)
-            )
+        # Save mosaic for frontend viewing (always save, not just for debugging)
+        mosaic_path = await self._save_mosaic(
+            mosaic, camera_id, detection_id, detected_at or datetime.now(timezone.utc)
+        )
 
         # Analyze with VLLM
         try:
@@ -307,12 +306,13 @@ class ActivityWorker:
                 detected_class=class_name,
             )
 
-            # Update detection with analysis
+            # Update detection with analysis and mosaic path
             await self._update_detection(
                 detection_id,
                 analysis.description,
                 analysis.concern_level,
                 analysis.activity_type,
+                mosaic_path,
             )
 
             # Log result
@@ -595,6 +595,7 @@ class ActivityWorker:
         description: str,
         concern_level: ConcernLevel,
         activity_type: Optional[str] = None,
+        mosaic_path: Optional[str] = None,
     ) -> None:
         """Update detection with LLM analysis results.
 
@@ -603,6 +604,7 @@ class ActivityWorker:
             description: LLM description
             concern_level: Concern level classification
             activity_type: Optional activity type
+            mosaic_path: Optional path to the 2x2 mosaic image
         """
         if not self._pool:
             return
@@ -625,12 +627,14 @@ class ActivityWorker:
                 SET llm_description = $2,
                     extra_data = (
                         COALESCE(extra_data::jsonb, '{}'::jsonb) || $3::jsonb
-                    )::json
+                    )::json,
+                    mosaic_path = COALESCE($4, mosaic_path)
                 WHERE id = $1
                 """,
                 detection_id,
                 description,
                 json.dumps(extra_data),
+                mosaic_path,
             )
 
     async def _save_mosaic(
@@ -639,34 +643,41 @@ class ActivityWorker:
         camera_id: int,
         detection_id: int,
         detected_at: datetime,
-    ) -> None:
-        """Save mosaic image for debugging.
+    ) -> Optional[str]:
+        """Save mosaic image for VLLM analysis viewing.
 
         Args:
             mosaic: Mosaic image as numpy array (RGB)
             camera_id: Camera ID
             detection_id: Detection ID
             detected_at: Detection timestamp
+
+        Returns:
+            Relative path to the saved mosaic (e.g., ".mosaics/1/2026-01-19/12-34-56-123.jpg")
+            or None if save failed.
         """
         import cv2
 
-        # Create debug directory structure: .vllm_debug/{camera_id}/{date}/
-        debug_dir = self.storage_root / ".vllm_debug" / str(camera_id)
+        # Create directory structure: .mosaics/{camera_id}/{date}/
+        mosaic_dir = self.storage_root / ".mosaics" / str(camera_id)
         date_str = detected_at.strftime("%Y-%m-%d")
-        debug_dir = debug_dir / date_str
-        debug_dir.mkdir(parents=True, exist_ok=True)
+        mosaic_dir = mosaic_dir / date_str
+        mosaic_dir.mkdir(parents=True, exist_ok=True)
 
         # Filename: {time}-{detection_id}.jpg
         time_str = detected_at.strftime("%H-%M-%S")
-        mosaic_path = debug_dir / f"{time_str}-{detection_id}.jpg"
+        mosaic_path = mosaic_dir / f"{time_str}-{detection_id}.jpg"
 
         try:
             # Convert RGB to BGR for OpenCV
             mosaic_bgr = cv2.cvtColor(mosaic, cv2.COLOR_RGB2BGR)
             cv2.imwrite(str(mosaic_path), mosaic_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            logger.debug(f"Saved debug mosaic: {mosaic_path}")
+            logger.debug(f"Saved mosaic: {mosaic_path}")
+            # Return relative path for database storage
+            return f".mosaics/{camera_id}/{date_str}/{time_str}-{detection_id}.jpg"
         except Exception as e:
-            logger.warning(f"Failed to save debug mosaic: {e}")
+            logger.warning(f"Failed to save mosaic: {e}")
+            return None
 
     async def process_recording(self, recording_id: int) -> int:
         """Process all detections for a specific recording.
