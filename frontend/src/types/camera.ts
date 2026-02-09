@@ -349,6 +349,8 @@ export interface ObjectEvent {
   confidence: number;
   duration_seconds: number;
   snapshot_url: string | null;
+  video_clip_url: string | null;
+  video_clip_status: 'pending' | 'extracting' | 'ready' | 'failed';
   camera_id: number;
   camera_name: string | null;
   event_time: string;

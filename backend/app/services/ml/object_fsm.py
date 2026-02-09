@@ -175,8 +175,10 @@ class ObjectStateMachine:
         stationary_seconds: float = 10.0,
         parked_seconds: float = 300.0,
         lost_seconds: float = 5.0,
+        stationary_lost_seconds: float = 120.0,
         loitering_seconds: float = 60.0,
         delayed_arrival_threshold: float = 60.0,
+        spatial_dedup_threshold: float = 0.15,
         fps: float = 30.0,
     ):
         """Initialize state machine.
@@ -189,11 +191,17 @@ class ObjectStateMachine:
                 where velocity estimates are unreliable.
             stationary_seconds: Time without movement to become STATIONARY
             parked_seconds: Time stationary to become PARKED
-            lost_seconds: Time without detection to consider departed
+            lost_seconds: Time without detection to consider departed (for ACTIVE)
+            stationary_lost_seconds: Time without detection to consider departed
+                (for STATIONARY objects). Longer than lost_seconds to prevent
+                false departures from detection gaps on stationary objects.
             loitering_seconds: Time stationary to trigger loitering alert
             delayed_arrival_threshold: If an object was parked for less than this
                 many seconds before becoming active, generate a delayed arrival.
                 This handles objects that arrive but are briefly stationary.
+            spatial_dedup_threshold: Distance threshold (normalized) for suppressing
+                arrivals when a recently departed object of the same class was nearby.
+                This prevents false arrive/depart cycles from track ID churn.
             fps: Expected frame rate for velocity calculations
         """
         self.validation_frames = validation_frames
@@ -202,8 +210,10 @@ class ObjectStateMachine:
         self.stationary_seconds = stationary_seconds
         self.parked_seconds = parked_seconds
         self.lost_seconds = lost_seconds
+        self.stationary_lost_seconds = stationary_lost_seconds
         self.loitering_seconds = loitering_seconds
         self.delayed_arrival_threshold = delayed_arrival_threshold
+        self.spatial_dedup_threshold = spatial_dedup_threshold
         self.fps = fps
 
         self._objects: dict[int, ObjectLifecycle] = {}
@@ -242,7 +252,14 @@ class ObjectStateMachine:
         departed_ids = []
         for track_id, lifecycle in self._objects.items():
             if track_id not in seen_ids:
-                if lifecycle.time_since_seen > self.lost_seconds:
+                # Use longer grace period for stationary objects to prevent
+                # false departures from detection gaps
+                if lifecycle.state == ObjectState.STATIONARY:
+                    lost_threshold = self.stationary_lost_seconds
+                else:
+                    lost_threshold = self.lost_seconds
+
+                if lifecycle.time_since_seen > lost_threshold:
                     # Object has departed
                     event = self._handle_departure(lifecycle)
                     if event:
@@ -262,6 +279,39 @@ class ObjectStateMachine:
         }
 
         return events
+
+    def _find_nearby_departed(
+        self,
+        class_name: str,
+        x: float,
+        y: float,
+    ) -> Optional[ObjectLifecycle]:
+        """Find a recently departed object of the same class near the given position.
+
+        Used for spatial deduplication to prevent false arrivals when a stationary
+        object loses tracking and gets a new track ID.
+
+        Args:
+            class_name: Class name to match
+            x: X position (normalized)
+            y: Y position (normalized)
+
+        Returns:
+            The nearby departed lifecycle if found, None otherwise
+        """
+        for lifecycle in self._departed.values():
+            if lifecycle.class_name != class_name:
+                continue
+
+            # Calculate distance between positions
+            dx = lifecycle.last_x - x
+            dy = lifecycle.last_y - y
+            distance = (dx ** 2 + dy ** 2) ** 0.5
+
+            if distance < self.spatial_dedup_threshold:
+                return lifecycle
+
+        return None
 
     def _create_lifecycle(self, track) -> ObjectLifecycle:
         """Create lifecycle for new track."""
@@ -328,22 +378,42 @@ class ObjectStateMachine:
 
             # Generate events for state transitions
             if old_state == ObjectState.TENTATIVE and new_state == ObjectState.ACTIVE:
-                # Arrival event - object moved into frame
-                events.append(ObjectEvent(
-                    event_type=EventType.ARRIVAL,
-                    track_id=lifecycle.track_id,
-                    class_name=lifecycle.class_name,
-                    class_id=lifecycle.class_id,
-                    timestamp=current_time,
-                    old_state=old_state,
-                    new_state=new_state,
-                    bbox=lifecycle.bbox,
-                    confidence=lifecycle.confidence,
-                ))
-                lifecycle.arrival_notified = True
-                logger.info(
-                    f"ARRIVAL: {lifecycle.class_name} (track {lifecycle.track_id})"
+                # Check for spatial deduplication - suppress arrival if a recently
+                # departed object of the same class was nearby (likely track ID churn)
+                nearby = self._find_nearby_departed(
+                    lifecycle.class_name,
+                    lifecycle.last_x,
+                    lifecycle.last_y,
                 )
+                if nearby:
+                    # This is likely the same object with a new track ID
+                    # Suppress the arrival and mark as already notified
+                    lifecycle.arrival_notified = True
+                    logger.info(
+                        f"ARRIVAL suppressed (spatial dedup): {lifecycle.class_name} "
+                        f"(track {lifecycle.track_id}) near recently departed "
+                        f"track {nearby.track_id}"
+                    )
+                    # Remove the departed object to prevent future matches
+                    if nearby.track_id in self._departed:
+                        del self._departed[nearby.track_id]
+                else:
+                    # Arrival event - object moved into frame
+                    events.append(ObjectEvent(
+                        event_type=EventType.ARRIVAL,
+                        track_id=lifecycle.track_id,
+                        class_name=lifecycle.class_name,
+                        class_id=lifecycle.class_id,
+                        timestamp=current_time,
+                        old_state=old_state,
+                        new_state=new_state,
+                        bbox=lifecycle.bbox,
+                        confidence=lifecycle.confidence,
+                    ))
+                    lifecycle.arrival_notified = True
+                    logger.info(
+                        f"ARRIVAL: {lifecycle.class_name} (track {lifecycle.track_id})"
+                    )
             elif old_state == ObjectState.TENTATIVE and new_state == ObjectState.PARKED:
                 # Object never moved - skip ARRIVAL for now, treat as pre-existing
                 # If it starts moving soon, we'll send a delayed arrival

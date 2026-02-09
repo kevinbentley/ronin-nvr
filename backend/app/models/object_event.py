@@ -35,6 +35,12 @@ class ObjectEvent(Base):
     # Snapshot
     snapshot_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
+    # Video clip extraction
+    video_clip_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    video_clip_status: Mapped[str] = mapped_column(
+        String(20), default="pending", nullable=False
+    )
+
     # Camera reference
     camera_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("cameras.id", ondelete="CASCADE"), nullable=False, index=True
@@ -63,6 +69,8 @@ class ObjectEvent(Base):
             "confidence": self.confidence,
             "duration_seconds": self.duration_seconds,
             "snapshot_path": self.snapshot_path,
+            "video_clip_path": self.video_clip_path,
+            "video_clip_status": self.video_clip_status,
             "camera_id": self.camera_id,
             "camera_name": self.camera.name if self.camera else None,
             "event_time": self.event_time.isoformat() if self.event_time else None,

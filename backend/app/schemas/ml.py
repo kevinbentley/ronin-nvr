@@ -238,6 +238,8 @@ class ObjectEventResponse(UTCBaseModel):
     confidence: float
     duration_seconds: float
     snapshot_url: Optional[str]
+    video_clip_url: Optional[str]
+    video_clip_status: str
     camera_id: int
     camera_name: Optional[str]
     event_time: datetime

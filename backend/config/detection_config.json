@@ -53,16 +53,20 @@
     "stationary_seconds": 10.0,
     "parked_seconds": 300.0,
     "lost_seconds": 30.0,
+    "stationary_lost_seconds": 120.0,
     "delayed_arrival_threshold": 60.0,
     "loitering_seconds": 60.0,
+    "spatial_dedup_threshold": 0.15,
     "_validation_frames_comment": "Frames to confirm a new track",
     "_velocity_threshold_comment": "Minimum velocity to be considered moving (normalized)",
     "_displacement_threshold_comment": "Minimum displacement from initial position (normalized)",
     "_stationary_seconds_comment": "Time without movement to become STATIONARY",
     "_parked_seconds_comment": "Time stationary to become PARKED (5 min)",
-    "_lost_seconds_comment": "Time without detection to trigger DEPARTURE",
+    "_lost_seconds_comment": "Time without detection to trigger DEPARTURE (for ACTIVE objects)",
+    "_stationary_lost_seconds_comment": "Time without detection to trigger DEPARTURE for STATIONARY objects (longer to prevent false departures)",
     "_delayed_arrival_threshold_comment": "Max parked time for delayed arrival (handles arrive-then-stop)",
-    "_loitering_seconds_comment": "Time stationary to trigger loitering alert"
+    "_loitering_seconds_comment": "Time stationary to trigger loitering alert",
+    "_spatial_dedup_threshold_comment": "Distance threshold for suppressing arrivals near recently departed objects (prevents track ID churn)"
   },
 
   "pipeline": {

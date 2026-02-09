@@ -720,7 +720,7 @@ async def get_object_events(
     result = await db.execute(query)
     events = result.scalars().all()
 
-    # Build snapshot URLs
+    # Build snapshot and clip URLs
     settings = get_settings()
 
     def get_snapshot_url(snapshot_path: str | None) -> str | None:
@@ -730,6 +730,14 @@ async def get_object_events(
         path = snapshot_path.replace(str(settings.storage_root) + '/', '')
         path = path.removeprefix('.snapshots/')
         return f"/api/ml/snapshots/{path}"
+
+    def get_clip_url(clip_path: str | None) -> str | None:
+        if not clip_path:
+            return None
+        # Remove storage_root prefix if present, then .clips/ prefix
+        path = clip_path.replace(str(settings.storage_root) + '/', '')
+        path = path.removeprefix('.clips/')
+        return f"/api/ml/clips/{path}"
 
     return ObjectEventListResponse(
         events=[
@@ -743,6 +751,8 @@ async def get_object_events(
                 confidence=e.confidence,
                 duration_seconds=e.duration_seconds,
                 snapshot_url=get_snapshot_url(e.snapshot_path),
+                video_clip_url=get_clip_url(e.video_clip_path),
+                video_clip_status=e.video_clip_status,
                 camera_id=e.camera_id,
                 camera_name=e.camera.name if e.camera else None,
                 event_time=e.event_time,
@@ -1137,4 +1147,43 @@ async def get_mosaic(
         mosaic_path,
         media_type="image/jpeg",
         headers={"Cache-Control": "max-age=86400"},  # Cache for 24 hours
+    )
+
+
+@router.get("/clips/{path:path}")
+async def get_clip(
+    path: str,
+) -> FileResponse:
+    """Serve video clips for detection events.
+
+    Clips are MP4 videos showing ~10 seconds around a detection event,
+    stored in .clips/{camera_id}/{date}/{event_id}-{time}.mp4
+    """
+    settings = get_settings()
+    clip_path = Path(settings.storage_root) / ".clips" / path
+
+    if not clip_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Clip not found",
+        )
+
+    # Security: ensure path doesn't escape clips directory
+    try:
+        clip_path.resolve().relative_to(
+            (Path(settings.storage_root) / ".clips").resolve()
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid clip path",
+        )
+
+    return FileResponse(
+        clip_path,
+        media_type="video/mp4",
+        headers={
+            "Cache-Control": "max-age=86400",  # Cache for 24 hours
+            "Accept-Ranges": "bytes",  # Enable seeking
+        },
     )

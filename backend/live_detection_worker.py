@@ -233,6 +233,9 @@ class LiveDetectionWorker:
         self._running = False
         self._pool = None
 
+        # Background tasks for clip extraction (prevent garbage collection)
+        self._clip_tasks: set[asyncio.Task] = set()
+
         # NextGen pipeline (GPU-accelerated) - enabled by default unless --legacy
         self._nextgen = settings.nextgen_enabled and not legacy
         self._orchestrator = None
@@ -731,6 +734,7 @@ class LiveDetectionWorker:
                 "confidence": event.confidence,
                 "duration_seconds": event.duration_seconds,
                 "camera_id": state.camera_id,
+                "camera_name": state.camera_name,  # For clip extraction
                 "event_time": detection_time,
                 "snapshot_path": event_snapshot_path,
             })
@@ -1371,38 +1375,131 @@ class LiveDetectionWorker:
     async def _save_object_events(
         self, events: list[dict]
     ) -> None:
-        """Save object events (arrivals, departures, etc.) to database."""
+        """Save object events (arrivals, departures, etc.) to database.
+
+        Also triggers video clip extraction for arrival/departure events.
+        """
         if not self._pool or not events:
             return
 
         async with self._pool.acquire() as conn:
-            await conn.executemany(
+            # Insert events and get IDs back for clip extraction
+            inserted_rows = await conn.fetch(
                 """
                 INSERT INTO object_events (
                     event_type, class_name, track_id,
                     old_state, new_state, confidence,
                     duration_seconds, camera_id, event_time,
-                    snapshot_path
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+                    snapshot_path, video_clip_status
                 )
+                SELECT * FROM unnest(
+                    $1::text[], $2::text[], $3::int[],
+                    $4::text[], $5::text[], $6::float[],
+                    $7::float[], $8::int[], $9::timestamptz[],
+                    $10::text[], $11::text[]
+                )
+                RETURNING id, camera_id, event_time
                 """,
-                [
-                    (
-                        e["event_type"],
-                        e["class_name"],
-                        e["track_id"],
-                        e["old_state"],
-                        e["new_state"],
-                        e["confidence"],
-                        e["duration_seconds"],
-                        e["camera_id"],
-                        e["event_time"],
-                        e.get("snapshot_path"),
-                    )
-                    for e in events
-                ],
+                [e["event_type"] for e in events],
+                [e["class_name"] for e in events],
+                [e["track_id"] for e in events],
+                [e["old_state"] for e in events],
+                [e["new_state"] for e in events],
+                [e["confidence"] for e in events],
+                [e["duration_seconds"] for e in events],
+                [e["camera_id"] for e in events],
+                [e["event_time"] for e in events],
+                [e.get("snapshot_path") for e in events],
+                ["pending" for _ in events],  # video_clip_status
             )
+
+            # Queue clip extraction for arrivals/departures
+            if self.settings.clip_extraction_enabled:
+                for row, event in zip(inserted_rows, events):
+                    event_type = event["event_type"].upper()
+                    if event_type in ("ARRIVAL", "DEPARTURE"):
+                        # Launch clip extraction in background
+                        # Store task reference to prevent garbage collection
+                        task = asyncio.create_task(
+                            self._extract_clip_for_event(
+                                event_id=row["id"],
+                                camera_id=row["camera_id"],
+                                camera_name=event["camera_name"],
+                                event_time=row["event_time"],
+                            )
+                        )
+                        self._clip_tasks.add(task)
+                        task.add_done_callback(self._clip_tasks.discard)
+
+    async def _extract_clip_for_event(
+        self,
+        event_id: int,
+        camera_id: int,
+        camera_name: str,
+        event_time: datetime,
+    ) -> None:
+        """Extract a video clip for an object event in the background."""
+        from app.services.clip_extractor import clip_extractor_service
+
+        if not self._pool:
+            logger.warning(f"Clip extraction skipped for event {event_id}: no db pool")
+            return
+
+        try:
+            # Wait a few seconds to ensure the recording segment is written
+            # The clip needs post_duration seconds after the event, plus write buffer
+            await asyncio.sleep(10)
+
+            logger.debug(
+                f"Starting clip extraction for event {event_id}, "
+                f"camera={camera_name}, time={event_time}"
+            )
+
+            # Update status to extracting
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE object_events SET video_clip_status = 'extracting' WHERE id = $1",
+                    event_id,
+                )
+
+            # Extract the clip
+            clip_path = await clip_extractor_service.extract_clip_for_event(
+                event_id=event_id,
+                camera_id=camera_id,
+                camera_name=camera_name,
+                event_time=event_time,
+            )
+
+            # Update database with result
+            async with self._pool.acquire() as conn:
+                if clip_path:
+                    await conn.execute(
+                        """
+                        UPDATE object_events
+                        SET video_clip_path = $1, video_clip_status = 'ready'
+                        WHERE id = $2
+                        """,
+                        clip_path,
+                        event_id,
+                    )
+                    logger.info(f"Clip extracted for event {event_id}: {clip_path}")
+                else:
+                    await conn.execute(
+                        "UPDATE object_events SET video_clip_status = 'failed' WHERE id = $1",
+                        event_id,
+                    )
+                    logger.warning(f"Clip extraction failed for event {event_id}")
+
+        except Exception as e:
+            logger.error(f"Error extracting clip for event {event_id}: {e}")
+            try:
+                async with self._pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE object_events SET video_clip_status = 'failed' WHERE id = $1",
+                        event_id,
+                    )
+            except Exception:
+                pass
 
 
 def main() -> None:

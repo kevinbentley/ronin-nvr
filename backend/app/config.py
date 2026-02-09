@@ -176,6 +176,12 @@ class Settings(BaseSettings):
     vllm_max_age_seconds: float = 300.0  # Max age of detection to process (5 minutes)
     vllm_save_mosaics: bool = True  # Save mosaic images for debugging
 
+    # Video Clip Extraction settings (for object events)
+    clip_extraction_enabled: bool = True  # Enable automatic clip extraction
+    clip_pre_duration_seconds: float = 5.0  # Seconds of video before event
+    clip_post_duration_seconds: float = 5.0  # Seconds of video after event
+    clip_retention_days: Optional[int] = 7  # Days to keep clips (None = follow main retention)
+
 
 @lru_cache
 def get_settings() -> Settings:

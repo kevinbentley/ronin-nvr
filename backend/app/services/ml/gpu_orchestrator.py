@@ -131,9 +131,11 @@ class GPUPipelineConfig:
     fsm_displacement_threshold: float = 0.005  # Min displacement to be "moved" (normalized)
     fsm_stationary_seconds: float = 10.0  # Time without movement -> STATIONARY
     fsm_parked_seconds: float = 300.0  # Time stationary -> PARKED (5 min)
-    fsm_lost_seconds: float = 30.0  # Time without detection -> DEPARTED
+    fsm_lost_seconds: float = 30.0  # Time without detection -> DEPARTED (ACTIVE)
+    fsm_stationary_lost_seconds: float = 120.0  # Time without detection -> DEPARTED (STATIONARY)
     fsm_delayed_arrival_threshold: float = 60.0  # Max parked time for delayed arrival
     fsm_loitering_seconds: float = 60.0  # Time stationary -> loitering alert
+    fsm_spatial_dedup_threshold: float = 0.15  # Distance for spatial dedup
 
     # Pipeline behavior
     periodic_detection_interval: int = 30  # Run YOLO every N frames (0=disabled)
@@ -231,10 +233,14 @@ class GPUPipelineConfig:
                     kwargs["fsm_parked_seconds"] = fsm["parked_seconds"]
                 if "lost_seconds" in fsm:
                     kwargs["fsm_lost_seconds"] = fsm["lost_seconds"]
+                if "stationary_lost_seconds" in fsm:
+                    kwargs["fsm_stationary_lost_seconds"] = fsm["stationary_lost_seconds"]
                 if "delayed_arrival_threshold" in fsm:
                     kwargs["fsm_delayed_arrival_threshold"] = fsm["delayed_arrival_threshold"]
                 if "loitering_seconds" in fsm:
                     kwargs["fsm_loitering_seconds"] = fsm["loitering_seconds"]
+                if "spatial_dedup_threshold" in fsm:
+                    kwargs["fsm_spatial_dedup_threshold"] = fsm["spatial_dedup_threshold"]
 
             # Pipeline
             if "pipeline" in data:
@@ -293,8 +299,10 @@ class GPUPipelineConfig:
                 "stationary_seconds": self.fsm_stationary_seconds,
                 "parked_seconds": self.fsm_parked_seconds,
                 "lost_seconds": self.fsm_lost_seconds,
+                "stationary_lost_seconds": self.fsm_stationary_lost_seconds,
                 "delayed_arrival_threshold": self.fsm_delayed_arrival_threshold,
                 "loitering_seconds": self.fsm_loitering_seconds,
+                "spatial_dedup_threshold": self.fsm_spatial_dedup_threshold,
             },
             "pipeline": {
                 "periodic_detection_interval": self.periodic_detection_interval,
@@ -377,8 +385,10 @@ class GPUPipeline:
                 stationary_seconds=config.fsm_stationary_seconds,
                 parked_seconds=config.fsm_parked_seconds,
                 lost_seconds=config.fsm_lost_seconds,
+                stationary_lost_seconds=config.fsm_stationary_lost_seconds,
                 delayed_arrival_threshold=config.fsm_delayed_arrival_threshold,
                 loitering_seconds=config.fsm_loitering_seconds,
+                spatial_dedup_threshold=config.fsm_spatial_dedup_threshold,
             )
 
         self._frame_counts: dict[int, int] = {cid: 0 for cid in camera_ids}
@@ -411,8 +421,10 @@ class GPUPipeline:
                     stationary_seconds=self.config.fsm_stationary_seconds,
                     parked_seconds=self.config.fsm_parked_seconds,
                     lost_seconds=self.config.fsm_lost_seconds,
+                    stationary_lost_seconds=self.config.fsm_stationary_lost_seconds,
                     delayed_arrival_threshold=self.config.fsm_delayed_arrival_threshold,
                     loitering_seconds=self.config.fsm_loitering_seconds,
+                    spatial_dedup_threshold=self.config.fsm_spatial_dedup_threshold,
                 )
                 self._frame_counts[camera_id] = 0
                 self._last_detection_time[camera_id] = 0.0
@@ -781,6 +793,10 @@ class GPUOrchestrator:
                 fsm_stationary_seconds=self.config.fsm_stationary_seconds,
                 fsm_parked_seconds=self.config.fsm_parked_seconds,
                 fsm_lost_seconds=self.config.fsm_lost_seconds,
+                fsm_stationary_lost_seconds=self.config.fsm_stationary_lost_seconds,
+                fsm_delayed_arrival_threshold=self.config.fsm_delayed_arrival_threshold,
+                fsm_loitering_seconds=self.config.fsm_loitering_seconds,
+                fsm_spatial_dedup_threshold=self.config.fsm_spatial_dedup_threshold,
                 # Motion gate bypass settings
                 periodic_detection_interval=self.config.periodic_detection_interval,
                 detection_active_seconds=self.config.detection_active_seconds,

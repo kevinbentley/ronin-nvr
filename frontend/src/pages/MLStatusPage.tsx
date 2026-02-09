@@ -28,6 +28,7 @@ export function MLStatusPage() {
   const [eventsTotal, setEventsTotal] = useState(0);
   const [eventsPage, setEventsPage] = useState(0);
   const [selectedEvent, setSelectedEvent] = useState<ObjectEvent | null>(null);
+  const [showEventClip, setShowEventClip] = useState(false);  // Toggle between snapshot and video clip
 
   const loadData = useCallback(async () => {
     try {
@@ -198,10 +199,59 @@ export function MLStatusPage() {
 
         {/* Event Snapshot Preview */}
         <div className="ml-status-card snapshot-preview-card">
-          <h3>Event Snapshot</h3>
+          <div className="snapshot-header">
+            <h3>Event Snapshot</h3>
+            {selectedEvent && (selectedEvent.snapshot_url || selectedEvent.video_clip_url) && (
+              <div className="snapshot-view-toggle">
+                <button
+                  className={`toggle-button ${!showEventClip ? 'active' : ''}`}
+                  onClick={() => setShowEventClip(false)}
+                  title="Show snapshot image"
+                >
+                  Snapshot
+                </button>
+                <button
+                  className={`toggle-button ${showEventClip ? 'active' : ''}`}
+                  onClick={() => setShowEventClip(true)}
+                  disabled={selectedEvent.video_clip_status !== 'ready'}
+                  title={
+                    selectedEvent.video_clip_status === 'ready'
+                      ? 'Show video clip'
+                      : selectedEvent.video_clip_status === 'extracting'
+                      ? 'Video clip is being extracted...'
+                      : selectedEvent.video_clip_status === 'pending'
+                      ? 'Video clip extraction pending'
+                      : 'Video clip unavailable'
+                  }
+                >
+                  Video Clip
+                  {selectedEvent.video_clip_status === 'extracting' && (
+                    <span className="clip-status-indicator extracting" />
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
           {selectedEvent ? (
             <div className="snapshot-preview">
-              {selectedEvent.snapshot_url ? (
+              {showEventClip && selectedEvent.video_clip_url ? (
+                <div className="video-clip-container">
+                  <video
+                    controls
+                    src={selectedEvent.video_clip_url}
+                    className="event-video-player"
+                    preload="metadata"
+                  />
+                  <a
+                    href={selectedEvent.video_clip_url}
+                    download
+                    className="download-clip-button"
+                    title="Download video clip"
+                  >
+                    Download Clip
+                  </a>
+                </div>
+              ) : selectedEvent.snapshot_url ? (
                 <img
                   src={selectedEvent.snapshot_url}
                   alt={`Event: ${selectedEvent.event_type} - ${selectedEvent.class_name}`}
