@@ -36,6 +36,8 @@ class RecordingDbInfo:
 
     recording_id: int
     camera_id: int
+    storage_tier: str = "hot"
+    storage_path: Optional[str] = None
 
 
 async def get_recording_info_by_paths(
@@ -49,12 +51,21 @@ async def get_recording_info_by_paths(
         return {}
 
     path_strings = [str(p) for p in file_paths]
-    query = select(Recording.id, Recording.camera_id, Recording.file_path).where(
-        Recording.file_path.in_(path_strings)
-    )
+    query = select(
+        Recording.id,
+        Recording.camera_id,
+        Recording.file_path,
+        Recording.storage_tier,
+        Recording.storage_path,
+    ).where(Recording.file_path.in_(path_strings))
     result = await db.execute(query)
     return {
-        row.file_path: RecordingDbInfo(recording_id=row.id, camera_id=row.camera_id)
+        row.file_path: RecordingDbInfo(
+            recording_id=row.id,
+            camera_id=row.camera_id,
+            storage_tier=row.storage_tier or "hot",
+            storage_path=row.storage_path,
+        )
         for row in result
     }
 
@@ -72,6 +83,9 @@ class RecordingFileResponse(BaseModel):
     is_in_progress: bool = False  # True if recording is currently being written
     recording_id: Optional[int] = None  # Database recording ID for detection queries
     camera_id: Optional[int] = None  # Database camera ID for detection queries
+    storage_tier: str = "hot"  # Storage tier (hot/warm/cold)
+    playback_url: Optional[str] = None  # Direct playback URL (for cold storage)
+    requires_loading: bool = False  # True for cold storage (may have latency)
 
 
 class DayRecordingsResponse(BaseModel):
@@ -178,6 +192,16 @@ async def get_day_recordings(
     files = []
     for f in day_recs.files:
         info = recording_info.get(str(f.path))
+        storage_tier = info.storage_tier if info else "hot"
+        storage_path = info.storage_path if info else None
+
+        # Update the file's storage info for playback URL generation
+        f.storage_tier = storage_tier
+        f.storage_path = storage_path
+
+        # Get playback info for this recording
+        playback_info = playback_service.get_playback_info(f)
+
         files.append(
             RecordingFileResponse(
                 id=f.id,
@@ -190,6 +214,9 @@ async def get_day_recordings(
                 is_in_progress=f.is_in_progress,
                 recording_id=info.recording_id if info else None,
                 camera_id=info.camera_id if info else None,
+                storage_tier=storage_tier,
+                playback_url=playback_info.url if storage_tier != "hot" else None,
+                requires_loading=playback_info.requires_loading,
             )
         )
 
@@ -255,6 +282,16 @@ async def list_recordings(
     files = []
     for f in paginated:
         info = recording_info.get(str(f.path))
+        storage_tier = info.storage_tier if info else "hot"
+        storage_path = info.storage_path if info else None
+
+        # Update the file's storage info for playback URL generation
+        f.storage_tier = storage_tier
+        f.storage_path = storage_path
+
+        # Get playback info for this recording
+        playback_info = playback_service.get_playback_info(f)
+
         files.append(
             RecordingFileResponse(
                 id=f.id,
@@ -267,6 +304,9 @@ async def list_recordings(
                 is_in_progress=f.is_in_progress,
                 recording_id=info.recording_id if info else None,
                 camera_id=info.camera_id if info else None,
+                storage_tier=storage_tier,
+                playback_url=playback_info.url if storage_tier != "hot" else None,
+                requires_loading=playback_info.requires_loading,
             )
         )
 

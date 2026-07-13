@@ -18,6 +18,7 @@ from app.services.stream_client import stream_manager
 from app.services.retention import retention_monitor
 from app.services.status_monitor import status_monitor
 from app.services.startup import auto_start_recording_cameras
+from app.services.tier_migration import tier_migration_monitor
 from app.services.ml import ml_coordinator, recording_watcher
 from app.services.ml.live_detection_listener import live_detection_listener
 
@@ -105,6 +106,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning(f"Failed to start retention monitor: {e}")
 
+    # Start tier migration monitor (for tiered storage)
+    try:
+        await tier_migration_monitor.start()
+    except Exception as e:
+        logger.warning(f"Failed to start tier migration monitor: {e}")
+
     # Start ML coordinator and recording watcher if database available and ML enabled
     if db_available and settings.ml_enabled:
         try:
@@ -151,6 +158,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     try:
         await retention_monitor.stop()
+    except Exception:
+        pass
+
+    try:
+        await tier_migration_monitor.stop()
     except Exception:
         pass
 

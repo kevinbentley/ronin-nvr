@@ -35,6 +35,14 @@ import type {
   ONVIFApplyProfileRequest,
   ONVIFApplyProfileResponse,
   ONVIFEventsResponse,
+  TierConfigResponse,
+  TierConfigUpdate,
+  TierStatsResponse,
+  MigrationTriggerRequest,
+  MigrationResult,
+  OfflineExportRequest,
+  OfflineExportResponse,
+  ExportProgressResponse,
 } from '../types/camera';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -492,6 +500,48 @@ class ApiClient {
     const response = await this.client.post(
       `/onvif/cameras/${cameraId}/events/unsubscribe`
     );
+    return response.data;
+  }
+
+  // Tiered Storage API
+  async getTierConfig(): Promise<TierConfigResponse> {
+    const response = await this.client.get('/storage/tiers/config');
+    return response.data;
+  }
+
+  async updateTierConfig(config: TierConfigUpdate): Promise<TierConfigResponse> {
+    const response = await this.client.put('/storage/tiers/config', config);
+    return response.data;
+  }
+
+  async getTierStats(): Promise<TierStatsResponse> {
+    const response = await this.client.get('/storage/tiers/stats');
+    return response.data;
+  }
+
+  async triggerMigration(request: MigrationTriggerRequest): Promise<MigrationResult> {
+    const response = await this.client.post('/storage/tiers/migrate', request);
+    return response.data;
+  }
+
+  async getMigrationStatus(): Promise<MigrationResult> {
+    const response = await this.client.get('/storage/tiers/migrate/status');
+    return response.data;
+  }
+
+  // Offline Export API
+  async createOfflineExport(request: OfflineExportRequest): Promise<OfflineExportResponse> {
+    const response = await this.client.post('/storage/export/offline', request);
+    return response.data;
+  }
+
+  async getExportStatus(exportId: string): Promise<ExportProgressResponse> {
+    const response = await this.client.get(`/storage/export/offline/${exportId}/status`);
+    return response.data;
+  }
+
+  async cancelExport(exportId: string): Promise<{ success: boolean; message: string }> {
+    const response = await this.client.post(`/storage/export/offline/${exportId}/cancel`);
     return response.data;
   }
 }

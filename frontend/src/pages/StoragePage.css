@@ -1,0 +1,565 @@
+/**
+ * StoragePage styles
+ */
+
+.storage-page {
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+  height: calc(100vh - 60px);
+  overflow-y: auto;
+}
+
+.storage-page.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+.loading-container {
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #333;
+  border-top-color: #007bff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 10px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  color: #888;
+}
+
+.storage-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.storage-header h2 {
+  margin: 0;
+  color: #fff;
+}
+
+.refresh-button {
+  padding: 8px 16px;
+  background: #333;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.refresh-button:hover {
+  background: #444;
+}
+
+.error-banner {
+  background: #dc3545;
+  color: white;
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.migration-result {
+  background: #28a745;
+  color: white;
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.migration-result.in-progress {
+  background: #007bff;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.migration-result .message {
+  margin-top: 8px;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.migration-result .failed {
+  color: #ffcccc;
+}
+
+.migration-result .skipped {
+  color: #ffc107;
+}
+
+.migration-result .cleaned {
+  color: #17a2b8;
+}
+
+/* Filesystem Overview */
+.filesystem-overview {
+  display: flex;
+  gap: 30px;
+  background: #1a3a1a;
+  border: 1px solid #28a745;
+  border-radius: 8px;
+  padding: 15px 25px;
+  margin-bottom: 20px;
+}
+
+.fs-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fs-label {
+  color: #8bc88b;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.fs-value {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* Tiers Section */
+.tiers-section {
+  margin-bottom: 30px;
+}
+
+.tiers-section h3 {
+  color: #fff;
+  margin-bottom: 15px;
+}
+
+.tiers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.tier-card {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.tier-card.disabled {
+  opacity: 0.6;
+}
+
+.tier-card.hot {
+  border-color: #dc3545;
+}
+
+.tier-card.warm {
+  border-color: #ffc107;
+}
+
+.tier-card.cold {
+  border-color: #17a2b8;
+}
+
+.tier-card h3 {
+  margin: 0 0 15px 0;
+  color: #fff;
+  font-size: 16px;
+}
+
+.tier-status {
+  color: #888;
+  font-style: italic;
+}
+
+.tier-hint {
+  color: #666;
+  font-size: 12px;
+  margin-top: 10px;
+}
+
+.tier-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stat-row .label {
+  color: #888;
+  font-size: 13px;
+}
+
+.stat-row .value {
+  color: #fff;
+  font-weight: 500;
+}
+
+.stat-row .value.small {
+  font-size: 12px;
+  font-weight: normal;
+}
+
+.stat-row .value.warning {
+  color: #ffc107;
+}
+
+.migrate-button {
+  width: 100%;
+  margin-top: 15px;
+  padding: 10px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.migrate-button:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.migrate-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Config Section */
+.config-section {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 30px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.section-header h3 {
+  margin: 0;
+  color: #fff;
+}
+
+.edit-button,
+.save-button,
+.cancel-button {
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.edit-button {
+  background: #333;
+  color: #fff;
+  border: 1px solid #444;
+}
+
+.edit-button:hover {
+  background: #444;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.save-button {
+  background: #28a745;
+  color: white;
+  border: none;
+}
+
+.save-button:hover:not(:disabled) {
+  background: #218838;
+}
+
+.cancel-button {
+  background: #6c757d;
+  color: white;
+  border: none;
+}
+
+.cancel-button:hover:not(:disabled) {
+  background: #5a6268;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.config-card {
+  background: #252525;
+  border-radius: 6px;
+  padding: 15px;
+}
+
+.config-card h4 {
+  margin: 0 0 5px 0;
+  color: #fff;
+  font-size: 14px;
+}
+
+.config-card .hint {
+  color: #666;
+  font-size: 12px;
+  margin-bottom: 15px;
+}
+
+.config-field {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.config-field label {
+  color: #888;
+  font-size: 13px;
+}
+
+.config-field span {
+  color: #fff;
+}
+
+.config-field input {
+  width: 120px;
+  padding: 6px 10px;
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.config-field input::placeholder {
+  color: #666;
+}
+
+.config-info {
+  border-top: 1px solid #333;
+  padding-top: 15px;
+}
+
+.config-info p {
+  margin: 5px 0;
+  color: #888;
+  font-size: 13px;
+}
+
+.config-info strong {
+  color: #aaa;
+}
+
+/* Export Section */
+.export-section {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.export-section h3 {
+  margin: 0 0 5px 0;
+  color: #fff;
+}
+
+.section-hint {
+  color: #888;
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.export-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  color: #aaa;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.form-group input[type="text"],
+.form-group input[type="datetime-local"] {
+  padding: 10px 12px;
+  background: #252525;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.form-group input::placeholder {
+  color: #666;
+}
+
+.form-group .hint {
+  color: #666;
+  font-size: 12px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 600px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.camera-select {
+  background: #252525;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.select-all-button {
+  padding: 6px 12px;
+  background: #333;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.select-all-button:hover {
+  background: #444;
+}
+
+.camera-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.camera-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #ccc;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.camera-checkbox input {
+  cursor: pointer;
+}
+
+.form-group.checkboxes {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.form-group .checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ccc;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.form-group .checkbox.warning {
+  color: #ffc107;
+}
+
+.form-group .checkbox input {
+  cursor: pointer;
+}
+
+.export-button {
+  width: 200px;
+  padding: 12px 24px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.export-button:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.export-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.export-result {
+  margin-top: 20px;
+  padding: 15px;
+  border-radius: 6px;
+}
+
+.export-result.success {
+  background: #1e4620;
+  border: 1px solid #28a745;
+}
+
+.export-result.error {
+  background: #461e1e;
+  border: 1px solid #dc3545;
+}
+
+.export-result h4 {
+  margin: 0 0 10px 0;
+  color: #fff;
+}
+
+.export-result p {
+  margin: 5px 0;
+  color: #ccc;
+  font-size: 13px;
+}
+
+.export-result strong {
+  color: #fff;
+}

@@ -6,12 +6,13 @@ import re
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 from app.config import get_settings
+from app.models.recording import StorageTier
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -28,6 +29,8 @@ class RecordingFile:
     size: int
     duration_seconds: Optional[int] = None
     is_in_progress: bool = False  # True if this recording is currently being written
+    storage_tier: str = StorageTier.HOT.value  # Storage tier (hot/warm/cold)
+    storage_path: Optional[str] = None  # Path/key for warm/cold storage
 
     @property
     def id(self) -> str:
@@ -42,6 +45,16 @@ class RecordingFile:
     def filename(self) -> str:
         """Get filename."""
         return self.path.name
+
+
+@dataclass
+class PlaybackInfo:
+    """Playback information for a recording, including tier-specific URLs."""
+
+    url: str  # URL to access the video
+    tier: str  # Storage tier (hot/warm/cold)
+    requires_loading: bool = False  # True for cold storage (may have latency)
+    expires_in: Optional[int] = None  # Seconds until URL expires (for presigned URLs)
 
 
 @dataclass
@@ -399,6 +412,78 @@ class PlaybackService:
         except Exception as e:
             logger.error(f"Export failed: {e}")
             return None
+
+
+    def get_playback_info(
+        self,
+        recording_file: RecordingFile,
+        presigned_url_expires: int = 3600,
+    ) -> PlaybackInfo:
+        """Get playback info for a recording based on its storage tier.
+
+        Args:
+            recording_file: The recording file info
+            presigned_url_expires: Expiration time for presigned URLs (seconds)
+
+        Returns:
+            PlaybackInfo with appropriate URL for the tier
+        """
+        tier = recording_file.storage_tier
+
+        if tier == StorageTier.HOT.value:
+            # Hot storage: serve from /videos/ (nginx direct)
+            rel_path = str(recording_file.path.relative_to(self.storage_root))
+            url = f"/videos/{rel_path}"
+            return PlaybackInfo(url=url, tier=tier, requires_loading=False)
+
+        elif tier == StorageTier.WARM.value:
+            # Warm storage: serve from /videos-warm/ (nginx direct)
+            if recording_file.storage_path:
+                warm_root = settings.warm_storage_path
+                if warm_root:
+                    try:
+                        warm_path = Path(recording_file.storage_path)
+                        rel_path = str(warm_path.relative_to(warm_root))
+                    except ValueError:
+                        rel_path = recording_file.storage_path
+                else:
+                    rel_path = recording_file.storage_path
+            else:
+                rel_path = str(recording_file.path.relative_to(self.storage_root))
+
+            url = f"/videos-warm/{rel_path}"
+            return PlaybackInfo(url=url, tier=tier, requires_loading=False)
+
+        elif tier == StorageTier.COLD.value:
+            # Cold storage: generate presigned S3 URL
+            from app.services.s3_storage import get_s3_client
+
+            s3_client = get_s3_client()
+            if recording_file.storage_path and s3_client.is_configured():
+                try:
+                    presigned_url = s3_client.generate_presigned_url(
+                        recording_file.storage_path,
+                        expires_in=presigned_url_expires,
+                    )
+                    return PlaybackInfo(
+                        url=presigned_url,
+                        tier=tier,
+                        requires_loading=True,
+                        expires_in=presigned_url_expires,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to generate presigned URL: {e}")
+
+            # Fallback to API proxy if S3 fails
+            return PlaybackInfo(
+                url=f"/api/storage/cold/{recording_file.id}",
+                tier=tier,
+                requires_loading=True,
+            )
+
+        # Default fallback
+        rel_path = str(recording_file.path.relative_to(self.storage_root))
+        return PlaybackInfo(url=f"/videos/{rel_path}", tier=tier, requires_loading=False)
 
 
 # Global service instance

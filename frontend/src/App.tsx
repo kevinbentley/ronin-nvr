@@ -9,6 +9,7 @@ import { CameraGrid } from './components/CameraGrid';
 import { CameraSidebar } from './components/CameraSidebar';
 import { PlaybackPage } from './pages/PlaybackPage';
 import { StatusPage } from './pages/StatusPage';
+import { StoragePage } from './pages/StoragePage';
 import { MLStatusPage } from './pages/MLStatusPage';
 import { DeepAnalysisPage } from './pages/DeepAnalysisPage';
 import { SetupPage } from './pages/SetupPage';
@@ -143,6 +144,8 @@ function AppContent() {
             recordingStatus={recordingStatus}
           />
         );
+      case 'storage':
+        return <StoragePage cameras={cameras} />;
       case 'ml':
         return <MLStatusPage />;
       case 'analysis':

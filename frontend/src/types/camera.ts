@@ -463,3 +463,102 @@ export interface ONVIFEventsResponse {
   camera_id: number;
   events_enabled: boolean;
 }
+
+// Tiered Storage Types
+
+export interface TierStats {
+  enabled: boolean;
+  total_size_gb: number;
+  file_count: number;
+  oldest_file: string | null;
+  newest_file: string | null;
+  max_size_gb: number | null;
+  retention_days: number | null;
+  percent_full: number | null;
+}
+
+export interface TierStatsResponse {
+  hot: TierStats;
+  warm: TierStats | null;
+  cold: TierStats | null;
+  filesystem_total_gb: number;
+  filesystem_total_files: number;
+}
+
+export interface TierConfigResponse {
+  hot_max_gb: number | null;
+  hot_retention_days: number | null;
+  warm_storage_enabled: boolean;
+  warm_storage_path: string | null;
+  warm_max_gb: number | null;
+  warm_retention_days: number | null;
+  cold_storage_enabled: boolean;
+  s3_endpoint_url: string | null;
+  s3_bucket_name: string | null;
+  s3_region: string;
+  s3_prefix: string;
+  s3_configured: boolean;
+  tier_migration_check_interval_minutes: number;
+}
+
+export interface TierConfigUpdate {
+  hot_max_gb?: number | null;
+  hot_retention_days?: number | null;
+  warm_max_gb?: number | null;
+  warm_retention_days?: number | null;
+}
+
+export interface MigrationTriggerRequest {
+  from_tier: 'hot' | 'warm';
+  max_files: number;
+}
+
+export interface MigrationResult {
+  files_migrated: number;
+  files_failed: number;
+  files_skipped: number;
+  orphans_cleaned: number;
+  bytes_migrated: number;
+  bytes_migrated_gb: number;
+  status: 'completed' | 'in_progress' | 'error';
+  message: string | null;
+}
+
+// Offline Export Types
+
+export interface OfflineExportRequest {
+  camera_ids: number[];
+  start_time: string;
+  end_time: string;
+  output_path: string;
+  include_detections: boolean;
+  include_snapshots: boolean;
+  delete_after_copy: boolean;
+}
+
+export interface OfflineExportResponse {
+  export_id: string;
+  success: boolean;
+  output_path: string;
+  files_exported: number;
+  bytes_exported: number;
+  bytes_exported_gb: number;
+  events_exported: number;
+  snapshots_exported: number;
+  error_message: string | null;
+  manifest_path: string | null;
+}
+
+export interface ExportProgressResponse {
+  export_id: string;
+  status: string;
+  total_files: number;
+  files_copied: number;
+  total_bytes: number;
+  bytes_copied: number;
+  percent_complete: number;
+  current_file: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
