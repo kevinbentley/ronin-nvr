@@ -182,6 +182,45 @@ class Settings(BaseSettings):
     clip_post_duration_seconds: float = 5.0  # Seconds of video after event
     clip_retention_days: Optional[int] = 7  # Days to keep clips (None = follow main retention)
 
+    # ============================================================
+    # Tiered Storage Settings
+    # ============================================================
+
+    # Hot storage (primary storage where recordings are written)
+    # Uses existing storage_root for the path
+    hot_max_gb: Optional[float] = None  # Trigger migration to warm when exceeded
+    hot_retention_days: Optional[int] = None  # Migrate files older than this to warm
+    # Trigger migration to warm when hot's filesystem free space drops below this.
+    # Complements hot_max_gb: migration fires when EITHER limit is hit, so hot
+    # drains even if max_gb is unset or drifts from real disk usage.
+    hot_min_free_gb: Optional[float] = None
+
+    # Warm storage (secondary local storage - optional)
+    warm_storage_enabled: bool = False
+    warm_storage_path: Optional[Path] = None  # Local path for warm storage
+    warm_max_gb: Optional[float] = None  # Trigger eviction when exceeded
+    warm_retention_days: Optional[int] = None  # Migrate files older than this to cold
+    # Keep at least this much filesystem free space on warm. Warm is trimmed
+    # (oldest first) down to this floor, and always cleared enough to fit the
+    # hot data being migrated in before it is copied.
+    warm_min_free_gb: Optional[float] = None
+
+    # Extra free space (GB) to clear on warm beyond the exact bytes being
+    # migrated in, so back-to-back copies don't immediately refill the disk.
+    tier_migration_headroom_gb: float = 5.0
+
+    # Cold storage (S3-compatible remote storage - optional, push-only)
+    cold_storage_enabled: bool = False
+    s3_endpoint_url: Optional[str] = None  # For MinIO, Wasabi, etc. (None = AWS S3)
+    s3_bucket_name: Optional[str] = None
+    s3_access_key: Optional[str] = None
+    s3_secret_key: Optional[str] = None
+    s3_region: str = "us-east-1"
+    s3_prefix: str = "ronin-nvr/"  # Prefix for all S3 keys
+
+    # Tier migration settings
+    tier_migration_check_interval_minutes: int = 15  # Minutes between migration checks
+
 
 @lru_cache
 def get_settings() -> Settings:

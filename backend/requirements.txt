@@ -42,3 +42,6 @@ Pillow>=10.0.0  # For VLLM image encoding
 
 # ONVIF Protocol Support
 onvif-zeep-async>=1.0.0
+
+# S3-compatible Storage (for tiered storage cold tier)
+boto3>=1.26.0

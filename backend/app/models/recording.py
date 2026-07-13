@@ -32,6 +32,14 @@ class RecordingStatus(str, Enum):
     ERROR = "error"
 
 
+class StorageTier(str, Enum):
+    """Storage tier for tiered storage system."""
+
+    HOT = "hot"    # Active storage where recordings are initially written
+    WARM = "warm"  # Secondary local storage when hot is full
+    COLD = "cold"  # S3-compatible remote storage
+
+
 class Recording(Base):
     """Video recording segment metadata."""
 
@@ -64,6 +72,17 @@ class Recording(Base):
 
     # ML processing flag
     ml_processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Storage tier (hot/warm/cold)
+    storage_tier: Mapped[str] = mapped_column(
+        String(20), default=StorageTier.HOT.value, nullable=False
+    )
+    # Path/key for warm or cold storage (null = use file_path for hot storage)
+    storage_path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    # When migrated from hot storage
+    migrated_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(

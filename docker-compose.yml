@@ -64,8 +64,21 @@ services:
       ML_ENABLED: "true"
       ML_AUTO_PROCESS: "true"
       STREAM_MANAGER_URL: "http://stream-manager:8001"
+      # Tiered Storage Settings
+      WARM_STORAGE_ENABLED: ${WARM_STORAGE_ENABLED:-false}
+      WARM_STORAGE_PATH: /data/warm-storage
+      HOT_MIN_FREE_GB: ${HOT_MIN_FREE_GB:-}
+      WARM_MIN_FREE_GB: ${WARM_MIN_FREE_GB:-}
+      COLD_STORAGE_ENABLED: ${COLD_STORAGE_ENABLED:-false}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_PREFIX: ${S3_PREFIX:-ronin-nvr/}
     volumes:
       - ${STORAGE_PATH:-./data/storage}:/data/storage
+      - ${WARM_STORAGE_PATH:-./data/warm}:/data/warm-storage
       - ${ML_MODELS_PATH:-./data/ml_models}:/data/storage/.ml/models
     ports:
       - "8000:8000"
@@ -113,6 +126,8 @@ services:
     volumes:
       # Mount storage for direct video serving (bypasses backend for better performance)
       - ${STORAGE_PATH:-./data/storage}:/data/storage:ro
+      # Warm storage for tiered storage system
+      - ${WARM_STORAGE_PATH:-./data/warm}:/data/warm-storage:ro
     ports:
       - "80:80"
     healthcheck:
@@ -315,6 +330,8 @@ volumes:
     name: ronin_postgres_data
   storage_data:
     name: ronin_storage_data
+  warm_storage:
+    name: ronin_warm_storage
   ml_models:
     name: ronin_ml_models
 
