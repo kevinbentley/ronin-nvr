@@ -126,45 +126,63 @@ class TierMigrationService:
         needed_bytes = source_path.stat().st_size
         await self.ensure_warm_room(db, needed_bytes)
 
+        # If a valid warm copy already exists here (e.g. a prior pass migrated
+        # this recording), never delete it in the failure path below: our
+        # cleanup must only remove a partial copy that *this* call created.
+        dest_preexisted = dest_path.exists()
+
         try:
             # Ensure destination directory exists
             dest_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Copy file to warm storage
+            # Copy file to warm storage. Run the blocking copy in a worker
+            # thread so a multi-hundred-MB copy doesn't stall the event loop
+            # (which serves the API and drives live detection) for its duration.
             logger.info(f"Migrating {source_path} to warm storage: {dest_path}")
-            shutil.copy2(source_path, dest_path)
+            await asyncio.to_thread(shutil.copy2, source_path, dest_path)
 
             # Verify copy by checking size
             if dest_path.stat().st_size != source_path.stat().st_size:
                 logger.error(f"Size mismatch after copy: {source_path}")
-                dest_path.unlink()
+                dest_path.unlink(missing_ok=True)
                 return False
 
-            # Update database record
+            # Update database record. This commit is the point of no return:
+            # once it succeeds the file is durably on warm, so nothing below may
+            # fail the migration or delete the warm copy.
             recording.storage_tier = StorageTier.WARM.value
             recording.storage_path = str(dest_path)
             recording.migrated_at = datetime.now(timezone.utc)
             await db.commit()
 
-            # Delete from hot storage
-            source_path.unlink()
-            self._cleanup_empty_dirs(source_path.parent, self.hot_storage_path)
-
-            logger.info(
-                f"Successfully migrated recording {recording.id} to warm storage"
-            )
-            return True
-
         except Exception as e:
             logger.exception(f"Failed to migrate recording {recording.id} to warm: {e}")
             await db.rollback()
-            # Cleanup partial copy if it exists
-            if dest_path.exists():
+            # Remove only a partial copy this call created. A pre-existing dest
+            # may be a valid copy from another pass, so leave it untouched.
+            if not dest_preexisted and dest_path.exists():
                 try:
                     dest_path.unlink()
                 except OSError:
                     pass
             return False
+
+        # Migration is committed. Removing the now-redundant hot copy is
+        # best-effort: if the source already vanished, the goal (file on warm)
+        # still holds, so a missing source is success, not failure.
+        try:
+            source_path.unlink(missing_ok=True)
+            self._cleanup_empty_dirs(source_path.parent, self.hot_storage_path)
+        except OSError as e:
+            logger.warning(
+                f"Migrated recording {recording.id} to warm but could not remove "
+                f"hot copy {source_path}: {e}"
+            )
+
+        logger.info(
+            f"Successfully migrated recording {recording.id} to warm storage"
+        )
+        return True
 
     async def migrate_to_cold(
         self,
@@ -213,9 +231,10 @@ class TierMigrationService:
         s3_key = self._generate_s3_key(recording)
 
         try:
-            # Upload to S3
+            # Upload to S3. Run the blocking transfer in a worker thread so it
+            # doesn't stall the event loop for the duration of the upload.
             logger.info(f"Migrating {source_path} to cold storage: {s3_key}")
-            full_key = s3.upload_file(source_path, s3_key)
+            full_key = await asyncio.to_thread(s3.upload_file, source_path, s3_key)
 
             # Verify upload by checking size
             s3_size = s3.get_object_size(s3_key)
@@ -228,25 +247,32 @@ class TierMigrationService:
                 s3.delete_file(s3_key)
                 return False
 
-            # Update database record
+            # Update database record. Point of no return: once committed the
+            # object is durably on S3, so nothing below may fail the migration.
             recording.storage_tier = StorageTier.COLD.value
             recording.storage_path = full_key
             recording.migrated_at = datetime.now(timezone.utc)
             await db.commit()
 
-            # Delete from source storage
-            source_path.unlink()
-            self._cleanup_empty_dirs(source_path.parent, storage_root)
-
-            logger.info(
-                f"Successfully migrated recording {recording.id} to cold storage"
-            )
-            return True
-
         except Exception as e:
             logger.exception(f"Failed to migrate recording {recording.id} to cold: {e}")
             await db.rollback()
             return False
+
+        # Migration is committed. Removing the local copy is best-effort.
+        try:
+            source_path.unlink(missing_ok=True)
+            self._cleanup_empty_dirs(source_path.parent, storage_root)
+        except OSError as e:
+            logger.warning(
+                f"Migrated recording {recording.id} to cold but could not remove "
+                f"local copy {source_path}: {e}"
+            )
+
+        logger.info(
+            f"Successfully migrated recording {recording.id} to cold storage"
+        )
+        return True
 
     def _cleanup_empty_dirs(self, dir_path: Path, storage_root: Path) -> None:
         """Remove empty directories up to storage root."""

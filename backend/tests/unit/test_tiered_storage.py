@@ -384,3 +384,69 @@ class TestMaintainWarm:
 
         assert freed == 200
         assert db.delete.await_count == 2
+
+
+def _make_hot_recording(rec_id: int, hot_root: Path, size: int = 100) -> Recording:
+    """Create a HOT Recording backed by a real file on the hot filesystem."""
+    fs_path = hot_root / f"Camera1/2024-01-01/{rec_id:02d}.mp4"
+    fs_path.parent.mkdir(parents=True, exist_ok=True)
+    fs_path.write_bytes(b"x" * size)
+    rec = Recording(
+        camera_id=1,
+        file_path=str(fs_path),
+        file_size=size,
+        start_time=datetime(2024, 1, 1, rec_id, 0, 0, tzinfo=timezone.utc),
+        status=RecordingStatus.COMPLETED.value,
+        storage_tier=StorageTier.HOT.value,
+    )
+    rec.id = rec_id
+    return rec
+
+
+class TestMigrateToWarmDurability:
+    """A committed hot->warm migration must survive the source vanishing."""
+
+    async def test_source_deleted_after_commit_keeps_warm_copy(self, warm_service):
+        """If the source disappears (e.g. transcode) right after the commit,
+        the migration still succeeds and the warm copy is preserved."""
+        hot_root = warm_service.hot_storage_path
+        rec = _make_hot_recording(1, hot_root, size=128)
+        source = Path(rec.file_path)
+        dest = warm_service.warm_storage_path / "Camera1/2024-01-01/01.mp4"
+
+        db = AsyncMock()
+
+        def drop_source_on_commit():
+            # Simulate a concurrent process removing the hot file during commit.
+            source.unlink()
+
+        db.commit.side_effect = drop_source_on_commit
+
+        result = await warm_service.migrate_to_warm(rec, db)
+
+        assert result is True
+        assert rec.storage_tier == StorageTier.WARM.value
+        assert dest.exists() and dest.read_bytes() == b"x" * 128
+        assert not source.exists()
+
+    async def test_failed_retry_keeps_existing_warm_copy(self, warm_service):
+        """If the copy fails while a valid warm copy from a prior successful
+        migration already exists at the destination, the failure cleanup must
+        not delete that copy."""
+        hot_root = warm_service.hot_storage_path
+        rec = _make_hot_recording(2, hot_root, size=64)
+        # Prior pass already produced a good warm copy at the destination.
+        dest = warm_service.warm_storage_path / "Camera1/2024-01-01/02.mp4"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"x" * 64)
+
+        db = AsyncMock()
+        # The source vanishes mid-copy, so the copy raises after the
+        # pre-existence check (open(src) fails before dest is touched).
+        with patch.object(
+            tm.shutil, "copy2", side_effect=FileNotFoundError("source gone")
+        ):
+            result = await warm_service.migrate_to_warm(rec, db)
+
+        assert result is False
+        assert dest.exists() and dest.read_bytes() == b"x" * 64

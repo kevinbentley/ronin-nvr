@@ -67,7 +67,9 @@ services:
       # Tiered Storage Settings
       WARM_STORAGE_ENABLED: ${WARM_STORAGE_ENABLED:-false}
       WARM_STORAGE_PATH: /data/warm-storage
+      HOT_MAX_GB: ${HOT_MAX_GB:-}
       HOT_MIN_FREE_GB: ${HOT_MIN_FREE_GB:-}
+      WARM_MAX_GB: ${WARM_MAX_GB:-}
       WARM_MIN_FREE_GB: ${WARM_MIN_FREE_GB:-}
       COLD_STORAGE_ENABLED: ${COLD_STORAGE_ENABLED:-false}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}

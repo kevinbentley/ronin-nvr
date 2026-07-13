@@ -7,6 +7,22 @@ from typing import Optional
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Optional numeric settings that Docker Compose may forward as an empty string
+# (``${VAR:-}``) when unset. Pydantic rejects "" for these, so a blank value is
+# treated as "not set" (None) before validation.
+_OPTIONAL_NUMERIC_ENV = frozenset(
+    {
+        "retention_days",
+        "retention_max_gb",
+        "hot_max_gb",
+        "hot_retention_days",
+        "hot_min_free_gb",
+        "warm_max_gb",
+        "warm_retention_days",
+        "warm_min_free_gb",
+    }
+)
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -16,6 +32,20 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _blank_numeric_to_none(cls, data):
+        """Coerce blank string env values for optional numerics to None."""
+        if isinstance(data, dict):
+            for key, value in list(data.items()):
+                if (
+                    isinstance(value, str)
+                    and value.strip() == ""
+                    and key.lower() in _OPTIONAL_NUMERIC_ENV
+                ):
+                    data[key] = None
+        return data
 
     # Database
     database_url: str = "postgresql+asyncpg://localhost:5432/ronin_nvr"
