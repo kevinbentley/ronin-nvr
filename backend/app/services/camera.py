@@ -56,7 +56,11 @@ class CameraService:
             status=CameraStatus.UNKNOWN.value,
         )
         self.db.add(camera)
-        await self.db.flush()
+        # Commit (not just flush) so the row is durable and visible to the
+        # follow-up read the UI issues right after saving. FastAPI runs the
+        # get_db teardown commit only after the response is sent, so relying on
+        # it leaves an immediate refresh reading the pre-change row.
+        await self.db.commit()
         await self.db.refresh(camera)
         return camera
 
@@ -65,14 +69,14 @@ class CameraService:
         update_data = camera_data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(camera, field, value)
-        await self.db.flush()
+        await self.db.commit()
         await self.db.refresh(camera)
         return camera
 
     async def delete(self, camera: Camera) -> None:
         """Delete a camera."""
         await self.db.delete(camera)
-        await self.db.flush()
+        await self.db.commit()
 
     async def update_status(
         self,
@@ -85,7 +89,7 @@ class CameraService:
         camera.error_message = error_message
         if status == CameraStatus.ONLINE:
             camera.last_seen = datetime.utcnow()
-        await self.db.flush()
+        await self.db.commit()
         await self.db.refresh(camera)
         return camera
 

@@ -178,6 +178,38 @@ async def test_update_camera(
 
 
 @pytest.mark.asyncio
+async def test_update_camera_persists_for_subsequent_read(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    """A saved change must be visible to the very next read.
+
+    Regression: update only flushed and left the commit to the get_db
+    teardown, which runs after the response is sent. An immediate refresh
+    then read the pre-change row, so edits appeared not to "stick".
+    """
+    create_response = await client.post(
+        "/api/cameras",
+        json={"name": "Persist Test", "host": "192.168.1.100", "path": "/old"},
+        headers=admin_headers,
+    )
+    camera_id = create_response.json()["id"]
+
+    put_response = await client.put(
+        f"/api/cameras/{camera_id}",
+        json={"path": "/ONVIFMedia"},
+        headers=admin_headers,
+    )
+    assert put_response.status_code == 200
+
+    # Fresh read, as the UI does right after saving.
+    get_response = await client.get(
+        f"/api/cameras/{camera_id}", headers=admin_headers
+    )
+    assert get_response.status_code == 200
+    assert get_response.json()["path"] == "/ONVIFMedia"
+
+
+@pytest.mark.asyncio
 async def test_update_camera_partial(
     client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:
